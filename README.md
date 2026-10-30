@@ -68,6 +68,16 @@ La tablette recherche une nouvelle version toutes les deux minutes et au retour 
 
 `npm run export:tablet` reste disponible pour générer uniquement les fichiers dans `dist/tablet`.
 
+### iPhone : Cockpit sur l’écran d’accueil
+
+1. Sur l’iPhone, connecté au Wi-Fi de la maison, ouvrir **http://192.168.1.251:8123/local/maison/metaboard/index.html** dans Safari.
+2. Bouton **Partager** → **Sur l’écran d’accueil** → **Ajouter**. L’icône Cockpit apparaît sur l’écran d’accueil.
+3. Ouvert depuis cette icône, Cockpit s’affiche en plein écran, sans barre Safari. Le contenu évite l’encoche et la barre d’accueil.
+
+L’application de l’écran d’accueil a son propre stockage, séparé de Safari : se connecter une fois à Home Assistant et choisir la disposition (Paramètres → Affichage sur cet appareil) à la première ouverture. Les mises à jour publiées avec **publier.cmd** arrivent comme sur la tablette.
+
+Fichiers concernés : `public/manifest.json`, les balises iOS de `public/index.html`, `public/pwa.css` (zones sûres, uniquement en mode écran d’accueil) et les icônes opaques `public/brand/apple-touch-icon.png`, `icon-192.png`, `icon-512.png`. Après un changement de `public/brand/icon.png`, régénérer les icônes avec `node scripts/pwa-icons.js`. Pas de fonctionnement hors ligne : iOS n’autorise pas de service worker sur l’adresse HTTP de Home Assistant.
+
 Dans les réglages, **Utiliser ma session Home Assistant** réutilise la session du parent HA, une session propre au prototype ou celle du navigateur, suivant le mécanisme déjà utilisé dans Cockpit. Une connexion OAuth propre au prototype peut être conservée dans ce navigateur ; ses clés sont distinctes (`mb.oauth`) de celles de Cockpit. Le jeton longue durée saisi manuellement, lui, n’est pas enregistré.
 
 **Limite de cette étape :** la version servie par HA donne accès à la maison et aux modules locaux sans dépendre du PC. Les données RSS/agents/Spotify/métriques Cockpit restent disponibles sur le PC via le service local. Une passerelle authentifiée entre appareils n’est pas encore développée. Le serveur PC écoute volontairement sur la boucle locale : ce n’est pas une version de production accessible sur tout le réseau.

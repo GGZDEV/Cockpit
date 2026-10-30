@@ -1,0 +1,12 @@
+/* Application iPhone (écran d'accueil) : le contenu s'écarte de l'encoche, de la barre d'état et de la barre d'accueil.
+   Sans effet dans un navigateur ou dans Brave : les règles ne s'appliquent qu'en mode autonome. */
+@media (display-mode: standalone) {
+  body{-webkit-touch-callout:none}
+  body[data-design="feedme"] #app{box-sizing:border-box;height:100dvh;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  body[data-design="feedme"] .native-feed-panel{height:auto}
+  body[data-design="home"] #app{box-sizing:border-box;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  @media (max-width:860px),(max-height:620px){
+    body[data-design="home"] #app{padding:calc(12px + env(safe-area-inset-top)) calc(12px + env(safe-area-inset-right)) calc(104px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left))}
+    body[data-design="home"] .rail{bottom:calc(16px + env(safe-area-inset-bottom))}
+  }
+}

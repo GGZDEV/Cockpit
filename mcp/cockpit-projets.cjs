@@ -22,7 +22,8 @@ const DATE = { type: 'string', description: 'Échéance AAAA-MM-JJ, ou chaîne v
 const LINKS = { type: 'array', description: 'Liens http(s).', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } }, required: ['url'] }] } };
 const CONTEXT = { type: 'object', description: 'Contexte transmis aux agents OpenClaw quand une tâche est lancée. Jamais de secret ici.', properties: {
   objective: { type: 'string' }, instructions: { type: 'string', description: 'Consignes générales du projet.' }, resources: { type: 'string' },
-  repository: { type: 'string', description: 'Adresse GitHub https://github.com/<compte>/<dépôt> (obligatoire à la création). Cockpit la clone sur le PC de l’utilisateur.' }, environment: { type: 'string' }, links: LINKS } };
+  repository: { type: 'string', description: 'Adresse GitHub https://github.com/<compte>/<dépôt> (obligatoire à la création). Cockpit la clone sur le PC de l’utilisateur.' }, environment: { type: 'string' }, links: LINKS,
+  publishing: { type: 'string', description: 'Procédure de publication du projet (dépôt et branche où pousser, commande de déploiement, vérification). Seul l’utilisateur peut autoriser l’agent à publier automatiquement.' } } };
 const AGENT = { type: ['string', 'null'], description: 'Agent OpenClaw (identifiant ou nom, voir projets_agents). null = aucun.' };
 const TASK_FIELDS = {
   title: { type: 'string' }, instructions: { type: 'string', description: 'Consignes précises pour la personne ou l’agent qui fera la tâche.' },

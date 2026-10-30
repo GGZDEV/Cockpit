@@ -306,6 +306,9 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
       ${p.id ? agentLine(p) + workspaceHTML(p) : ''}
       <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
+      <label>Publication<textarea name="publishing" rows="3" maxlength="4000" placeholder="Comment publier ce projet : branche et dépôt où pousser, commande de déploiement, vérification à faire…">${esc(c.publishing || '')}</textarea></label>
+      <label class="pj-check"><input type="checkbox" name="autoPublish" ${c.autoPublish ? 'checked' : ''}> L’agent publie lui-même à la fin d’une tâche, en suivant cette procédure</label>
+      <p class="pj-help">Sans cette case, il prépare tout et vous demande avant de publier. La procédure doit pouvoir s’exécuter là où l’agent travaille (le serveur OpenClaw pour un agent OpenClaw). Seul vous pouvez cocher cette case : les agents ne le peuvent pas.</p>
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
   }
@@ -323,8 +326,16 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function resultHTML(text, links) {
     return `<div class="pj-result">${esc(text || '')}</div>${links?.length ? `<ul class="pj-links">${links.map(l => `<li><a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(l.label || l.url)}</a></li>`).join('')}</ul>` : ''}`;
   }
+  // Continuer la même tâche avec l'agent, dans sa conversation : pas besoin de recréer une tâche.
+  function continueForm(task, enabled) {
+    return `<form class="pj-form pj-continue" data-pj-form="launch" data-kind="reprise" data-id="${esc(task.id)}">
+      <label>Répondre à ${esc(task.agent?.name || 'l’agent')} <span class="pj-help">(il garde le fil de la tâche)</span><textarea name="note" rows="2" data-keep="reprise" placeholder="Une correction, une suite, une précision…" required></textarea></label>
+      <div class="pj-form-actions"><button class="button primary" type="button" data-pj="quick-continue" data-id="${esc(task.id)}" ${enabled ? '' : 'disabled'}>${G.launch} Oui, continue</button>
+        <button class="button" type="submit" ${enabled ? '' : 'disabled'}>Envoyer la réponse</button></div></form>`;
+  }
   function liveHTML(task) {
     const run = lastRun(task), running = openRun(task), busy = st.launching.has(task.id);
+    const canContinue = !running && !busy && !!task.agent;
     const canLaunch = !running && !busy && task.status !== 'done';
     const missing = [!task.instructions && 'des consignes', !task.agent && 'un agent'].filter(Boolean);
     let primary = '';
@@ -345,14 +356,14 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         <div class="pj-form-actions"><button class="button primary" type="submit" ${canLaunch && !missing.length ? '' : 'disabled'}>${G.launch} Relancer</button></div></form></div>`;
     } else if (run && run.status === 'succeeded' && run.outcome === 'result' && !run.accepted) {
       primary = `<div class="pj-box is-ok"><div class="pj-box-head">${icon('check')}<b>Résultat de ${esc(run.agent?.name || 'l’agent')}</b><span class="muted">· ${fmtTime(run.endedAt)}</span></div>${resultHTML(run.result, run.links)}
-        ${task.status !== 'done' ? `<div class="pj-form-actions"><button class="button primary" data-pj="accept" data-id="${esc(task.id)}">${icon('check')} Accepter et terminer</button></div>` : ''}
-        <form class="pj-form" data-pj-form="launch" data-kind="reprise" data-id="${esc(task.id)}"><label>Demander une reprise<textarea name="note" rows="2" data-keep="reprise" placeholder="Ce qu’il faut corriger ou compléter" required></textarea></label>
-        <div class="pj-form-actions"><button class="button" type="submit" ${canLaunch || task.status === 'done' ? '' : 'disabled'}>${G.launch} Lancer la reprise</button></div></form></div>`;
+        ${task.status !== 'done' ? `<div class="pj-form-actions"><button class="button" data-pj="accept" data-id="${esc(task.id)}">${icon('check')} Accepter et terminer</button></div>` : ''}
+        ${continueForm(task, canContinue)}</div>`;
     } else {
       primary = `<div class="pj-box"><div class="pj-box-head"><b>${task.status === 'done' ? 'Tâche terminée' : task.agent ? 'Prête à être confiée à ' + esc(task.agent.name) : 'Tâche manuelle'}</b></div>
-        <p class="pj-help">${task.status === 'done' ? 'Pour reprendre le travail, replacez la carte dans une autre colonne.' : task.agent ?(missing.length ? 'Avant de lancer, ajoutez ' + missing.join(' et ') + '.' : 'L’agent recevra les consignes, les critères et ' + (task.includeContext === false ? 'aucun contexte de projet.' : 'le contexte du projet.')) : 'Aucun agent assigné : déplacez la carte au fil de votre travail, ou choisissez un agent ci-dessous.'}</p>
+        <p class="pj-help">${task.status === 'done' ? (task.agent && run ? 'Vous pouvez continuer avec l’agent ci-dessous : la tâche repassera « À valider » à son prochain résultat.' : 'Pour reprendre le travail, replacez la carte dans une autre colonne.') : task.agent ?(missing.length ? 'Avant de lancer, ajoutez ' + missing.join(' et ') + '.' : 'L’agent recevra les consignes, les critères et ' + (task.includeContext === false ? 'aucun contexte de projet.' : 'le contexte du projet.')) : 'Aucun agent assigné : déplacez la carte au fil de votre travail, ou choisissez un agent ci-dessous.'}</p>
         ${task.agent && task.status !== 'done' ? `<div class="pj-form-actions"><button class="button primary pj-launch" data-pj="launch" data-id="${esc(task.id)}" ${canLaunch && !missing.length ? '' : 'disabled'}>${G.launch} ${busy ? 'Vérification…' : 'Lancer'}</button></div>` : ''}
-        ${run?.accepted ? `<p class="pj-help">Résultat accepté le ${fmtTime(run.accepted)}.</p>${resultHTML(run.result, run.links)}` : ''}</div>`;
+        ${run?.accepted ? `<p class="pj-help">Résultat accepté le ${fmtTime(run.accepted)}.</p>${resultHTML(run.result, run.links)}` : ''}
+        ${task.status === 'done' && task.agent && run ? continueForm(task, canContinue) : ''}</div>`;
     }
     const history = task.runs.slice().reverse().filter(r => r !== running);
     return `${primary}<section class="pj-section"><h3>Historique des exécutions</h3>${history.length ? history.map(r => `<details class="pj-run" data-key="run-${esc(r.id)}"><summary><span class="pj-run-state st-${r.status}">${RUN_STATUS[r.status]}</span>${RUN_KIND[r.kind]} · ${esc(r.agent?.name || '')}<span class="pj-grow"></span><time>${fmtTime(r.createdAt)}</time></summary>
@@ -434,6 +445,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'launch': await launch(idv, undefined, '', el); break;
         case 'accept': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Résultat accepté : tâche terminée.'); render(); updatePanel(); break; }
         case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
+        case 'quick-continue': await launch(idv, 'reprise', 'Oui, continue.', el); break;
         case 'request-agent': {
           const p = st.projects.find(x => x.id === idv); if (!p) break;
           if (!confirm(`Demander à OpenClaw de créer un agent dédié à « ${p.name} » ?
@@ -493,7 +505,7 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         const agentValue = String(fd.get('agent') || ''), [agentConnection, agentId] = agentValue.split('|');
         const body = { name: fd.get('name'), key: fd.get('key'), description: fd.get('description'), status: fd.get('status'), priority: Number(fd.get('priority')), due: fd.get('due') || '', color: fd.get('color'),
           agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
-          context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment') } };
+          context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment'), publishing: fd.get('publishing'), autoPublish: fd.has('autoPublish') } };
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
         modal.close(); render();

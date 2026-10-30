@@ -108,7 +108,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if ('key' in body && text(body.key, 6)) out.key = text(body.key, 6).toUpperCase().replace(/[^A-Z0-9]/g, '') || out.key;
     if (body.context && typeof body.context === 'object') {
       const c = { ...(out.context || {}) };
-      for (const [k, max] of [['objective', 4000], ['instructions', 12000], ['resources', 12000], ['repository', 600], ['environment', 2000]]) if (k in body.context) c[k] = text(body.context[k], max);
+      for (const [k, max] of [['objective', 4000], ['instructions', 12000], ['resources', 12000], ['repository', 600], ['environment', 2000], ['publishing', 4000]]) if (k in body.context) c[k] = text(body.context[k], max);
+      if ('autoPublish' in body.context) c.autoPublish = body.context.autoPublish === true;
       if ('links' in body.context) c.links = cleanLinks(body.context.links);
       if (c.repository && githubRepo(c.repository)) c.repository = githubRepo(c.repository).web;
       out.context = c;
@@ -196,7 +197,21 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   }
 
   // ----- Lancement explicite ----------------------------------------------------------------
+  // Empreinte de ce que l'agent a reçu : consignes de la tâche et contexte du projet.
+  const basis = (task, project) => crypto.createHash('sha256').update(JSON.stringify([task.title, task.instructions, task.expected, task.criteria, task.resources, task.links, (task.attachments || []).map(a => a.id), task.includeContext, project.name, project.description, project.context])).digest('hex').slice(0, 16);
+  // Suite d'une conversation déjà engagée : un message court suffit, l'agent a déjà les consignes.
+  // Si la tâche ou le projet ont été modifiés depuis le dernier envoi, les consignes complètes sont renvoyées.
+  function followUp(task, project, run) {
+    const previous = task.runs.findLast(r => r !== run && r.conversationId === run.conversationId && r.prompt);
+    if (!previous || !['reprise', 'answer'].includes(run.kind)) return '';
+    if (previous.basis !== basis(task, project)) return '';
+    const c = project.context || {}, lines = [`Tâche ${task.code} — « ${task.title} » : suite.`, '', run.note];
+    if (c.autoPublish && c.publishing) lines.push('', 'Rappel : la publication de ce projet est autorisée selon la procédure déjà transmise ; publie quand le travail est terminé et vérifié.');
+    lines.push('', 'Termine ta réponse par une ligne seule : STATUT: TERMINÉ, STATUT: BLOQUÉ (question au-dessus) ou STATUT: ÉCHEC.');
+    return lines.join('\n').slice(0, 31000);
+  }
   function brief(task, project, run) {
+    const short = followUp(task, project, run); if (short) return short;
     const c = project.context || {}, lines = [];
     lines.push(`Tâche ${task.code} — « ${task.title} »`, `Projet : ${project.name}${project.description ? ' — ' + project.description : ''}`, '');
     if (run.kind === 'answer') lines.push('Réponse à ta question précédente :', run.note, '');
@@ -218,7 +233,10 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       if (c.links?.length) ctx.push('Liens :\n' + c.links.map(l => '- ' + (l.label ? l.label + ' : ' : '') + l.url).join('\n'));
       if (ctx.length) lines.push('', '## Contexte du projet', ...ctx);
     }
+    const publish = c.autoPublish && c.publishing;
+    if (c.publishing) lines.push('', publish ? '## Publication (autorisée par l’utilisateur pour ce projet)' : '## Publication (procédure du projet)', c.publishing);
     lines.push('', '## Cadre',
+      ...(publish ? ['Quand le travail est terminé et vérifié, publie-le toi-même en suivant exactement la procédure « Publication » ci-dessus, sans me demander d’accord, puis indique ce qui a été publié et où. Si une étape échoue, arrête-toi et explique.'] : c.publishing ? ['La procédure « Publication » ci-dessus n’est pas autorisée automatiquement : prépare tout, puis demande mon accord avant de publier.'] : []),
       'Respecte les autorisations déjà en place. Pour une publication, un envoi externe, une suppression destructive, un déploiement ou une dépense qui ne sont pas explicitement prévus par ces consignes, ne les exécute pas : décris l’action concrète et demande mon accord.',
       'Indique les fichiers, liens et livrables produits avec leur chemin ou leur adresse complète.',
       'Termine ta réponse par une ligne seule :',
@@ -259,7 +277,11 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       event(run, 'requested', 'Lancement demandé · transmission à ' + agent.name);
       task.runs.push(run);
       if (task.runs.length > 30) task.runs.splice(0, task.runs.length - 30);
-      task.question = ''; save();
+      run.basis = basis(task, project);
+      task.question = '';
+      // Continuer une tâche terminée la remet en jeu : son prochain résultat sera de nouveau à valider.
+      if (task.status === 'done') { task.status = 'todo'; delete task.acceptedAt; task.movedAt = now(); }
+      save();
       follow(task, run);
       return { task, run };
     } finally { launching.delete(task.id); }
@@ -529,6 +551,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       case 'POST projects': {
         const input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'key', 'context']);
         input.context = { ...(input.context && typeof input.context === 'object' ? input.context : {}), ...('repository' in body ? { repository: body.repository } : {}) };
+        delete input.context.autoPublish; // autoriser la publication automatique reste un choix de l'utilisateur
         const repo = githubRepo(input.context.repository);
         if (!repo) throw new HttpError(400, 'Un dépôt GitHub est obligatoire pour un projet créé par un agent : context.repository = "https://github.com/<compte>/<dépôt>". Crée d’abord le dépôt s’il n’existe pas.');
         const twin = store.projects.find(p => !p.archived && sameRepo(p.context?.repository, repo.web));
@@ -540,6 +563,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       case 'PATCH projects/:ref': {
         const project = agentProject(ref), input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'archived', 'context']);
         if ('repository' in body) input.context = { ...(input.context || {}), repository: body.repository };
+        if (input.context && typeof input.context === 'object') { input.context = { ...input.context }; delete input.context.autoPublish; }
         if (input.context && 'repository' in input.context && !githubRepo(input.context.repository)) throw new HttpError(400, 'Le dépôt doit rester une adresse GitHub : https://github.com/<compte>/<dépôt>.');
         if ('status' in input) input.status = word(input.status, PROJECT_WORDS, PROJECT_STATUS); if ('priority' in input) input.priority = word(input.priority, PRIORITY_WORDS, []);
         if ('agent' in body) input.agent = await agentAssignee(body.agent);

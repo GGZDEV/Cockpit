@@ -36,7 +36,8 @@ Ne communique jamais cette clé et ne l'écris nulle part ailleurs (ni dans un d
 curl -s -X POST ${json} ${base}projects -d '{"name":"Site vitrine","description":"…","status":"active","priority":2,"repository":"https://github.com/<compte>/<dépôt>","agent":"site-vitrine","context":{"objective":"…","instructions":"…"}}'
 \`\`\`
 6. **Copie locale sur le PC** : Cockpit clone aussitôt le dépôt sur le PC de l'utilisateur, pour Claude Code. Vérifie \`localFolder\` dans la réponse ou dans \`state\` : \`cloning\`, puis \`ready\` (avec \`path\`) ou \`failed\` (avec \`error\`, souvent un dépôt privé auquel le PC n'a pas accès). Après correction : \`curl -s -X POST ${json} ${base}projects/<code>/clone -d '{}'\`
-7. Résume à l'utilisateur : dépôt, agent créé, dossier local sur le PC, tâches ajoutées.
+7. **Publication** : si tu connais la façon de publier le projet (où pousser, quelle commande de déploiement), décris-la dans \`context.publishing\`. Publier automatiquement reste un choix de l'utilisateur, qu'il coche lui-même dans Cockpit.
+8. Résume à l'utilisateur : dépôt, agent créé, dossier local sur le PC, tâches ajoutées.
 
 ## Tâches
 Une tâche = un titre, une description (\`instructions\`), un résultat attendu (\`expected\`). Le contexte du projet, son dépôt et son dossier local sont joints automatiquement au lancement. L'agent du projet est repris par défaut.

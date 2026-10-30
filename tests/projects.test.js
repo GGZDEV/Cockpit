@@ -126,3 +126,35 @@ test('after a restart, a run is recovered from the gateway history and never res
   assert.equal(saved.runs[0].status, 'succeeded'); assert.equal(saved.status, 'review');
   assert.equal(feed.state.sends.length, 1);
 });
+
+test('a task can be continued in the same conversation, even after acceptance, with a short message', async t => {
+  const { api, feed } = await setup(t);
+  const project = (await api('projects', 'POST', { name: 'Appli', context: { objective: 'Version iPhone' } })).body;
+  const task = (await api('tasks', 'POST', { projectId: project.id, title: 'iPhone', instructions: 'Adapter l’écran', agent })).body;
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '1' }); await settle();
+  await api('tasks/' + task.id + '/accept', 'POST', {});
+  const again = await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '2', kind: 'reprise', note: 'Oui, continue.' });
+  assert.equal(again.status, 202); await settle();
+  const saved = (await api('state')).body.tasks[0];
+  assert.equal(saved.status, 'review', 'the next result is to be validated again');
+  assert.equal(saved.runs.length, 2); assert.equal(saved.runs[1].conversationId, saved.runs[0].conversationId);
+  assert.match(feed.state.sends[1], /^Tâche AP-1 — « iPhone » : suite\.\n\nOui, continue\./);
+  assert.doesNotMatch(feed.state.sends[1], /Version iPhone/, 'no need to resend the whole brief');
+  // Consignes modifiées entre-temps : elles sont renvoyées en entier.
+  await api('tasks/' + task.id, 'PATCH', { instructions: 'Adapter l’écran et le clavier' });
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '3', kind: 'reprise', note: 'Reprends avec ça' }); await settle();
+  assert.match(feed.state.sends[2], /clavier/); assert.match(feed.state.sends[2], /Reprends avec ça/);
+});
+
+test('publishing follows the project procedure, automatic only when the user allowed it', async t => {
+  const { api, feed } = await setup(t);
+  const project = (await api('projects', 'POST', { name: 'Site', context: { publishing: 'git push origin main puis npm run deploy:tablet' } })).body;
+  const task = (await api('tasks', 'POST', { projectId: project.id, title: 'Page', instructions: 'Faire', agent })).body;
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '1' }); await settle();
+  assert.match(feed.state.sends[0], /## Publication \(procédure du projet\)\ngit push origin main/);
+  assert.match(feed.state.sends[0], /demande mon accord avant de publier/);
+  await api('projects/' + project.id, 'PATCH', { context: { ...project.context, autoPublish: true } });
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '2', kind: 'retry' }); await settle();
+  assert.match(feed.state.sends[1], /## Publication \(autorisée par l’utilisateur pour ce projet\)/);
+  assert.match(feed.state.sends[1], /publie-le toi-même en suivant exactement la procédure/);
+});

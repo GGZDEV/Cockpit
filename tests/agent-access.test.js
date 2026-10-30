@@ -111,3 +111,12 @@ test('Tailscale address detection only accepts the 100.64.0.0/10 range', () => {
   assert.equal(tailscaleAddress({ eth: [{ family: 'IPv4', address: '192.168.1.27' }], ts: [{ family: 'IPv4', address: '100.101.102.103' }] }), '100.101.102.103');
   assert.equal(tailscaleAddress({ eth: [{ family: 'IPv4', address: '100.200.1.1' }] }), null);
 });
+
+test('an agent can describe the publishing procedure but never allow automatic publishing', async t => {
+  const { call, projects } = await setup(t);
+  await call('projects', 'POST', { name: 'Pub', repository: 'https://github.com/ggzdev/pub', context: { publishing: 'git push', autoPublish: true } });
+  assert.equal(projects.snapshot().projects[0].context.autoPublish, undefined);
+  assert.equal(projects.snapshot().projects[0].context.publishing, 'git push');
+  await call('projects/PU', 'PATCH', { context: { autoPublish: true } });
+  assert.equal(projects.snapshot().projects[0].context.autoPublish, undefined);
+});

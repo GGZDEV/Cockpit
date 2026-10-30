@@ -152,6 +152,8 @@
 .pj-more>summary{cursor:pointer;font-size:13px;color:var(--ui-text);padding:4px 0}
 .pj-more>summary .muted{color:var(--ui-muted)}
 .pj-more>.pj-form{margin-top:12px}
+.pj-continue{margin-top:14px;padding-top:14px;border-top:1px solid var(--ui-line)}
+.pj-continue label .pj-help{display:inline}
 dialog.pj-drawer{width:min(860px,calc(100vw - 24px));margin:12px 12px 12px auto;max-height:calc(100dvh - 24px);height:calc(100dvh - 24px)}
 .pj-panel{display:flex;flex-direction:column;gap:20px}
 .pj-panel-bar{display:flex;flex-wrap:wrap;align-items:end;gap:12px}

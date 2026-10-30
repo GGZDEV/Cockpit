@@ -4,6 +4,8 @@ const { execFileSync, spawnSync } = require('node:child_process');
 const { buildTablet } = require('./export-tablet');
 const project = path.resolve(__dirname, '..'), config = require('../deploy/config.json');
 const sourceRepo = path.resolve(project, config.sourceRepository);
+// --serveur : publication lancée depuis le serveur OpenClaw, qui héberge le dépôt de déploiement.
+const fromServer = process.argv.includes('--serveur');
 let lastGitStderr = '';
 function git(args, cwd = sourceRepo, ssh = '') {
   const result = spawnSync('git', [...(ssh ? ['-c', 'core.sshCommand=' + ssh] : []), ...args], { cwd, encoding: 'utf8', windowsHide: true, timeout: 300000, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 4 * 1024 * 1024 });
@@ -22,7 +24,7 @@ async function main() {
   if (!/^[a-z0-9-]+$/.test(config.subdirectory) || !/^[a-zA-Z0-9/_-]+$/.test(config.branch)) throw new Error('Configuration de déploiement invalide.');
   const remote = git(['remote', 'get-url', 'origin']), ssh = optional(['config', '--get', 'core.sshCommand']);
   const originalHead = git(['rev-parse', 'HEAD']), originalClean = !git(['status', '--porcelain']), originalBranch = git(['branch', '--show-current']);
-  const build = buildTablet();
+  const build = buildTablet({ keepRuntime: fromServer });
   for (const file of Object.keys(build.files).filter(f => f.endsWith('.js'))) execFileSync(process.execPath, ['--check', path.join(build.target, file)], { windowsHide: true, stdio: 'pipe' });
   console.log(`Publication de Cockpit ${build.version}. L’ancien dashboard garde son adresse.`);
   const deployRoot = path.join(project, '.deploy'); fs.mkdirSync(deployRoot, { recursive: true });

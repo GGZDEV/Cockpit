@@ -8,6 +8,7 @@
     "desktop": "node launch-desktop.js",
     "browser": "node scripts/start-service.js",
     "deploy:tablet": "node scripts/publish-tablet.js",
+    "deploy:tablet:server": "node scripts/publish-tablet.js --serveur",
     "export:tablet": "node scripts/export-tablet.js",
     "agents:openclaw-skill": "node scripts/openclaw-skill.js",
     "test": "node --test tests/*.test.js"

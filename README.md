@@ -64,6 +64,8 @@ Le dashboard original reste disponible sur **http://192.168.1.251:8123/local/mai
 
 Pour publier les prochaines modifications, double-cliquer **publier.cmd**, ou lancer `npm run deploy:tablet`. Le script exporte les fichiers, les vérifie, puis utilise le dépôt et le déploiement Cockpit existants dans une copie de travail isolée. Il publie Cockpit dans son propre sous-dossier, sans remplacer les fichiers de l’interface originale. Chaque fichier servi est ensuite vérifié. Le dernier résultat est conservé dans `.deploy/latest.json`.
 
+Depuis le serveur OpenClaw, qui héberge le dépôt de déploiement (`/home/openclaw/git/homedashboard.git`) : avec un clone de ce dépôt dans le dossier voisin `HomeDashboard`, lancer `npm run deploy:tablet:server`. Même circuit que **publier.cmd**, mais l’adresse du relais n’est pas recalculée : celle du PC enregistrée dans `public/runtime.json` est conservée.
+
 La tablette recherche une nouvelle version toutes les deux minutes et au retour sur la page. Le rechargement attend la fermeture des fenêtres de réglages et la fin de la saisie. Aucun déploiement PC n’est nécessaire pour utiliser la maison sur tablette.
 
 `npm run export:tablet` reste disponible pour générer uniquement les fichiers dans `dist/tablet`.

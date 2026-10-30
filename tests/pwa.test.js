@@ -60,9 +60,18 @@ test('the local server and the tablet export both serve the manifest and icons',
   const icon = await fetch(origin + '/brand/apple-touch-icon.png');
   assert.equal(icon.status, 200); assert.equal(icon.headers.get('content-type'), 'image/png');
 
-  const build = buildTablet();
+  const build = buildTablet({ keepRuntime: true });
   for (const file of ['manifest.json', 'pwa.css', ...manifest.icons.map(i => i.src)]) assert.ok(build.files[file], file);
   const html = fs.readFileSync(path.join(build.target, 'index.html'), 'utf8');
   assert.match(html, new RegExp('pwa.css\\?v=' + build.version));
   assert.match(html, /href="manifest.json"/);
+});
+
+test('publishing from the OpenClaw server keeps the PC relay address instead of the server address', t => {
+  const relay = require('../scripts/relay-runtime'), original = relay.writeRuntime;
+  let calls = 0; relay.writeRuntime = () => { calls++; return {}; };
+  t.after(() => { relay.writeRuntime = original; });
+  buildTablet({ keepRuntime: true }); assert.equal(calls, 0);
+  buildTablet(); assert.equal(calls, 1);
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'publish-tablet.js'), 'utf8'), /buildTablet\(\{ keepRuntime: fromServer \}\)/);
 });

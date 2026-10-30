@@ -158,3 +158,62 @@ test('the real cloner never overwrites an existing folder', async () => {
   assert.deepEqual(calls.at(-1), ['-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', 'clone', '--', GH('neuf') + '.git', path.join(root, 'neuf')]);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+// Passerelle simulée qui crée (ou non) l'agent demandé quand son agent principal reçoit le message.
+async function agentGateway(t, { create }) {
+  const catalog = [{ id: 'main', name: 'Home' }], messages = [];
+  const server = http.createServer(async (req, res) => {
+    const send = (s, v) => { res.writeHead(s, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(v)); };
+    let body = ''; for await (const c of req) body += c;
+    if (req.url === '/api/agents/') return send(200, { connections: [{ id: 'c1', name: 'OpenClaw', kind: 'openclaw', gateway: { state: 'connected' }, catalog: { agents: [...catalog] } }] });
+    if (req.url === '/api/agents/connections/c1/agents') return send(200, { defaultId: 'main', agents: catalog });
+    if (req.url === '/api/agents/conversations' && req.method === 'POST') return send(200, { id: 'conv1', agent: JSON.parse(body).agentId });
+    if (req.url === '/api/agents/conversations/conv1/messages') {
+      const text = JSON.parse(body).text; messages.push(text);
+      const id = /identifiant exact « ([^»]+) »/.exec(text)[1];
+      if (create) catalog.push({ id, name: 'Agent ' + id });
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write('event: start\ndata: {}\n\n');
+      res.end('event: replace\ndata: ' + JSON.stringify({ text: create ? 'Agent créé.\nSTATUT: TERMINÉ' : 'Commande openclaw introuvable.\nSTATUT: ÉCHEC' }) + '\n\nevent: done\ndata: {}\n\n');
+      return;
+    }
+    send(404, { error: 'introuvable' });
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-req-'));
+  const projects = createProjects({ dataDir: dir, discover: async () => 'http://127.0.0.1:' + server.address().port, reconcileEvery: 3600000, workspaces: fakeWorkspaces(dir) });
+  t.after(() => { projects.close(); server.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  const json = (r, s, v) => { r.status = s; r.body = v; r.done(); };
+  const ui = async (route, method = 'GET', body) => {
+    const res = {}; const finished = new Promise(r => { res.done = r; });
+    const data = body ? Buffer.from(JSON.stringify(body)) : null;
+    projects.handle({ method, headers: {}, async *[Symbol.asyncIterator]() { if (data) yield data; } }, res, new URL('http://localhost/api/projects/' + route), json);
+    await finished; return res;
+  };
+  return { ui, projects, messages };
+}
+
+test('the user can ask OpenClaw to create the project agent; Cockpit links it once it exists', async t => {
+  const { ui, projects, messages } = await agentGateway(t, { create: true });
+  const project = (await ui('projects', 'POST', { name: 'Site Vitrine', description: 'Vitrine', context: { objective: 'Vendre', repository: GH('vitrine') } })).body;
+  const asked = await ui('projects/' + project.id + '/agent-request', 'POST', {});
+  assert.equal(asked.status, 202); assert.equal(asked.body.agentRequest.status, 'pending'); assert.equal(asked.body.agentRequest.agentId, 'site-vitrine');
+  assert.equal((await ui('projects/' + project.id + '/agent-request', 'POST', {})).status, 409, 'no duplicate request while pending');
+  await settle(); await settle();
+  const saved = projects.snapshot().projects[0];
+  assert.deepEqual(saved.agent, { connectionId: 'c1', agentId: 'site-vitrine', name: 'Agent site-vitrine' });
+  assert.equal(saved.agentRequest.status, 'done');
+  assert.match(messages[0], /Objectif : Vendre/); assert.match(messages[0], /Dépôt : https:\/\/github\.com\/ggzdev\/vitrine/); assert.match(messages[0], /ne crée pas de projet dans Cockpit/);
+  assert.equal((await ui('tasks', 'POST', { projectId: project.id, title: 'Accueil' })).body.agent.agentId, 'site-vitrine');
+  assert.equal((await ui('projects/' + project.id + '/agent-request', 'POST', {})).status, 409, 'already has an agent');
+});
+
+test('a refused agent creation is shown with the reason given by OpenClaw', async t => {
+  const { ui, projects } = await agentGateway(t, { create: false });
+  const project = (await ui('projects', 'POST', { name: 'Perso' })).body;
+  await ui('projects/' + project.id + '/agent-request', 'POST', {});
+  await settle(); await settle();
+  const request = projects.snapshot().projects[0].agentRequest;
+  assert.equal(request.status, 'failed'); assert.match(request.error, /Commande openclaw introuvable/);
+  assert.equal(projects.snapshot().projects[0].agent ?? null, null);
+});

@@ -366,8 +366,88 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       }
     }
   }
+  // ----- Agent dédié à un projet ---------------------------------------------------------
+  // Sur clic de l'utilisateur uniquement : Cockpit demande à l'agent principal d'OpenClaw de créer l'agent du projet,
+  // puis l'associe au projet dès qu'il apparaît dans le catalogue de la passerelle. Cockpit ne crée aucun agent lui-même.
+  const AGENT_WAIT = 30 * 60000;
+  const slug = value => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projet';
+  function agentRequestText(project, agentId) {
+    const c = project.context || {}, lines = [
+      `Bonjour, c'est Cockpit, à la demande de l'utilisateur (clic sur « Créer l'agent OpenClaw » du projet ${project.key}).`,
+      `Crée un agent OpenClaw dédié à ce projet, avec l'identifiant exact « ${agentId} », en utilisant les commandes OpenClaw dont tu disposes (vérifie leur syntaxe avec openclaw agents --help). Donne-lui son propre espace de travail.`,
+      'Dans cet espace, écris le contexte ci-dessous dans AGENTS.md' + (c.repository ? ' et clone le dépôt du projet' : '') + '.',
+      'Règles : aucun secret (clé, jeton, mot de passe) dans ce contexte ; ne crée pas de projet dans Cockpit (il existe déjà, Cockpit associera l’agent tout seul) ; ne crée ni ne modifie aucun dépôt.',
+      '', `## Projet ${project.key} — ${project.name}`];
+    if (project.description) lines.push(project.description);
+    if (c.objective) lines.push('', 'Objectif : ' + c.objective);
+    if (c.instructions) lines.push('', 'Instructions générales :', c.instructions);
+    if (c.repository) lines.push('', 'Dépôt : ' + c.repository);
+    if (c.environment) lines.push('Environnement : ' + c.environment);
+    if (c.resources) lines.push('', 'Ressources :', c.resources);
+    if (c.links?.length) lines.push('', 'Liens :', ...c.links.map(l => '- ' + (l.label ? l.label + ' : ' : '') + l.url));
+    lines.push('', 'Termine ta réponse par une ligne seule : STATUT: TERMINÉ si l’agent existe, ou STATUT: ÉCHEC avec la raison au-dessus.');
+    return lines.join('\n').slice(0, 30000);
+  }
+  // Envoie un message dans une conversation Cockpit et attend la réponse complète.
+  async function converse(conversationId, message) {
+    const response = await feedme('agents/conversations/' + encodeURIComponent(conversationId) + '/messages', { method: 'POST', raw: true, body: JSON.stringify({ text: message }), signal: AbortSignal.timeout(AGENT_WAIT) });
+    if (!response.ok || !response.headers.get('content-type')?.includes('text/event-stream')) { const body = await response.json().catch(() => ({})); throw new HttpError(502, body.error || 'Cockpit a refusé la demande.'); }
+    const decoder = new TextDecoder(); let buffer = '', reply = '';
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true }); let index;
+      while ((index = buffer.indexOf('\n\n')) >= 0) {
+        const block = buffer.slice(0, index); buffer = buffer.slice(index + 2);
+        const name = /^event: (.+)$/m.exec(block)?.[1]; let payload = {}; try { payload = JSON.parse(/^data: (.*)$/m.exec(block)?.[1] || '{}'); } catch { continue; }
+        if (name === 'replace') reply = payload.text || ''; else if (name === 'delta') reply += payload.text || '';
+        else if (name === 'error') throw new HttpError(502, payload.message || 'L’agent n’a pas pu répondre.');
+      }
+    }
+    return reply;
+  }
+  async function linkRequestedAgent(project) {
+    const request = project.agentRequest; if (request?.status !== 'pending') return false;
+    const found = (await agents({ fresh: true })).find(a => a.connectionId === request.connectionId && a.agentId === request.agentId);
+    if (!found) return false;
+    project.agent = { connectionId: found.connectionId, agentId: found.agentId, name: found.name };
+    Object.assign(request, { status: 'done', endedAt: now(), error: '' }); project.updatedAt = now(); save(); return true;
+  }
+  async function requestAgent(pid) {
+    const project = findProject(pid);
+    if (project.agent) throw new HttpError(409, 'Ce projet a déjà un agent : ' + project.agent.name + '.');
+    if (project.agentRequest?.status === 'pending') throw new HttpError(409, 'La création de l’agent est déjà demandée : attendez la réponse d’OpenClaw.');
+    const overview = await feedme('agents/');
+    const connection = (overview.connections || []).find(c => c.kind === 'openclaw' && c.gateway?.state === 'connected');
+    if (!connection) throw new HttpError(409, 'Aucune passerelle OpenClaw connectée : rien n’a été demandé.');
+    const catalog = await feedme('agents/connections/' + encodeURIComponent(connection.id) + '/agents');
+    const known = new Set((catalog.agents || []).map(a => a.id));
+    const main = known.has(catalog.defaultId) ? catalog.defaultId : known.has('main') ? 'main' : catalog.agents?.[0]?.id;
+    if (!main) throw new HttpError(409, 'La passerelle OpenClaw ne présente aucun agent capable de traiter la demande.');
+    let agentId = slug(project.name), n = 2;
+    while (known.has(agentId)) agentId = slug(project.name).slice(0, 36) + '-' + n++;
+    const conversation = await feedme('agents/conversations', { method: 'POST', body: JSON.stringify({ connectionId: connection.id, agentId: main }) });
+    const request = { status: 'pending', agentId, connectionId: connection.id, via: (catalog.agents.find(a => a.id === main)?.name || main), conversationId: conversation.id, at: now() };
+    project.agentRequest = request; save();
+    converse(conversation.id, agentRequestText(project, agentId))
+      .then(async reply => {
+        // Le projet a pu être modifié entre-temps : on relit la version enregistrée.
+        if (await linkRequestedAgent(store.projects.find(x => x.id === project.id) || project).catch(() => false)) return;
+        if (/STATUT\s*:\s*[ÉE]CHEC/i.test(reply)) Object.assign(request, { status: 'failed', endedAt: now(), error: text(reply.replace(MARKER, ''), 600) || 'OpenClaw signale un échec.' });
+        else request.reply = text(reply, 600); // en attente : l'agent apparaîtra peut-être un peu plus tard
+        save();
+      }, error => { if (request.status === 'pending') { Object.assign(request, { status: 'failed', endedAt: now(), error: text(error.message, 400) }); save(); } });
+    return project;
+  }
+  // Demandes en attente (y compris après un redémarrage) : association dès que l'agent apparaît, abandon après 30 min.
+  async function checkAgentRequests() {
+    for (const project of store.projects) {
+      const request = project.agentRequest; if (request?.status !== 'pending') continue;
+      if (await linkRequestedAgent(project).catch(() => false)) continue;
+      if (Date.now() - Date.parse(request.at) > AGENT_WAIT) { Object.assign(request, { status: 'failed', endedAt: now(), error: request.reply || 'L’agent « ' + request.agentId + ' » n’est pas apparu sur la passerelle OpenClaw dans les 30 minutes.' }); save(); }
+    }
+  }
+
   let reconciling = false;
-  const timer = setInterval(() => { if (reconciling) return; reconciling = true; reconcile().catch(() => {}).finally(() => { reconciling = false; }); }, reconcileEvery);
+  const timer = setInterval(() => { if (reconciling) return; reconciling = true; Promise.all([reconcile(), checkAgentRequests()]).catch(() => {}).finally(() => { reconciling = false; }); }, reconcileEvery);
   timer.unref?.();
   // Au démarrage, aucune exécution n'est suivie en direct : toutes passent par la relecture.
   for (const task of store.tasks) for (const run of task.runs) if (OPEN_RUN.includes(run.status)) run.tracking = 'recovering';
@@ -408,6 +488,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const tasks = store.tasks.filter(t => t.projectId === p.id), count = s => tasks.filter(t => t.status === s).length;
     return { id: p.id, key: p.key, name: p.name, status: p.status, priority: p.priority, due: p.due || '', description: p.description || '', archived: !!p.archived, context: p.context || {},
       agent: p.agent ? p.agent.agentId + ' (' + p.agent.name + ')' : null,
+      ...(p.agentRequest && !p.agent ? { agentRequest: { status: p.agentRequest.status, agentId: p.agentRequest.agentId, ...(p.agentRequest.error ? { error: p.agentRequest.error } : {}) } } : {}),
       localFolder: p.workspace ? { status: p.workspace.status, path: p.workspace.path, ...(p.workspace.error ? { error: p.workspace.error } : {}) } : null,
       tasks: { total: tasks.length, todo: count('todo'), doing: count('doing'), blocked: count('blocked'), review: count('review'), done: count('done') }, createdBy: p.createdBy || '' };
   }
@@ -535,6 +616,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         case 'POST projects': return json(res, 200, createProject(body));
         case 'PATCH projects/:id': return json(res, 200, updateProject(a, body));
         case 'POST projects/:id/clone': return json(res, 200, retryWorkspace(findProject(a)));
+        case 'POST projects/:id/agent-request': return json(res, 202, await requestAgent(a));
         case 'POST tasks': return json(res, 200, createTask(body));
         case 'PATCH tasks/:id': return json(res, 200, updateTask(a, body));
         case 'DELETE tasks/:id': deleteTask(a); return json(res, 200, { ok: true });
@@ -550,7 +632,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   const allowedRoute = (method, pathname) => /^\/api\/projects\/(state|agents)$/.test(pathname) ? method === 'GET'
     : /^\/api\/projects\/(projects|tasks)$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/projects\/[\w-]+$/.test(pathname) ? method === 'PATCH'
-    : /^\/api\/projects\/projects\/[\w-]+\/clone$/.test(pathname) ? method === 'POST'
+    : /^\/api\/projects\/projects\/[\w-]+\/(clone|agent-request)$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/tasks\/[\w-]+\/attachments$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/tasks\/[\w-]+\/attachments\/[\w-]+$/.test(pathname) ? ['GET', 'DELETE'].includes(method)
     : /^\/api\/projects\/tasks\/[\w-]+$/.test(pathname) ? ['PATCH', 'DELETE'].includes(method)
@@ -577,7 +659,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       return json(res, error.status || 500, { error: known ? error.message : 'Une erreur est survenue.' });
     }
   }
-  return { handle, agentHandle, allowedRoute, close, reconcile, snapshot, brief, finalize: (tid, rid, content) => { const t = findTask(tid); finalize(t, t.runs.find(r => r.id === rid), content); } };
+  return { handle, agentHandle, allowedRoute, close, reconcile, checkAgentRequests, snapshot, brief, finalize: (tid, rid, content) => { const t = findTask(tid); finalize(t, t.runs.find(r => r.id === rid), content); } };
 }
 
 module.exports = { createProjects, projectKey, CAPABILITIES };

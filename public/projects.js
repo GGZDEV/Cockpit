@@ -140,7 +140,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const project = st.project !== 'all' && st.projects.find(p => p.id === st.project);
     const context = project ? `<section class="pj-context" aria-label="Contexte du projet">
         <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : '<p class="muted">Aucun objectif renseigné : ajoutez le contexte que les agents recevront.</p>'}
-        ${project.agent ? `<p class="muted"><b>Agent du projet :</b> ${esc(project.agent.name)}</p>` : ''}
+        ${agentLine(project)}
         ${workspaceHTML(project)}</div>
         <button class="button" data-pj="edit-project" data-id="${esc(project.id)}">${icon('edit')} Projet et contexte</button></section>` : '';
     return `${context}<div class="pj-board-scroll"><div class="pj-board">${COLUMNS.map(col => {
@@ -198,6 +198,13 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       ${error}${body}</div>`;
   }
 
+  function agentLine(p) {
+    const r = p.agentRequest;
+    if (p.agent) return `<p class="muted"><b>Agent du projet :</b> ${esc(p.agent.name)}</p>`;
+    if (r?.status === 'pending') return `<p class="pj-repo"><span class="pj-ws s-cloning">Agent « ${esc(r.agentId)} » demandé à ${esc(r.via || 'OpenClaw')}…</span><span class="pj-help">Il sera associé au projet dès qu’il apparaît.</span></p>`;
+    return `<p class="pj-repo">${r?.status === 'failed' ? `<span class="pj-ws s-failed">Agent non créé</span><span class="pj-help is-bad">${esc(r.error || '')}</span>` : '<span class="pj-help">Aucun agent dédié.</span>'}
+      <button class="button" type="button" data-pj="request-agent" data-id="${esc(p.id)}">${icon('plus')} ${r?.status === 'failed' ? 'Redemander l’agent' : 'Créer l’agent OpenClaw'}</button></p>`;
+  }
   function workspaceHTML(p) {
     const repo = p.context?.repository, w = p.workspace;
     if (!repo) return '';
@@ -297,7 +304,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="3">${esc(linksText(c.links))}</textarea></label>
       <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label><label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label></div>
       <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
-      ${p.id ? workspaceHTML(p) : ''}
+      ${p.id ? agentLine(p) + workspaceHTML(p) : ''}
       <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
@@ -427,6 +434,15 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'launch': await launch(idv, undefined, '', el); break;
         case 'accept': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Résultat accepté : tâche terminée.'); render(); updatePanel(); break; }
         case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
+        case 'request-agent': {
+          const p = st.projects.find(x => x.id === idv); if (!p) break;
+          if (!confirm(`Demander à OpenClaw de créer un agent dédié à « ${p.name} » ?
+
+Son agent principal recevra le contexte du projet (objectif, consignes, dépôt) et créera l’agent avec son propre espace de travail. Cockpit l’associera au projet dès qu’il apparaît.`)) break;
+          el.disabled = true;
+          const saved = await api('projects/' + idv + '/agent-request', 'POST', {}); const i = st.projects.findIndex(x => x.id === saved.id); if (i >= 0) st.projects[i] = saved;
+          toast('Demande envoyée à OpenClaw. L’agent sera associé au projet dès qu’il apparaît.'); render(); if (modal.open && modal.querySelector('[data-pj-form=project]')) modal.close(); break;
+        }
         case 'open-attachment': await openAttachment(idv, el.dataset.att, el.dataset.name); break;
         case 'delete-attachment': { const t = st.tasks.find(t => t.id === idv), a = t?.attachments?.find(a => a.id === el.dataset.att); if (!a || !confirm(`Retirer « ${a.name} » de la tâche ?`)) break; const saved = await api('tasks/' + idv + '/attachments/' + a.id, 'DELETE'); upsert(saved); refreshAttachments(saved); break; }
         case 'drop-file': { const form = el.closest('form'); (pending.get(form) || []).splice(Number(idv), 1); form.querySelector('.pj-pending').innerHTML = pendingHTML(form); break; }

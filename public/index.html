@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0a0a0a"><meta name="description" content="Votre maison, votre veille et vos agents. Un espace à composer.">
+  <title>Cockpit — votre espace, connecté.</title>
+  <script src="boot-guard.js"></script>
+  <link rel="icon" href="mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Geist+Mono:wght@400;500&family=Outfit:wght@500;600;700&family=Unbounded:wght@500;700&family=Syne:wght@600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&family=DM+Serif+Display&family=Cormorant+Garamond:wght@600;700&family=Comfortaa:wght@600;700&family=Orbitron:wght@500;700&family=Righteous&family=Dancing+Script:wght@600;700&display=swap">
+  <link id="native-design" rel="stylesheet" href="design/feedme.css">
+  <link rel="stylesheet" href="design/agents.css"><link rel="stylesheet" href="design/ai-usage.css"><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="module-settings.css"><link rel="stylesheet" href="brand.css"><link rel="stylesheet" href="projects.css"><link rel="stylesheet" href="themes.css">
+</head>
+<body>
+  <aside id="boot-recovery" hidden style="position:fixed;z-index:99999;inset:20px;max-width:620px;max-height:440px;margin:auto;padding:28px;border:1px solid #888;border-radius:16px;background:#252328;color:#fff;font:15px/1.6 Arial,sans-serif;overflow:auto;box-sizing:border-box">
+    <h1 style="font-size:22px">Cockpit n’a pas pu démarrer</h1><p id="boot-error" style="margin:16px 0;overflow-wrap:anywhere"></p>
+    <button id="boot-reload" style="padding:12px 18px;border:0;border-radius:8px;cursor:pointer">Recharger la dernière version</button>
+    <details style="margin-top:16px"><summary>Informations du navigateur</summary><p id="boot-browser" style="overflow-wrap:anywhere"></p></details>
+  </aside>
+  <div id="app"><p class="boot-status" role="status">Chargement de Cockpit…</p></div><dialog id="modal"></dialog><div id="toast" role="status" aria-live="polite"></div>
+  <script src="updates.js"></script><script src="vendor/ha.js"></script><script src="vendor/auth.js"></script>
+  <script src="vendor/home-icons.js"></script><script src="vendor/home-model.js"></script><script src="vendor/home-modules.js"></script>
+  <script src="vendor/home-morph.js"></script><script src="startup.js"></script>
+</body>
+</html>

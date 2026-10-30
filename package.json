@@ -1,0 +1,16 @@
+{
+  "name": "cockpit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Un espace commun pour la maison, la veille et les agents.",
+  "scripts": {
+    "start": "node server.js",
+    "desktop": "node launch-desktop.js",
+    "browser": "node scripts/start-service.js",
+    "deploy:tablet": "node scripts/publish-tablet.js",
+    "export:tablet": "node scripts/export-tablet.js",
+    "agents:openclaw-skill": "node scripts/openclaw-skill.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "productName": "Cockpit"
+}

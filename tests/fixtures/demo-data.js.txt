@@ -1,0 +1,35 @@
+import { read, write } from './core.js';
+const at = (hour, day = 0) => { const d = new Date(); d.setDate(d.getDate() + day); d.setHours(hour, 0, 0, 0); return d.toISOString(); };
+const entity = (entity_id, state, friendly_name, more = {}) => ({ entity_id, state, attributes: { friendly_name, ...more } });
+export const demoStates = [
+  entity('light.salon', 'on', 'Salon', { brightness: 178, supported_color_modes:['brightness'] }), entity('light.cuisine', 'on', 'Cuisine', { brightness: 230, supported_color_modes:['brightness'] }), entity('light.chambre', 'off', 'Chambre'), entity('light.entree', 'off', 'Entrée'),
+  entity('sensor.salon_temperature', '21.4', 'Salon', { device_class: 'temperature', unit_of_measurement: '°C' }), entity('sensor.chambre_temperature', '19.8', 'Chambre', { device_class: 'temperature', unit_of_measurement: '°C' }), entity('sensor.cuisine_temperature', '21.1', 'Cuisine', { device_class: 'temperature', unit_of_measurement: '°C' }),
+  entity('sensor.maison_power', '428', 'Puissance maison', { device_class: 'power', unit_of_measurement: 'W' }), entity('sensor.maison_energy', '6.8', 'Consommation du jour', { device_class: 'energy', unit_of_measurement: 'kWh' }),
+  entity('climate.salon', 'heat', 'Chauffage salon', { current_temperature: 21.4, temperature: 21, hvac_modes: ['off', 'heat', 'auto'] }),
+  entity('scene.soiree', 'scening', 'Soirée tranquille'), entity('scene.depart', 'scening', 'Je pars'), entity('scene.cinema', 'scening', 'Cinéma'),
+  entity('weather.maison', 'partlycloudy', 'Maison', { temperature: 17, humidity: 64, wind_speed: 12 }),
+  entity('sensor.proxmox_cpu', '12', 'Proxmox CPU', { unit_of_measurement: '%' }), entity('sensor.proxmox_memory', '43', 'Proxmox mémoire', { unit_of_measurement: '%' }),
+  entity('update.home_assistant', 'on', 'Home Assistant Core', { installed_version: 'Version actuelle', latest_version: 'Nouvelle version' }), entity('update.hacs', 'off', 'HACS', { installed_version: 'À jour' }),
+  entity('sensor.rer_d', '6', 'RER D · Paris', { unit_of_measurement: 'min' }),
+  entity('switch.bureau', 'off', 'Prise du bureau'), entity('fan.salon', 'off', 'Ventilateur salon'),
+  entity('automation.lumieres', 'on', 'Lumières au coucher du soleil'), entity('script.depart', 'off', 'Préparer le départ'),
+  entity('sensor.vm_services_cpu', '8', 'VM Services · CPU', { unit_of_measurement: '%' }), entity('binary_sensor.lxc_medias', 'on', 'Conteneur médias'),
+];
+export function demoData() {
+  return {
+    articles: [
+      { id: 'd1', title: 'Les agents personnels trouvent leur place dans nos outils du quotidien', source: 'Journal du numérique', category: 'Intelligence artificielle', description: 'De la veille aux tâches courantes, une nouvelle manière de travailler prend forme.', pubDate: at(9), link: '', demo: true },
+      { id: 'd2', title: 'Une maison connectée qui s’adapte à vos habitudes', source: 'Maison & technologie', category: 'Domotique', description: 'Scènes, capteurs et automatisations : rendre la technologie plus discrète.', pubDate: at(8), link: '', demo: true },
+      { id: 'd3', title: 'Pourquoi nous revenons aux espaces numériques que l’on peut composer', source: 'Le carnet du web', category: 'Design', description: 'Moins d’applications ouvertes, davantage de contexte à portée de main.', pubDate: at(7), link: '', demo: true },
+      { id: 'd4', title: 'Le plaisir de garder ses données près de soi', source: 'Indépendants', category: 'Self-hosting', description: 'Un serveur personnel comme point de rencontre de ses outils.', pubDate: at(6), link: '', demo: true },
+    ],
+    metrics: { cpu: { usagePercent: 23, speedGhz: 4.2, cores: 12 }, memory: { usedPercent: 46, used: 15e9, total: 32e9 }, gpu: { usagePercent: 8, vramPercent:18, model:'RX 6900 XT', vramUsed:2.9*1073741824, vramTotal:16*1073741824 }, disks:[{name:'C:',usedPercent:65}] },
+    spotify: { connected: true, playing: true, progressMs: 78000, device: { name: 'Enceinte du salon', volume: 36 }, track: { title: 'A Walk', artist: 'Tycho', album: 'Dive', durationMs: 316000 } },
+    calendar: { events: [{ id: 'e1', title: 'Point sur les projets', start: at(14), end: at(15), calendar: 'Personnel' }, { id: 'e2', title: 'Un peu de temps pour soi', start: at(18), end: at(19), calendar: 'Personnel' }, { id: 'e3', title: 'Déjeuner en ville', start: at(12, 1), end: at(13, 1), calendar: 'Personnel' }] },
+    todos: [{ id: 't1', title: 'Tester le dashboard sur la tablette', done: false }, { id: 't2', title: 'Faire une pause, pour de vrai', done: false }, { id: 't3', title: 'Rassembler les deux univers', done: true }],
+    boards: [{ id: 'b1', name: 'À explorer', items: [{ title: 'Un espace numérique à soi' }, { title: 'Interfaces calmes' }] }, { id: 'b2', name: 'Idées pour la maison', items: [{ title: 'Ambiances lumineuses' }] }],
+    agents: { connections: [], conversations: [], contacts: [{ agentId: 'atlas', name: 'Atlas', preview: 'Ta veille est prête. Voici les sujets à retenir.', unread: 2 }, { agentId: 'maison', name: 'Maison', preview: 'Tout est calme à la maison.', unread: 0 }] },
+    quotas: { sources: [{ label: 'Mon abonnement', providers: [{ name: 'Assistant', windows: [{ label: 'Session', remainingPercent: 78 }, { label: 'Semaine', remainingPercent: 62 }] }] }] },
+    states: JSON.parse(JSON.stringify(demoStates)), rooms: [{ id:'salon', name: 'Salon', temp: 21.4, lights: 1, ids:['light.salon','sensor.salon_temperature','climate.salon','fan.salon','scene.soiree','scene.cinema'] }, { id:'cuisine', name: 'Cuisine', temp: 21.1, lights: 1, ids:['light.cuisine','sensor.cuisine_temperature'] }, { id:'chambre', name: 'Chambre', temp: 19.8, lights: 0, ids:['light.chambre','sensor.chambre_temperature'] }],
+  };
+}

@@ -1,0 +1,7 @@
+@font-face{font-family:Cockpit;src:url("brand/chakra-petch-bold.woff2") format("woff2");font-weight:700;font-style:normal;font-display:swap}
+.cockpit-wordmark{display:inline-flex;align-items:baseline;font-family:Cockpit,sans-serif!important;font-weight:700;font-size:inherit;line-height:1;letter-spacing:-.03em;color:var(--text-strong,var(--ui-text,#f5f5f5));white-space:nowrap}
+.cockpit-wordmark>span{color:inherit!important}
+.cockpit-wordmark>svg{display:inline-block;width:.592em;height:.498em;margin-right:-.03em;flex:none;overflow:visible}
+.brand:has(.cockpit-wordmark){font-size:32px;line-height:1.1;letter-spacing:normal}
+.cockpit-rail-brand{display:flex;align-items:center;justify-content:center;flex:none;width:42px;height:42px;margin:2px auto 12px;color:var(--ui-text,#f5f5f5)}
+.cockpit-rail-brand>svg{width:30px;height:26px}

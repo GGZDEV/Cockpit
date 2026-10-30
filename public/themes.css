@@ -1,0 +1,36 @@
+/* Skins only: no grid, size, order, spacing or navigation changes here. */
+body[data-theme="feedme"]{
+  --bg:#0c0c0d;--field:#101011;--surface-1:#151516;--surface-2:#1a1a1c;--surface-3:#232325;
+  --card:#141415;--card-hover:#18181a;--border:#1f1f21;--border-strong:#2a2a2d;--divider:#1c1c1e;
+  --text:#ededed;--text-strong:#f4f4f5;--text-dim:#9a9a9f;--text-faint:#85858a;--text-label:#a3a3a8;
+  --accent:#3dd68c;--primary:#ededed;--primary-ink:#0c0c0d;--brand:#ff5a5f;--unread:#4f8cff;
+  --warn:#f5b83d;--danger:#ff5a5f;--ok:#3dd68c;--spotify:#1db954;--spotify-rgb:29,185,84;
+  --fg:var(--text);--fg-muted:var(--text-dim);--ink:#0c0c0d;--solid:#ededed;
+  --glass-card:#101011;--glass-hover:#1a1a1c;--glass-chip:#1a1a1c;--glass-sel:#232325;
+  --hairline:#2a2a2d;--card-bg:#141415;--card-border:#1f1f21;--well:#101011;--warm:#f5b83d;--sky:#8ec5ff;
+  --font:Inter,'Segoe UI',system-ui,sans-serif;--mono:'Geist Mono',ui-monospace,Consolas,monospace;
+  --ui-text:var(--text);--ui-muted:var(--text-dim);--ui-bg:var(--card);--ui-field:var(--field);--ui-line:var(--border);--ui-hover:var(--surface-2);--ui-modal:#151516;
+  background:#0c0c0d;color:var(--text);font-family:var(--font);
+}
+body[data-theme="home"]{
+  --bg:#3d3946;--fg:#f6f1ec;--fg-muted:rgba(246,241,236,.7);--ink:#2b2530;--solid:rgba(255,255,255,.92);
+  --glass-card:rgba(255,255,255,.10);--glass-hover:rgba(255,255,255,.18);--glass-chip:rgba(255,255,255,.14);--glass-sel:rgba(255,255,255,.22);
+  --hairline:rgba(255,255,255,.12);--card-bg:rgba(255,255,255,.075);--card-border:rgba(255,255,255,.10);--well:rgba(0,0,0,.14);
+  --accent:#f5c542;--primary:var(--accent);--primary-ink:var(--ink);--warm:#ffb08a;--sky:#8ec5ff;--ok:#6fd08c;--warn:#ffb86b;--danger:#ff5a5f;--brand:#ff5a5f;--unread:#8ec5ff;--spotify:#1db954;--spotify-rgb:29,185,84;
+  --text:var(--fg);--text-strong:var(--fg);--text-dim:var(--fg-muted);--text-faint:var(--fg-muted);--text-label:var(--fg-muted);
+  --field:var(--well);--surface-1:var(--glass-card);--surface-2:var(--glass-hover);--surface-3:var(--glass-sel);--card:var(--card-bg);--card-hover:var(--glass-hover);
+  --border:var(--hairline);--border-strong:rgba(255,255,255,.22);--divider:var(--hairline);
+  --font:Inter,system-ui,sans-serif;--mono:'JetBrains Mono',ui-monospace,monospace;
+  --ui-text:var(--fg);--ui-muted:var(--fg-muted);--ui-bg:var(--card-bg);--ui-field:var(--well);--ui-line:var(--hairline);--ui-hover:var(--glass-hover);--ui-modal:rgba(58,50,54,.96);
+  background:#3d3946 linear-gradient(160deg,#7d6553 0%,#5e5049 38%,#4a4351 72%,#3d3946 100%) fixed;color:var(--fg);font-family:var(--font);
+}
+body[data-theme="feedme"] .rail{background:#0d0d0d;border-color:var(--border)}
+body[data-theme="feedme"] .rail-btn{color:var(--text-dim)}
+body[data-theme="feedme"] .rail-btn.is-on,body[data-theme="feedme"] .rail-btn:hover{background:var(--surface-3);color:var(--text-strong)}
+body[data-theme="feedme"] .card,body[data-theme="feedme"] .mod{backdrop-filter:none;-webkit-backdrop-filter:none}
+body[data-theme="feedme"] .hitem{color:var(--text-strong)}
+body[data-theme="feedme"] .hitem.has-color{color:var(--hc)}
+body[data-theme="home"] .widget,body[data-theme="home"] .feed-header{backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px)}
+body[data-theme="home"] .icon-btn{background:var(--glass-card);border-color:var(--hairline);color:var(--fg)}
+body[data-theme="home"] .workspace-tabs{background:var(--well);border-color:var(--hairline)}
+body[data-theme="home"] .workspace-tabs button.active{background:var(--glass-sel);color:var(--fg)}

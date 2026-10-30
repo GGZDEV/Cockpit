@@ -1,0 +1,49 @@
+html,body{margin:0!important;padding:0!important;width:100%;min-width:0;height:auto;min-height:0;background:transparent!important;overflow-x:hidden;border:0;border-radius:0}
+/* Match the host canvas scheme: Chromium otherwise paints transparent frames white. */
+html{color-scheme:dark}
+.sp-device-toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:10px}.sp-device-error{color:var(--warn);font-size:12px;line-height:1.5;margin:8px 0}
+html[data-theme="feedme"]{background:#141415!important}
+body>.feed-header,body>.workspace-tabs,.side-peek,.resize-handle{display:none!important}
+#dashboard{padding:0!important;margin:0!important;display:block;overflow:visible}
+#dashboard[hidden]{display:none!important}
+#dashboard>.widget{margin:0!important;border:0!important;background:transparent!important;box-shadow:none!important;border-radius:0!important}
+#dashboard>.widget{backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+#dashboard .widget-remove,#dashboard .widget-grip{display:none!important}
+.agent-space{margin:0;padding:0;min-height:560px}
+body[data-theme="home"] .widget-head{background:transparent}
+
+body{display:block!important;overflow-y:auto!important}#dashboard{max-height:none!important;flex:none!important} .widget-body{max-height:none}.modal-overlay.open,.sheet-overlay.open{position:fixed}
+
+body>header{display:none!important}
+
+body[data-widget="settings"] #dashboard{display:none!important}body[data-widget="settings"] #settings-panel{position:static;display:block!important;background:transparent;backdrop-filter:none;padding:0}body[data-widget="settings"] #settings-panel>.sheet{max-height:none;height:auto;margin:0;width:100%;border:0;border-radius:0;box-shadow:none;background:transparent}body[data-widget="settings"] #settings-panel .sheet-head,body[data-widget="settings"] #settings-panel .sheet-handle{display:none}
+body[data-widget="settings"] #settings-panel>.sheet{position:static;inset:auto;transform:none!important;max-width:none;padding:12px 16px 22px}
+body.embedded-dialog-open{height:100vh!important;overflow:hidden!important}
+body.embedded-dialog-open #dashboard,body.embedded-dialog-open #agent-space{visibility:hidden;position:absolute!important;pointer-events:none}
+body.embedded-dialog-open .sheet-overlay.open,body.embedded-dialog-open .modal-overlay.open{display:flex;align-items:center;justify-content:center;background:var(--ui-modal);backdrop-filter:none;padding:0}
+body.embedded-dialog-open .sheet-overlay.open>.sheet{position:relative;inset:auto;transform:none!important;width:100%;max-width:none;max-height:100vh;box-sizing:border-box;border:0;border-radius:0;box-shadow:none;background:transparent}
+/* Keep every RSS control in flow, including in narrow dashboard frames. */
+.widget[data-type="rss"] .widget-head{height:auto;min-height:40px;box-sizing:border-box}
+.rss-controls{flex-wrap:wrap;gap:8px}
+.rss-search{flex:1 1 170px;box-sizing:border-box}
+.rss-search>.ic,.rss-search .kbd,.rss-search-clear{flex-shrink:0}
+.rss-tools{gap:0;margin-left:auto}
+.rss-tools .widget-btn{flex-shrink:0;width:28px;height:28px}
+.article-foot{flex-wrap:wrap;row-gap:6px}
+.article-actions{display:flex;align-items:center;gap:4px;margin-left:auto;flex-shrink:0}
+.article-foot .action-btn{flex-shrink:0}
+.widget[data-type="rss"] .article-title{display:block;overflow:visible;-webkit-line-clamp:unset}
+.widget[data-type="rss"] .widget-tools:empty{display:none}
+.sp-reauth>span{flex:1;min-width:0}
+@media(max-width:360px){
+  .widget[data-type="rss"] .widget-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;padding:10px 12px}
+  .widget[data-type="rss"] .widget-name{grid-column:1;grid-row:1}
+  .widget[data-type="rss"] .widget-fold{grid-column:2;grid-row:1}
+  .widget[data-type="rss"] .widget-center{grid-column:1/-1;grid-row:2;position:static;transform:none;margin:0;min-width:0}
+  .widget[data-type="rss"] .widget-tools:empty{display:none}
+  .widget[data-type="rss"] .widget-summary{grid-column:1;grid-row:2}
+  .widget[data-type="rss"] .rss-search{flex-basis:100%}
+  .widget[data-type="rss"] .rss-search .kbd{display:none}
+}
+@media(max-width:380px){.rss-search .kbd{display:none}.sp-top{flex-wrap:wrap}.sp-main{min-width:120px}.sp-controls{margin-left:auto}.usage-account{grid-template-columns:1fr;gap:6px}.usage-window-head{gap:4px}}
+@media(max-width:300px){.sp-reauth{flex-wrap:wrap}.sp-reauth .btn{margin-left:auto}}

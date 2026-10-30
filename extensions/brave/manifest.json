@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "Cockpit Â· mon espace",
+  "version": "0.2.0",
+  "description": "Votre bibliothÃ¨que de modules dans le panneau latÃ©ral de Brave.",
+  "permissions": [
+    "sidePanel"
+  ],
+  "minimum_chrome_version": "116",
+  "host_permissions": [
+    "http://localhost/*",
+    "http://127.0.0.1/*"
+  ],
+  "action": {
+    "default_title": "Ouvrir Cockpit",
+    "default_icon": {
+      "16": "brand/icon-16.png",
+      "32": "brand/icon-32.png",
+      "48": "brand/icon-48.png",
+      "128": "brand/icon-128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "default-src 'self'; script-src 'self'; object-src 'none'; style-src 'self'; img-src 'self'; connect-src http://localhost:* http://127.0.0.1:*; frame-src http://localhost:* http://127.0.0.1:*; base-uri 'none'; form-action 'none'"
+  },
+  "icons": {
+    "16": "brand/icon-16.png",
+    "32": "brand/icon-32.png",
+    "48": "brand/icon-48.png",
+    "128": "brand/icon-128.png"
+  }
+}

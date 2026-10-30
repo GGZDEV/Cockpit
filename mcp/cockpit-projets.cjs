@@ -22,14 +22,16 @@ const DATE = { type: 'string', description: 'Échéance AAAA-MM-JJ, ou chaîne v
 const LINKS = { type: 'array', description: 'Liens http(s).', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } }, required: ['url'] }] } };
 const CONTEXT = { type: 'object', description: 'Contexte transmis aux agents OpenClaw quand une tâche est lancée. Jamais de secret ici.', properties: {
   objective: { type: 'string' }, instructions: { type: 'string', description: 'Consignes générales du projet.' }, resources: { type: 'string' },
-  repository: { type: 'string', description: 'Dépôt de code (chemin ou URL).' }, environment: { type: 'string' }, links: LINKS } };
+  repository: { type: 'string', description: 'Adresse GitHub https://github.com/<compte>/<dépôt> (obligatoire à la création). Cockpit la clone sur le PC de l’utilisateur.' }, environment: { type: 'string' }, links: LINKS } };
+const AGENT = { type: ['string', 'null'], description: 'Agent OpenClaw (identifiant ou nom, voir projets_agents). null = aucun.' };
 const TASK_FIELDS = {
   title: { type: 'string' }, instructions: { type: 'string', description: 'Consignes précises pour la personne ou l’agent qui fera la tâche.' },
   expected: { type: 'string', description: 'Résultat attendu.' }, criteria: { type: 'string', description: 'Critères de réussite.' },
   resources: { type: 'string' }, links: LINKS, priority: PRIORITY, due: DATE,
-  agent: { type: ['string', 'null'], description: 'Agent OpenClaw à qui confier la tâche (identifiant ou nom, voir projets_agents). null ou "manuelle" = tâche manuelle. Assigner ne lance rien.' },
+  agent: { type: ['string', 'null'], description: 'Agent OpenClaw à qui confier la tâche (identifiant ou nom, voir projets_agents). Par défaut : l’agent du projet. null ou "manuelle" = tâche manuelle. Assigner ne lance rien.' },
   status: { type: 'string', description: STATUS_TASK }, includeContext: { type: 'boolean', description: 'Joindre le contexte du projet au lancement (oui par défaut).' } };
-const PROJECT_FIELDS = { name: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', description: 'prep (À préparer), active (Actif), paused (En pause), done (Terminé).' }, priority: PRIORITY, due: DATE, context: CONTEXT };
+const PROJECT_FIELDS = { name: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', description: 'prep (À préparer), active (Actif), paused (En pause), done (Terminé).' }, priority: PRIORITY, due: DATE, context: CONTEXT,
+  agent: { ...AGENT, description: 'Agent OpenClaw du projet : les nouvelles tâches lui sont confiées par défaut. ' + AGENT.description } };
 
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
@@ -38,6 +40,10 @@ const TOOLS = [
     description: 'Liste les projets (non archivés par défaut) et leurs tâches dans Cockpit : statut, priorité, agent, dernière exécution. À appeler avant de créer pour éviter les doublons.',
     inputSchema: { type: 'object', properties: { projet: { type: 'string', description: 'Nom, code ou identifiant pour filtrer.' }, statut: { type: 'string', description: 'Filtre de colonne : ' + STATUS_TASK }, archives: { type: 'boolean' } } },
     call: a => get('state', { project: a.projet, status: a.statut, archived: a.archives ? '1' : undefined }) },
+  { name: 'projets_ici', title: 'Projet du dossier courant', annotations: READ,
+    description: 'Retrouve le projet Cockpit dont le dossier local contient ce dossier (le dépôt cloné par Cockpit), avec son contexte et ses tâches non terminées (consignes, résultat attendu, pièces jointes avec leur chemin sur le PC). À appeler en arrivant dans un dépôt pour savoir quoi faire.',
+    inputSchema: { type: 'object', properties: { dossier: { type: 'string', description: 'Dossier de travail (par défaut, celui où tourne ce serveur MCP).' } } },
+    call: a => get('workspace', { path: path.resolve(a.dossier || process.cwd()) }) },
   { name: 'projets_agents', title: 'Agents OpenClaw disponibles', annotations: READ,
     description: 'Liste les agents OpenClaw auxquels une tâche peut être confiée, avec leur disponibilité.',
     inputSchema: { type: 'object', properties: {} }, call: () => get('agents') },
@@ -46,8 +52,8 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { tache: { type: 'string', description: 'Code ou identifiant.' } }, required: ['tache'] },
     call: a => get('tasks/' + encodeURIComponent(a.tache)) },
   { name: 'projets_creer_projet', title: 'Créer un projet', annotations: WRITE,
-    description: 'Crée un projet personnel dans Cockpit. Le code court (ex. MAI) est généré depuis le nom si absent.',
-    inputSchema: { type: 'object', properties: { ...PROJECT_FIELDS, key: { type: 'string', description: 'Code court optionnel (2 à 6 lettres).' } }, required: ['name'] },
+    description: 'Crée un projet dans Cockpit. Un dépôt GitHub est obligatoire (context.repository) : Cockpit le clone aussitôt sur le PC, à côté des autres projets. Le code court (ex. MAI) est généré depuis le nom si absent.',
+    inputSchema: { type: 'object', properties: { ...PROJECT_FIELDS, key: { type: 'string', description: 'Code court optionnel (2 à 6 lettres).' } }, required: ['name', 'context'] },
     call: a => send('POST', 'projects', a) },
   { name: 'projets_modifier_projet', title: 'Modifier un projet', annotations: WRITE,
     description: 'Modifie un projet existant (seuls les champs fournis changent). archived=true archive le projet, false le restaure.',
@@ -61,11 +67,19 @@ const TOOLS = [
     description: 'Modifie une tâche (seuls les champs fournis changent), y compris sa colonne. Impossible pendant une exécution ; valider le résultat d’un agent reste un geste de l’utilisateur.',
     inputSchema: { type: 'object', properties: { tache: { type: 'string', description: 'Code ou identifiant.' }, ...TASK_FIELDS }, required: ['tache'] },
     call: ({ tache, ...a }) => send('PATCH', 'tasks/' + encodeURIComponent(tache), a) },
+  { name: 'projets_joindre_fichier', title: 'Joindre un fichier à une tâche', annotations: WRITE,
+    description: 'Joint un fichier de ce PC à une tâche : capture (png, jpg, gif, webp), PDF, zip ou texte (txt, md, csv, json, log), 10 Mo au maximum. Jamais de fichier contenant un secret.',
+    inputSchema: { type: 'object', properties: { tache: { type: 'string', description: 'Code ou identifiant.' }, chemin: { type: 'string', description: 'Chemin du fichier sur ce PC.' }, nom: { type: 'string', description: 'Nom affiché (par défaut, celui du fichier).' } }, required: ['tache', 'chemin'] },
+    call: ({ tache, chemin, nom }) => {
+      const file = path.resolve(chemin), size = fs.statSync(file).size;
+      if (size > 10 * 1024 * 1024) throw Error('Fichier trop lourd : 10 Mo au maximum.');
+      return send('POST', 'tasks/' + encodeURIComponent(tache) + '/attachments', { name: nom || path.basename(file), data: fs.readFileSync(file).toString('base64') });
+    } },
 ];
 
 async function request(method, route, body) {
   let response;
-  try { response = await fetch(BASE + route, { method, headers: { Authorization: 'Bearer ' + token(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(20000) }); }
+  try { response = await fetch(BASE + route, { method, headers: { Authorization: 'Bearer ' + token(), ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(60000) }); }
   catch (error) { if (/Clé introuvable/.test(error.message)) throw error; throw Error('Cockpit ne répond pas sur ' + BASE + ' : le service MetaBoard est-il lancé sur le PC ?'); }
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Error(data.error || 'Cockpit a refusé la demande (' + response.status + ').');
@@ -82,8 +96,8 @@ async function dispatch(message) {
   if (id === undefined) return; // notifications (initialized, cancelled…)
   try {
     if (method === 'initialize') return write({ id, result: { protocolVersion: VERSIONS.includes(params.protocolVersion) ? params.protocolVersion : VERSIONS[1], capabilities: { tools: {} },
-      serverInfo: { name: 'cockpit-projets', title: 'Cockpit · Projets', version: '1.0.0' },
-      instructions: 'Outils pour organiser les projets personnels de l’utilisateur dans Cockpit. Vérifiez avec projets_lister avant de créer. Vous ne pouvez ni lancer d’agent, ni valider de résultat, ni supprimer : dites à l’utilisateur de le faire dans l’onglet Projets.' } });
+      serverInfo: { name: 'cockpit-projets', title: 'Cockpit · Projets', version: '1.1.0' },
+      instructions: 'Outils pour organiser les projets de l’utilisateur dans Cockpit. En arrivant dans un dépôt, appelez projets_ici pour connaître le projet et ses tâches. Vérifiez avec projets_lister avant de créer ; tout nouveau projet a un dépôt GitHub, cloné par Cockpit sur le PC. Vous ne pouvez ni lancer d’agent OpenClaw, ni valider de résultat, ni supprimer : dites à l’utilisateur de le faire dans l’onglet Projets.' } });
     if (method === 'ping') return write({ id, result: {} });
     if (method === 'tools/list') return write({ id, result: { tools: TOOLS.map(({ call, ...tool }) => tool) } });
     if (method === 'tools/call') {

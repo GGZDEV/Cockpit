@@ -14,10 +14,17 @@ function fakeFeedMe() {
   });
   return new Promise(r => server.listen(0, '127.0.0.1', () => r({ server, sends, origin: 'http://127.0.0.1:' + server.address().port })));
 }
+// Clonage simulé : aucun accès réseau ni git pendant les tests.
+function fakeWorkspaces(root) {
+  const clones = [];
+  return { clones, root, target: repo => path.join(root, repo.split('/').pop()), clone: async repo => { clones.push(repo); if (/introuvable/.test(repo)) throw new Error('remote: Repository not found.'); return { path: path.join(root, repo.split('/').pop()), reused: false }; } };
+}
+const GH = name => 'https://github.com/ggzdev/' + name;
 async function setup(t) {
   const feed = await fakeFeedMe();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-agents-'));
-  const projects = createProjects({ dataDir: dir, discover: async () => feed.origin, reconcileEvery: 3600000 });
+  const workspaces = fakeWorkspaces(path.join(dir, 'dev'));
+  const projects = createProjects({ dataDir: dir, discover: async () => feed.origin, reconcileEvery: 3600000, workspaces });
   const file = path.join(dir, 'agent-access.json');
   const clients = loadClients(file);
   const server = createAgentAccess({ projects, file, clients });
@@ -28,7 +35,7 @@ async function setup(t) {
     const r = await fetch(base + route, { method, headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json', ...headers }, body: body && JSON.stringify(body) });
     return { status: r.status, body: await r.json() };
   };
-  return { call, projects, feed, clients, base, dir };
+  return { call, projects, feed, clients, base, dir, workspaces };
 }
 
 test('agent access: one key per agent, refused without key or from a web page', async t => {
@@ -42,7 +49,7 @@ test('agent access: one key per agent, refused without key or from a web page', 
 
 test('agent can create and organise projects and tasks with names and French words', async t => {
   const { call, projects, feed } = await setup(t);
-  const p = await call('projects', 'POST', { name: 'Maison connectée', status: 'actif', priority: 'haute', context: { objective: 'Tout automatiser' } });
+  const p = await call('projects', 'POST', { name: 'Maison connectée', status: 'actif', priority: 'haute', repository: GH('maison'), context: { objective: 'Tout automatiser' } });
   assert.equal(p.status, 201); assert.equal(p.body.key, 'MC'); assert.equal(p.body.status, 'active'); assert.equal(p.body.priority, 3); assert.equal(p.body.createdBy, 'Claude');
   const task = await call('tasks', 'POST', { project: 'maison connectee', title: 'Inventaire des capteurs', instructions: 'Lister', agent: 'Homelab', priority: 'urgent' });
   assert.equal(task.status, 201); assert.equal(task.body.code, 'MC-1'); assert.equal(task.body.agent, 'homelab (Homelab)'); assert.equal(task.body.status, 'todo');
@@ -61,7 +68,7 @@ test('agent can create and organise projects and tasks with names and French wor
 
 test('agent cannot launch, accept, delete, fake "en cours" or validate a result', async t => {
   const { call, projects } = await setup(t);
-  await call('projects', 'POST', { name: 'Test' });
+  await call('projects', 'POST', { name: 'Test', repository: GH('test') });
   const task = (await call('tasks', 'POST', { project: 'Test', title: 'T', instructions: 'i', agent: 'homelab' })).body;
   for (const [route, method] of [['tasks/' + task.code + '/launch', 'POST'], ['tasks/' + task.code + '/accept', 'POST'], ['tasks/' + task.code, 'DELETE']]) {
     const r = await call(route, method, {}); assert.equal(r.status, 403, route + ' ' + method); assert.match(r.body.error, /réservé à l’utilisateur/);
@@ -88,10 +95,14 @@ test('MCP server exposes the tools and creates through the agent access', async 
   child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
   const names = (await rpc('tools/list', {})).result.tools.map(x => x.name);
   assert.ok(names.includes('projets_creer_tache') && !names.some(x => /lancer|supprimer|valider/.test(x)));
-  const created = await rpc('tools/call', { name: 'projets_creer_projet', arguments: { name: 'Vacances' } });
+  const created = await rpc('tools/call', { name: 'projets_creer_projet', arguments: { name: 'Vacances', context: { repository: GH('vacances') } } });
   assert.equal(created.result.structuredContent.createdBy, 'Codex');
   const task = await rpc('tools/call', { name: 'projets_creer_tache', arguments: { projet: 'Vacances', title: 'Réserver' } });
   assert.equal(task.result.structuredContent.code, 'VA-1');
+  const shot = path.join(os.tmpdir(), 'mb-capture-' + process.pid + '.png'); fs.writeFileSync(shot, Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2]));
+  const joined = await rpc('tools/call', { name: 'projets_joindre_fichier', arguments: { tache: 'VA-1', chemin: shot } }); fs.rmSync(shot);
+  assert.equal(joined.result.structuredContent.attachments[0].name, path.basename(shot));
+  assert.ok(names.includes('projets_ici'));
   const err = await rpc('tools/call', { name: 'projets_modifier_tache', arguments: { tache: 'XX-9', status: 'done' } });
   assert.equal(err.result.isError, true);
 });

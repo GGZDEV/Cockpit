@@ -1,6 +1,6 @@
 // Onglet Projets : projets personnels, tableau Kanban et tâches confiées aux agents OpenClaw.
 // L'état réel (projets, tâches, exécutions) vit sur le serveur du PC : /api/projects/*.
-import { esc, icon, read, write, uid, safeUrl } from './core.js';
+import { esc, icon, read, write, uid, safeUrl, timeoutSignal } from './core.js';
 
 const COLUMNS = [
   { id: 'todo', label: 'À faire', color: '#f5c542', ring: 'solid' },
@@ -15,6 +15,11 @@ const RUN_STATUS = { pending: 'En attente de démarrage', started: 'Démarrée',
 const RUN_KIND = { initial: 'Lancement', reprise: 'Reprise', answer: 'Réponse à une question', retry: 'Relance' };
 const PALETTE = ['#3dd68c', '#b48cff', '#4c9dff', '#ff9f43', '#ff6b8a', '#22d3ee', '#f5c542'];
 const OPEN = ['pending', 'started'];
+const ACCEPT = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.zip,.txt,.md,.csv,.json,.log';
+const MAX_FILE = 10 * 1024 * 1024;
+const WORKSPACE = { cloning: 'Clonage en cours…', ready: 'Copie locale prête', failed: 'Clonage échoué' };
+const fmtSize = n => n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' Ko' : (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' Mo';
+const isGithub = value => /^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+?(\.git)?\/?$/i.test(String(value || '').trim());
 
 const fmtDay = iso => new Date(iso + 'T12:00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
 const fmtTime = iso => iso ? new Date(iso).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
@@ -31,6 +36,8 @@ const G = {
   launch: glyph('<path d="m8 5 11 7-11 7z"/>'),
   alert: glyph('<path d="M12 4 2.5 20h19Z"/><path d="M12 10v4m0 3h.01"/>'),
   archive: glyph('<rect x="3" y="4" width="18" height="5" rx="1"/><path d="M5 9v10h14V9M10 13h4"/>'),
+  clip: glyph('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/>'),
+  trash: glyph('<path d="M4 7h16M9 7V4.5h6V7m-8.5 0 1 13h9l1-13"/>'),
   dots: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
 };
 
@@ -39,6 +46,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     view: read('mb.projects.view', 'board') === 'grid' ? 'grid' : 'board', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
     projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null };
   let pollTimer;
+  const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
 
   async function api(route, method = 'GET', body) {
     const response = await sources.feedmeFetch('/api/projects/' + route, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -131,7 +139,9 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const list = st.tasks.filter(matches).sort((a, b) => (b.priority - a.priority) || (a.order - b.order));
     const project = st.project !== 'all' && st.projects.find(p => p.id === st.project);
     const context = project ? `<section class="pj-context" aria-label="Contexte du projet">
-        <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : '<p class="muted">Aucun objectif renseigné : ajoutez le contexte que les agents recevront.</p>'}</div>
+        <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : '<p class="muted">Aucun objectif renseigné : ajoutez le contexte que les agents recevront.</p>'}
+        ${project.agent ? `<p class="muted"><b>Agent du projet :</b> ${esc(project.agent.name)}</p>` : ''}
+        ${workspaceHTML(project)}</div>
         <button class="button" data-pj="edit-project" data-id="${esc(project.id)}">${icon('edit')} Projet et contexte</button></section>` : '';
     return `${context}<div class="pj-board-scroll"><div class="pj-board">${COLUMNS.map(col => {
       const tasks = list.filter(t => t.status === col.id);
@@ -188,6 +198,56 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       ${error}${body}</div>`;
   }
 
+  function workspaceHTML(p) {
+    const repo = p.context?.repository, w = p.workspace;
+    if (!repo) return '';
+    const link = isGithub(repo) ? `<a href="${esc(safeUrl(repo))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(repo.replace('https://github.com/', ''))}</a>` : esc(repo);
+    const state = w ? `<span class="pj-ws s-${esc(w.status)}">${WORKSPACE[w.status] || ''}</span>${w.status === 'ready' ? `<code>${esc(w.path)}</code>` : ''}${w.status === 'failed' ? `<span class="pj-help is-bad">${esc(w.error || '')}</span><button class="button" data-pj="retry-clone" data-id="${esc(p.id)}">${icon('refresh')} Réessayer</button>` : ''}` : '';
+    return `<div class="pj-repo">${link}${state}</div>`;
+  }
+  function attachmentsHTML(task) {
+    const list = task.attachments || [];
+    return list.length ? `<ul class="pj-atts">${list.map(a => `<li><button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}${a.by ? ' · ' + esc(a.by) : ''}</small></button>
+      <button type="button" class="icon-button" data-pj="delete-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" aria-label="Retirer ${esc(a.name)}">${G.trash}</button></li>`).join('')}</ul>` : '';
+  }
+  function pendingHTML(form) {
+    const list = pending.get(form) || [];
+    return list.map((f, i) => `<li><span class="pj-att is-new">${G.clip}<span>${esc(f.name)}</span><small>${fmtSize(f.size)} · à envoyer</small></span><button type="button" class="icon-button" data-pj="drop-file" data-id="${i}" aria-label="Ne pas joindre ${esc(f.name)}">${G.trash}</button></li>`).join('');
+  }
+  function addFiles(form, files) {
+    const list = pending.get(form) || [];
+    for (const file of files) {
+      if (file.size > MAX_FILE) { toast(file.name + ' dépasse 10 Mo.'); continue; }
+      const ext = (file.name.split('.').pop() || '').toLowerCase();
+      if (!ACCEPT.split(',').includes('.' + ext)) { toast(file.name + ' : type refusé (captures, PDF, zip, textes).'); continue; }
+      list.push(file);
+    }
+    pending.set(form, list);
+    const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(form);
+  }
+  async function uploadPending(form, taskId) {
+    const list = pending.get(form) || []; let task = null;
+    while (list.length) {
+      const file = list[0];
+      const response = await sources.feedmeFetch('/api/projects/tasks/' + taskId + '/attachments?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file, signal: timeoutSignal(180000) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(file.name + ' : ' + (data.error || 'envoi impossible.'));
+      task = data.task; list.shift();
+      const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(form);
+    }
+    return task;
+  }
+  async function openAttachment(taskId, attId, name) {
+    const response = await sources.feedmeFetch('/api/projects/tasks/' + taskId + '/attachments/' + attId, { signal: timeoutSignal(120000) });
+    if (!response.ok) { const data = await response.json().catch(() => ({})); throw new Error(data.error || 'Pièce jointe indisponible.'); }
+    const url = URL.createObjectURL(await response.blob());
+    const a = document.createElement('a'); a.href = url; a.download = name; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+  }
+  function refreshAttachments(task) {
+    const box = modal.querySelector(`[data-pj-atts="${CSS.escape(task.id)}"]`); if (box) box.innerHTML = attachmentsHTML(task);
+  }
+
   // ----- Formulaires --------------------------------------------------------------------
   function agentOptions(selected) {
     const list = st.agents || [];
@@ -201,14 +261,18 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function taskFields(task = {}, { withProject = false } = {}) {
     return `${withProject ? `<label>Projet<select name="projectId" required>${visibleProjects().map(p => `<option value="${esc(p.id)}" ${p.id === (task.projectId || (st.project !== 'all' ? st.project : '')) ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>` : ''}
       <label>Titre<input name="title" maxlength="200" required value="${esc(task.title || '')}"></label>
-      <label>Consignes détaillées<textarea name="instructions" rows="6" maxlength="20000" placeholder="Ce qu’il faut faire, comment, avec quelles limites. Développement, recherche, rédaction ou action dans un outil.">${esc(task.instructions || '')}</textarea></label>
-      <div class="pj-two"><label>Résultat attendu<textarea name="expected" rows="3" maxlength="4000" placeholder="Un rapport, une PR, un fichier…">${esc(task.expected || '')}</textarea></label>
-      <label>Critères de réussite<textarea name="criteria" rows="3" maxlength="4000" placeholder="Comment vérifier que c’est réussi">${esc(task.criteria || '')}</textarea></label></div>
-      <div class="pj-three"><label>Agent OpenClaw<select name="agent">${agentOptions(task.agent)}</select></label><label>Priorité${prioritySelect(task.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(task.due || '')}"></label></div>
-      ${agentHelp()}
-      <label>Ressources de la tâche<textarea name="resources" rows="3" maxlength="12000" placeholder="Fichiers, chemins, extraits utiles…">${esc(task.resources || '')}</textarea></label>
-      <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="2">${esc(linksText(task.links))}</textarea></label>
-      <label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent</label>`;
+      <label>Description de la tâche<textarea name="instructions" rows="5" maxlength="20000" placeholder="Ce qu’il faut faire. Le contexte du projet et son dépôt sont joints automatiquement.">${esc(task.instructions || '')}</textarea></label>
+      <label>Résultat attendu<textarea name="expected" rows="2" maxlength="4000" placeholder="Une PR, un rapport, un fichier…">${esc(task.expected || '')}</textarea></label>
+      <div class="pj-files"><span class="pj-files-head">${G.clip} Pièces jointes <small>captures (collez-les avec Ctrl+V), PDF, zip, textes · 10 Mo max</small></span>
+        <div data-pj-atts="${esc(task.id || '')}">${task.id ? attachmentsHTML(task) : ''}</div><ul class="pj-atts pj-pending"></ul>
+        <label class="button pj-pick">${icon('plus')} Ajouter des fichiers<input type="file" name="files" multiple accept="${ACCEPT}" class="sr-only"></label></div>
+      <label>Adresses utiles (une par ligne, « libellé | adresse » possible)<textarea name="links" rows="2" placeholder="https://…">${esc(linksText(task.links))}</textarea></label>
+      <details class="pj-more"><summary>Plus d’options <span class="muted">· ${esc(task.agent ? 'agent : ' + task.agent.name : 'tâche manuelle')}</span></summary><div class="pj-form">
+        <div class="pj-three"><label>Agent OpenClaw<select name="agent">${agentOptions(task.agent)}</select></label><label>Priorité${prioritySelect(task.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(task.due || '')}"></label></div>
+        ${agentHelp()}
+        <label>Critères de réussite<textarea name="criteria" rows="2" maxlength="4000" placeholder="Comment vérifier que c’est réussi">${esc(task.criteria || '')}</textarea></label>
+        <label>Ressources de la tâche<textarea name="resources" rows="2" maxlength="12000" placeholder="Chemins, extraits utiles…">${esc(task.resources || '')}</textarea></label>
+        <label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent</label></div></details>`;
   }
   function readTask(form) {
     const fd = new FormData(form), value = String(fd.get('agent') || '');
@@ -218,7 +282,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       priority: Number(fd.get('priority')), due: fd.get('due') || '', includeContext: fd.has('includeContext'), agent: value ? { connectionId, agentId, name: option?.dataset.name || agentId } : null,
       ...(fd.has('projectId') ? { projectId: fd.get('projectId') } : {}) };
   }
-  function projectForm(p = {}) {
+  async function projectForm(p = {}) {
+    await loadAgents();
     const c = p.context || {};
     showModal(p.id ? 'Modifier le projet' : 'Nouveau projet', 'Le contexte est transmis aux agents lorsqu’une tâche le demande. Les secrets n’ont rien à faire ici.', `<form class="pj-form" data-pj-form="project" data-id="${esc(p.id || '')}">
       <div class="pj-two"><label>Nom<input name="name" required maxlength="120" value="${esc(p.name || '')}"></label><label>Préfixe des tâches<input name="key" maxlength="6" value="${esc(p.key || '')}" placeholder="Automatique"></label></div>
@@ -230,13 +295,17 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <label>Instructions générales<textarea name="instructions" rows="4" maxlength="12000" placeholder="Conventions, ton, outils à utiliser ou à éviter…">${esc(c.instructions || '')}</textarea></label>
       <label>Ressources et documents<textarea name="resources" rows="3" maxlength="12000">${esc(c.resources || '')}</textarea></label>
       <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="3">${esc(linksText(c.links))}</textarea></label>
-      <div class="pj-two"><label>Dépôt de code<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="Chemin ou adresse du dépôt"></label><label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label></div>
+      <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label><label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label></div>
+      <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
+      ${p.id ? workspaceHTML(p) : ''}
+      <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
   }
   async function taskForm() {
     await loadAgents();
-    showModal('Nouvelle tâche', 'Créer ou assigner une tâche ne lance rien : l’agent démarre uniquement avec le bouton « Lancer ».', `<form class="pj-form" data-pj-form="task">${taskFields({}, { withProject: true })}
+    const project = st.projects.find(p => p.id === st.project) || visibleProjects()[0];
+    showModal('Nouvelle tâche', 'Créer ou assigner une tâche ne lance rien : l’agent démarre uniquement avec le bouton « Lancer ».', `<form class="pj-form" data-pj-form="task">${taskFields({ projectId: project?.id, agent: project?.agent || null }, { withProject: true })}
       <p class="form-status pj-help" role="status"></p><div class="pj-form-actions"><button class="button primary" type="submit">Créer la tâche</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-task-new', true);
   }
 
@@ -348,8 +417,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'toggle-archived': st.archived = !st.archived; render(); break;
         case 'reload': st.error = ''; await refresh(false); break;
         case 'open-project': st.project = idv; st.view = 'board'; write('mb.projects.filter', idv); write('mb.projects.view', 'board'); render(); break;
-        case 'new-project': projectForm(); break;
-        case 'edit-project': projectForm(st.projects.find(p => p.id === idv)); break;
+        case 'new-project': await projectForm(); break;
+        case 'edit-project': await projectForm(st.projects.find(p => p.id === idv)); break;
         case 'archive-project': { const p = st.projects.find(p => p.id === idv); if (!p) break; const saved = await api('projects/' + p.id, 'PATCH', { archived: !p.archived }); Object.assign(p, saved); if (st.project === p.id) st.project = 'all'; toast(saved.archived ? 'Projet archivé. Retrouvez-le avec le filtre « Archivés ».' : 'Projet restauré.'); render(); break; }
         case 'new-task': await taskForm(); break;
         case 'quick-add': st.quickAdd = idv; render(); requestAnimationFrame(() => document.querySelector('#pj-quick-title')?.focus()); break;
@@ -357,6 +426,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'open-task': await openPanel(idv); break;
         case 'launch': await launch(idv, undefined, '', el); break;
         case 'accept': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Résultat accepté : tâche terminée.'); render(); updatePanel(); break; }
+        case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
+        case 'open-attachment': await openAttachment(idv, el.dataset.att, el.dataset.name); break;
+        case 'delete-attachment': { const t = st.tasks.find(t => t.id === idv), a = t?.attachments?.find(a => a.id === el.dataset.att); if (!a || !confirm(`Retirer « ${a.name} » de la tâche ?`)) break; const saved = await api('tasks/' + idv + '/attachments/' + a.id, 'DELETE'); upsert(saved); refreshAttachments(saved); break; }
+        case 'drop-file': { const form = el.closest('form'); (pending.get(form) || []).splice(Number(idv), 1); form.querySelector('.pj-pending').innerHTML = pendingHTML(form); break; }
         case 'delete-task': { const t = st.tasks.find(t => t.id === idv); if (!t || !confirm(`Supprimer définitivement « ${t.title} » et son historique ?`)) break; await api('tasks/' + idv, 'DELETE'); st.tasks = st.tasks.filter(x => x.id !== idv); modal.close(); render(); break; }
       }
     } catch (e) { toast(e.message); }
@@ -365,7 +438,22 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (event.target.id !== 'pj-search') return;
     st.search = event.target.value; render();
   });
-  document.addEventListener('change', event => { const el = event.target; if (el.matches('[data-pj-move]')) move(el.dataset.pjMove, el.value); });
+  document.addEventListener('change', event => {
+    const el = event.target;
+    if (el.matches('[data-pj-move]')) move(el.dataset.pjMove, el.value);
+    if (el.matches('.pj-form input[type=file][name=files]')) { addFiles(el.form, el.files); el.value = ''; }
+    // Nouvelle tâche : changer de projet reprend l'agent de ce projet.
+    if (el.matches('[data-pj-form=task] select[name=projectId]')) { const p = st.projects.find(x => x.id === el.value); const sel = el.form.elements.agent; if (sel) sel.innerHTML = agentOptions(p?.agent || null); }
+  });
+  // Coller une capture d'écran dans une tâche l'ajoute aux pièces jointes.
+  document.addEventListener('paste', event => {
+    const form = event.target.closest?.('[data-pj-form=task],[data-pj-form=edit-task]'); if (!form) return;
+    const images = [...(event.clipboardData?.files || [])].filter(f => f.type.startsWith('image/')); if (!images.length) return;
+    event.preventDefault();
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
+    addFiles(form, images.map((f, i) => new File([f], `capture-${stamp}${images.length > 1 ? '-' + (i + 1) : ''}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })));
+    toast('Capture ajoutée : elle sera envoyée à l’enregistrement.');
+  });
   document.addEventListener('submit', async event => {
     const form = event.target.closest('[data-pj-form]'); if (!form) return;
     event.preventDefault();
@@ -377,11 +465,18 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         const projectId = String(fd.get('projectId') || ''); if (!projectId) throw new Error('Créez d’abord un projet.');
         upsert(await api('tasks', 'POST', { projectId, title: fd.get('title'), status: form.dataset.status })); st.quickAdd = null; render();
       } else if (kind === 'task') {
-        const task = await api('tasks', 'POST', readTask(form)); upsert(task); render(); await openPanel(task.id);
+        const task = await api('tasks', 'POST', readTask(form)); upsert(task);
+        try { const withFiles = await uploadPending(form, task.id); if (withFiles) upsert(withFiles); }
+        catch (e) { toast('Tâche créée, mais ' + e.message); }
+        render(); await openPanel(task.id);
       } else if (kind === 'edit-task') {
-        upsert(await api('tasks/' + form.dataset.id, 'PATCH', readTask(form))); toast('Tâche enregistrée. Rien n’a été lancé.'); render(); updatePanel();
+        let saved = await api('tasks/' + form.dataset.id, 'PATCH', readTask(form)); upsert(saved);
+        const withFiles = await uploadPending(form, saved.id); if (withFiles) upsert(saved = withFiles);
+        refreshAttachments(saved); toast('Tâche enregistrée. Rien n’a été lancé.'); render(); updatePanel();
       } else if (kind === 'project') {
+        const agentValue = String(fd.get('agent') || ''), [agentConnection, agentId] = agentValue.split('|');
         const body = { name: fd.get('name'), key: fd.get('key'), description: fd.get('description'), status: fd.get('status'), priority: Number(fd.get('priority')), due: fd.get('due') || '', color: fd.get('color'),
+          agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
           context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment') } };
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }

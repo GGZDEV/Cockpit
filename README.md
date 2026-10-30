@@ -102,8 +102,11 @@ Les données sont dans `data/projects.json` (hors dépôt). Après mise à jour,
 Un agent peut créer et modifier des projets et des tâches, changer une tâche de colonne et archiver un projet quand on le lui demande. Il **ne peut pas** lancer une exécution, valider un résultat ni supprimer : ces gestes restent dans l’interface. Il ne peut pas non plus passer « En cours » une tâche confiée à OpenClaw, ni modifier une tâche pendant une exécution. Chaque création indique son auteur (« créée par Claude »).
 
 - **Point d’accès.** `http://127.0.0.1:3890/agent/v1/` et l’adresse Tailscale du PC sur le même port (jamais le réseau local ni Internet). Une clé par agent dans `data/agent-access.json` (hors dépôt). Pour révoquer une clé, supprimer son entrée puis relancer le service : une nouvelle clé est générée.
-- **Claude Code et Codex** : serveur MCP local `mcp/cockpit-projets.cjs --client claude|codex` (outils `projets_lister`, `projets_agents`, `projets_tache`, `projets_creer_projet`, `projets_modifier_projet`, `projets_creer_tache`, `projets_modifier_tache`). Déjà inscrit dans la configuration utilisateur de Claude Code et dans `~/.codex/config.toml`.
-- **OpenClaw** (sur le VPS) : `npm run agents:openclaw-skill` génère `data/openclaw-skill/cockpit-projets/SKILL.md` (adresse Tailscale + clé OpenClaw). Copier ce dossier dans `~/.openclaw/skills/` sur le serveur OpenClaw (partagé par tous ses agents, fichier en `chmod 600`). Installé le 30/10/2026.
+- **Dépôt GitHub obligatoire pour un projet créé par un agent** (`https://github.com/<compte>/<dépôt>` seulement ; les projets créés à la main restent libres). Toute adresse GitHub est clonée sur ce PC dans le dossier parent de MetaDashBoard (`Projets DEV`, ou `COCKPIT_WORKSPACES`), sans invite d’identifiants ; un dossier existant n’est réutilisé que s’il contient déjà ce dépôt, jamais écrasé. En cas d’échec, l’erreur s’affiche avec un bouton « Réessayer ».
+- **Agent du projet** : les nouvelles tâches lui sont confiées par défaut. Un agent tout juste créé sur OpenClaw est trouvé en relisant la passerelle.
+- **Pièces jointes** : captures (collées avec Ctrl+V), PDF, zip, textes ; 10 Mo par fichier, 20 par tâche, contenu vérifié. Stockées dans `data/attachments/` (hors dépôt), listées dans les consignes envoyées à l’agent avec leur chemin sur le PC. Un agent peut en ajouter, pas en retirer.
+- **Claude Code et Codex** : serveur MCP local `mcp/cockpit-projets.cjs --client claude|codex` (outils `projets_ici` — projet du dossier courant et ses tâches —, `projets_lister`, `projets_agents`, `projets_tache`, `projets_creer_projet`, `projets_modifier_projet`, `projets_creer_tache`, `projets_modifier_tache`, `projets_joindre_fichier`). Déjà inscrit dans la configuration utilisateur de Claude Code et dans `~/.codex/config.toml`.
+- **OpenClaw** (sur le VPS) : `npm run agents:openclaw-skill` génère `data/openclaw-skill/cockpit-projets/SKILL.md` (adresse Tailscale + clé OpenClaw). Copier ce dossier dans `~/.openclaw/skills/` sur le serveur OpenClaw (partagé par tous ses agents, fichier en `chmod 600`). Installé le 30/10/2026. La compétence décrit la création complète : dépôt GitHub (créé privé par OpenClaw avec ses propres accès), agent dédié avec son contexte dans `AGENTS.md`, projet Cockpit, copie locale.
 - **ChatGPT (web ou application)** : non pris en charge. Ses connecteurs exigent une adresse HTTPS publique, et Projets ne s’ouvre pas à Internet.
 
 ## Couverture et limites
@@ -134,6 +137,8 @@ public/modules.js     catalogue, rendus et dispositions initiales
 public/app.js         navigation, composition, réglages et chat
 public/projects.js    onglet Projets : grille, Kanban, panneau de tâche
 projects.cjs          projets, tâches et suivi des exécutions OpenClaw côté serveur
+workspace.cjs        clone des dépôts GitHub des projets sur ce PC
+attachments.cjs      pièces jointes des tâches (data/attachments/)
 public/styles.css     présentation et adaptations aux écrans
 public/vendor/ha.js   client HA repris de HomeDashboard
 public/vendor/auth.js connexion par session HA adaptée au prototype

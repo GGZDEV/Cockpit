@@ -397,6 +397,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const c = project.context || {}, lines = [
       `Bonjour, c'est Cockpit, à la demande de l'utilisateur (clic sur « Créer l'agent OpenClaw » du projet ${project.key}).`,
       `Crée un agent OpenClaw dédié à ce projet, avec l'identifiant exact « ${agentId} », en utilisant les commandes OpenClaw dont tu disposes (vérifie leur syntaxe avec openclaw agents --help). Donne-lui son propre espace de travail.`,
+      'Configure son modèle primaire exact sur anthropic/claude-opus-5-5 et sa chaîne de secours sur [openai/gpt-5.6-sol]. Le secours doit être explicite dans la configuration propre à cet agent afin de prendre le relais en cas de limite, quota, indisponibilité ou autre erreur admissible au basculement.',
       'Dans cet espace, écris le contexte ci-dessous dans AGENTS.md' + (c.repository ? ' et clone le dépôt du projet' : '') + '.',
       'Règles : aucun secret (clé, jeton, mot de passe) dans ce contexte ; ne crée pas de projet dans Cockpit (il existe déjà, Cockpit associera l’agent tout seul) ; ne crée ni ne modifie aucun dépôt.',
       '', `## Projet ${project.key} — ${project.name}`];

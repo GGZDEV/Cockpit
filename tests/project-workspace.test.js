@@ -204,6 +204,7 @@ test('the user can ask OpenClaw to create the project agent; Cockpit links it on
   assert.deepEqual(saved.agent, { connectionId: 'c1', agentId: 'site-vitrine', name: 'Agent site-vitrine' });
   assert.equal(saved.agentRequest.status, 'done');
   assert.match(messages[0], /Objectif : Vendre/); assert.match(messages[0], /Dépôt : https:\/\/github\.com\/ggzdev\/vitrine/); assert.match(messages[0], /ne crée pas de projet dans Cockpit/);
+  assert.match(messages[0], /anthropic\/claude-opus-5-5/); assert.match(messages[0], /openai\/gpt-5\.6-sol/); assert.match(messages[0], /chaîne de secours/);
   assert.equal((await ui('tasks', 'POST', { projectId: project.id, title: 'Accueil' })).body.agent.agentId, 'site-vitrine');
   assert.equal((await ui('projects/' + project.id + '/agent-request', 'POST', {})).status, 409, 'already has an agent');
 });

@@ -29,7 +29,7 @@ Ne communique jamais cette clé et ne l'écris nulle part ailleurs (ni dans un d
 ## Créer un projet (toujours dans cet ordre)
 1. **Vérifie** qu'il n'existe pas : \`curl -s ${auth} ${base}state\`
 2. **Dépôt GitHub (obligatoire)** : celui que l'utilisateur donne, sinon crée-le **privé** avec tes propres accès GitHub (par ex. \`gh repo create <compte>/<nom> --private\`). Si tu n'as pas d'accès GitHub, demande l'adresse à l'utilisateur. Ne mets jamais de jeton GitHub dans Cockpit.
-3. **Agent dédié** : crée un agent OpenClaw pour ce projet avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`).
+3. **Agent dédié** : crée un agent OpenClaw pour ce projet avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`). Configure exactement son modèle sur \`{ primary: "anthropic/claude-opus-5-5", fallbacks: ["openai/gpt-5.6-sol"] }\` : Opus 5.5 par défaut, GPT-5.6 Sol uniquement en secours lorsque le modèle primaire atteint une limite ou subit une erreur admissible au basculement.
 4. **Contexte de l'agent** : dans son espace de travail, écris le contexte du projet dans \`AGENTS.md\` (objectif, conventions, dépôt, ce qu'il doit demander avant d'agir) et clone-y le dépôt pour qu'il puisse travailler dessus. C'est l'équivalent, côté OpenClaw, d'un projet Claude avec son contexte.
 5. **Projet Cockpit** (l'agent doit apparaître dans \`agents\` ; Cockpit relit la passerelle s'il est nouveau) :
 \`\`\`

@@ -31,6 +31,7 @@ const paths = {
   settings: '<path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3" fill="currentColor"/><circle cx="15" cy="17" r="3" fill="currentColor"/>',
   edit: '<path d="m15 4 5 5M4 20l5-1L21 7a2 2 0 0 0-5-5L4 14z"/>',
   monitor: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>', tablet: '<rect x="4" y="2" width="16" height="20" rx="3"/><path d="M10 18h4"/>',
+  phone: '<rect x="6" y="2" width="12" height="20" rx="3"/><path d="M11 18h2"/>',
   panel: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M14 3v18"/>',
   bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-7z"/>',
   bulb: '<path d="M9 18h6m-6 3h6M8 14a7 7 0 1 1 8 0l-1 2H9z"/>',

@@ -61,3 +61,5 @@ body[data-design="home"]{--ui-text:var(--fg);--ui-muted:var(--fg-muted);--ui-bg:
 .native-feed-panel .embedded-module-tools>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .native-feed-panel .embedded-module-tools>.widget-btn{flex:none}
 .native-feed-panel .widget.collapsed .widget-tools{display:flex}
+/* La météo n'a pas de marge intérieure dans un module : son arrondi rognait le titre (« Λétéo ») et la fin du sous-titre. */
+.native-home-panel .hero-weather-content{border-radius:0}

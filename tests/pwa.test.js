@@ -61,7 +61,7 @@ test('the local server and the tablet export both serve the manifest and icons',
   assert.equal(icon.status, 200); assert.equal(icon.headers.get('content-type'), 'image/png');
 
   const build = buildTablet({ keepRuntime: true });
-  for (const file of ['manifest.json', 'pwa.css', ...manifest.icons.map(i => i.src)]) assert.ok(build.files[file], file);
+  for (const file of ['manifest.json', 'pwa.css', 'phone.css', ...manifest.icons.map(i => i.src)]) assert.ok(build.files[file], file);
   const html = fs.readFileSync(path.join(build.target, 'index.html'), 'utf8');
   assert.match(html, new RegExp('pwa.css\\?v=' + build.version));
   assert.match(html, /href="manifest.json"/);

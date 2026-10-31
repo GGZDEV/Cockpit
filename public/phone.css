@@ -1,0 +1,46 @@
+/* Disposition Téléphone : une colonne, onglets en bas de l'écran, zones sûres de l'iPhone (encoche, barre d'état, barre d'accueil).
+   Ne dépend pas de la largeur : choisie sur un grand écran, la même vue s'affiche centrée, comme un aperçu. */
+body[data-profile="phone"]{height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none}
+body[data-profile="phone"] #app{display:block;box-sizing:border-box;width:100%;max-width:560px;height:auto;min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))}
+/* Le contenu qui défile ne passe plus sous l'heure et la batterie. */
+body[data-profile="phone"]::before{content:"";position:fixed;z-index:6;top:0;left:0;right:0;height:env(safe-area-inset-top);background:rgba(10,10,10,.82);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);pointer-events:none}
+
+/* Barre d'onglets fixée en bas, toujours entière : sans logo ni libellé de connexion. */
+body[data-profile="phone"] .rail{position:fixed;z-index:5;left:0;right:0;bottom:0;top:auto;transform:none;box-sizing:border-box;width:auto;height:auto;min-height:0;margin:0;flex-direction:row;align-items:center;justify-content:space-around;gap:2px;padding:6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));border:0;border-top:1px solid rgba(255,255,255,.08);border-radius:0;background:rgba(14,14,16,.86);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:none}
+body[data-profile="phone"] .rail>.cockpit-rail-brand,body[data-profile="phone"] .rail>.native-rail-mode,body[data-profile="phone"] .rail>.surface-switch,body[data-profile="phone"] .rail>.rail-spacer{display:none}
+body[data-profile="phone"] .rail-btn{flex:1 1 0;min-width:0;max-width:64px;width:auto;height:48px;border-radius:14px}
+
+/* En-tête : date et heure sur une ligne, puis les pastilles qui défilent latéralement au lieu de s'empiler. */
+body[data-profile="phone"] .panel{height:auto;padding:0;overflow:visible}
+body[data-profile="phone"] .native-home-panel .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;height:auto;margin:0 0 14px;padding:0}
+body[data-profile="phone"] .native-home-panel .page-head>*{min-width:0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-left{flex:1 1 0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{flex:0 1 auto;justify-content:flex-end;margin-left:auto}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center>.hitem{justify-content:flex-end}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right{flex:1 0 100%;order:3;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right::-webkit-scrollbar{display:none}
+body[data-profile="phone"] .native-home-panel .hzone,body[data-profile="phone"] .native-home-panel .head-fixed{flex-wrap:nowrap}
+body[data-profile="phone"] .native-home-panel .hzone>*,body[data-profile="phone"] .native-home-panel .head-fixed>*{flex:none}
+body[data-profile="phone"] .native-home-panel .native-home-date,body[data-profile="phone"] .native-home-panel .hitem .home-date{font-size:22px!important}
+body[data-profile="phone"] .native-home-panel .native-home-clock,body[data-profile="phone"] .native-home-panel .hitem .home-clock{font-size:28px!important}
+body[data-profile="phone"] .native-home-panel .page-head h1{font-size:24px}
+body[data-profile="phone"] .room-tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px 12px;padding:0 14px;scrollbar-width:none}
+body[data-profile="phone"] .room-tabs::-webkit-scrollbar{display:none}
+
+/* Modules : une seule colonne ; la hauteur choisie est gardée, la liste des pièces s'allonge pour toutes les montrer. */
+body[data-profile="phone"] .mods{display:flex;flex-direction:column;gap:12px;height:auto;overflow:visible;padding:0}
+body[data-profile="phone"] .mods>.mod{flex:none;width:auto;min-width:0;box-sizing:border-box;min-height:calc(var(--h,2)*88px);height:calc(var(--h,2)*88px);padding:16px!important;border-radius:22px}
+body[data-profile="phone"] .mods>.mod.type-rooms{height:auto}
+body[data-profile="phone"] .mods>.type-rooms .rooms-list{flex:none;overflow:visible}
+body[data-profile="phone"] .mods>.mod.add-tile{min-height:120px;height:auto}
+body[data-profile="phone"] .native-home-panel .mod-head{gap:10px}
+body[data-profile="phone"] .native-home-panel .mod-head>.muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+body[data-profile="phone"] .native-home-panel .native-widget .mod-body{min-height:0}
+body[data-profile="phone"] .native-home-panel .native-home-tools{opacity:1}
+body[data-profile="phone"] .note-input{font-size:16px}
+
+/* Projets et dialogues à la largeur du téléphone. */
+body[data-profile="phone"] .projects-panel{padding:0}
+body[data-profile="phone"] dialog[open]{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
+body[data-profile="phone"] .connection-form select,body[data-profile="phone"] .connection-form input{font-size:16px}
+body[data-profile="phone"] .settings-section .connection-form+.setting-title{margin-top:18px}

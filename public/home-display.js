@@ -49,10 +49,13 @@ export function formatHeaderDate(date, format = 'long') {
   const options = format === 'short' ? {weekday:'short',day:'numeric',month:'short'} : format === 'day' ? {weekday:'long',day:'numeric'} : {weekday:'long',day:'numeric',month:'long',...(format === 'full' ? {year:'numeric'} : {})};
   const text = date.toLocaleDateString('fr-FR',options); return text.charAt(0).toUpperCase()+text.slice(1);
 }
-export function homeHeader({ editing, sources, title, nativeTitle }) {
+// Téléphone : les boutons fixes (crayon, ou Fond · Module · Terminé) quittent la zone droite qui défile pour rester toujours visibles,
+// et la pastille « Plein écran », inutile là où l’écran ne peut pas passer en plein écran (iPhone), n’apparaît qu’en personnalisation.
+export function homeHeader({ editing, sources, title, nativeTitle, phone = false }) {
   const now = new Date();
   const chip = (glyph, content) => `<span class="hchip">${icon(glyph)}<span class="hchip-text">${content}</span></span>`;
   function item(m) {
+    if (phone && !editing && m.type === 'h-fullscreen' && !fullscreenSupported()) return '';
     const o = m.options || {}, label = headerTypes[m.type] || m.title || nativeTitle(m.type);
     let body;
     if (m.type === 'h-date') {
@@ -71,5 +74,5 @@ export function homeHeader({ editing, sources, title, nativeTitle }) {
     return `<div class="hitem ht-${esc(m.type)} ${(fonts.find(f=>f[0]===o.hFont) || [])[3] === 400 ? 'hf-regular' : ''} ${color(o.hColor) ? 'has-color' : ''}" data-hitem="${esc(m.id)}" data-mod="${esc(m.id)}" style="font-size:${base*scale}px;${color(o.hColor) ? '--hc:' + color(o.hColor) + ';' : ''}${family ? 'font-family:' + family + ';' : ''}"><div class="hitem-body" ${editing ? 'inert' : ''}>${body}</div>${tools}</div>`;
   }
   const fixed = editing ? `<button class="btn-glass" data-action="background">${icon('sun')} Fond</button><button class="btn-glass" data-action="library">${icon('plus')} Module</button><button class="btn-solid" data-action="edit" aria-label="Terminer la personnalisation">${icon('check')} Terminé</button>` : `<button class="card hov round-btn" data-action="edit" aria-label="Personnaliser cette page">${icon('edit')}</button>`;
-  return `<header class="page-head is-home ${editing ? 'is-editing' : ''}">${['left','center','right'].map(zone => `<div class="hzone hz-${zone}" data-hzone="${zone}">${homeDisplay.header.filter(m => m.zone === zone).map(item).join('')}${zone === 'right' ? `<span class="head-fixed">${fixed}</span>` : ''}</div>`).join('')}</header>`;
+  return `<header class="page-head is-home ${editing ? 'is-editing' : ''}">${['left','center','right'].map(zone => `<div class="hzone hz-${zone}" data-hzone="${zone}">${homeDisplay.header.filter(m => m.zone === zone).map(item).join('')}${zone === 'right' && !phone ? `<span class="head-fixed">${fixed}</span>` : ''}</div>`).join('')}${phone ? `<span class="head-fixed">${fixed}</span>` : ''}</header>`;
 }

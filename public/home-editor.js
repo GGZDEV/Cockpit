@@ -1,5 +1,5 @@
 // Move/resize gestures ported from HomeDashboard/js/app.js, with storage callbacks.
-export function attachHomeEditor({ root: $app, isEditing, isHome, getWidgets, getHeaderItems, persist, render, toast: showToast }) {
+export function attachHomeEditor({ root: $app, isEditing, isHome, maxHeight = () => 4, getWidgets, getHeaderItems, persist, render, toast: showToast }) {
   const app = { get editing() { return isEditing(); }, dragging: false };
   const L = { save: persist };
   const T = Object.fromEntries(['h-date','h-clock','h-temps','h-lights','h-fullscreen'].map(type => [type, { headerOnly: true, name: type }]));
@@ -14,7 +14,10 @@ export function attachHomeEditor({ root: $app, isEditing, isHome, getWidgets, ge
     const cs = getComputedStyle(grid);
     const colGap = parseFloat(cs.columnGap) || 0;
     const rowGap = parseFloat(cs.rowGap) || 0;
-    const cols = cs.gridTemplateColumns.split(' ').filter(Boolean).length || 1;
+    // A one-column stack (phone: flex column, narrow tablet: single grid track). A flex container still reports
+    // its unused grid-template-columns, so the column count is only read from a real grid.
+    const grid1 = cs.display === 'grid' || cs.display === 'inline-grid';
+    const cols = grid1 ? cs.gridTemplateColumns.split(' ').filter(Boolean).length || 1 : 1;
     const inner = grid.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
     const stacked = cols === 1;
     return {
@@ -24,6 +27,7 @@ export function attachHomeEditor({ root: $app, isEditing, isHome, getWidgets, ge
     };
   }
   const clampSize = (v) => Math.max(1, Math.min(4, v));
+  const clampHeight = (v) => Math.max(1, Math.min(maxHeight(), v));
   function pageModule(id) { return getWidgets().find((x) => x.id === id); }
 
   // Apply a size to the card without re-rendering (live preview while stretching).
@@ -62,7 +66,7 @@ export function attachHomeEditor({ root: $app, isEditing, isHome, getWidgets, ge
     const rawW = r.dir !== 's' && !g.stacked ? Math.max(g.col * 0.6, baseW + dx) : baseW;
     const rawH = r.dir !== 'e' ? Math.max(g.row * 0.6, baseH + dy) : baseH;
     const w = g.stacked ? r.w0 : clampSize(Math.round((rawW + g.colGap) / (g.col + g.colGap)));
-    const h = clampSize(Math.round((rawH + g.rowGap) / (g.row + g.rowGap)));
+    const h = clampHeight(Math.round((rawH + g.rowGap) / (g.row + g.rowGap)));
     if (w !== r.w || h !== r.h) { r.w = w; r.h = h; previewSize(r.host, w, h); }
     // The ghost frame follows the pointer exactly; the card itself snaps to the grid.
     const rect = r.host.getBoundingClientRect();
@@ -246,7 +250,7 @@ export function attachHomeEditor({ root: $app, isEditing, isHome, getWidgets, ge
       const m = mods[moduleIndex(mods, id)];
       if (!m) return;
       if (dir !== 's' && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) { m.width = clampSize((m.width || (m.size === 'full' ? 4 : m.size === 'wide' ? 2 : 1)) + (e.key === 'ArrowRight' ? 1 : -1)); m.size = m.width >= 4 ? 'full' : m.width >= 2 ? 'wide' : 'normal'; }
-      if (dir !== 'e' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) m.height = clampSize((m.height || 2) + (e.key === 'ArrowDown' ? 1 : -1));
+      if (dir !== 'e' && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) m.height = clampHeight((m.height || 2) + (e.key === 'ArrowDown' ? 1 : -1));
     });
   });
 

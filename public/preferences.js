@@ -17,6 +17,8 @@ export function sanitizeTabs(value) {
   }
   return out;
 }
+// Hauteur maximale d’un module, en rangs : sur le téléphone (une colonne) un module peut occuper tout l’écran.
+export const maxHeight = profile => profile === 'phone' ? 8 : 4;
 // Première ouverture du téléphone : on repart des modules de la tablette, ramenés à une colonne (mêmes notes).
 export const phoneWidgets = list => JSON.parse(JSON.stringify(list || [])).map(w => ({ ...w, width: 1, size: 'normal' }));
 export let tabPreferences = sanitizeTabs(read('mb.tabs.v1', null));

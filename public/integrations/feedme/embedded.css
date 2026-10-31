@@ -47,3 +47,7 @@ body.embedded-dialog-open .sheet-overlay.open>.sheet{position:relative;inset:aut
 }
 @media(max-width:380px){.rss-search .kbd{display:none}.sp-top{flex-wrap:wrap}.sp-main{min-width:120px}.sp-controls{margin-left:auto}.usage-account{grid-template-columns:1fr;gap:6px}.usage-window-head{gap:4px}}
 @media(max-width:300px){.sp-reauth{flex-wrap:wrap}.sp-reauth .btn{margin-left:auto}}
+/* Écran tactile : aucun raccourci clavier à afficher. */
+@media(hover:none) and (pointer:coarse){.kbd,.messenger-search kbd{display:none}}
+/* Module étroit (téléphone) : « Nouveau » devient un bouton +, le titre et l’état de connexion tiennent sur la ligne. */
+@media(max-width:420px){.messenger-top{gap:8px;padding:4px 2px 12px}.messenger-top h2{font-size:20px}.messenger-top .messenger-new{flex:none;width:40px;height:40px;min-width:40px;padding:0;gap:0;font-size:0}.messenger-search kbd{display:none}}

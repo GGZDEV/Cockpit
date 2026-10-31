@@ -10,20 +10,38 @@ body[data-profile="phone"] .rail{position:fixed;z-index:5;left:0;right:0;bottom:
 body[data-profile="phone"] .rail>.cockpit-rail-brand,body[data-profile="phone"] .rail>.native-rail-mode,body[data-profile="phone"] .rail>.surface-switch,body[data-profile="phone"] .rail>.rail-spacer{display:none}
 body[data-profile="phone"] .rail-btn{flex:1 1 0;min-width:0;max-width:64px;width:auto;height:48px;border-radius:14px}
 
-/* En-tête : date et heure sur une ligne, puis les pastilles qui défilent latéralement au lieu de s'empiler. */
+/* En-tête : grille fixe, quelle que soit la répartition des éléments entre les zones.
+   1re ligne : zone gauche (le titre ou la date se raccourcit), zone centre, boutons fixes ; 2e ligne : zone droite, qui défile latéralement. */
 body[data-profile="phone"] .panel{height:auto;padding:0;overflow:visible}
-body[data-profile="phone"] .native-home-panel .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;height:auto;margin:0 0 14px;padding:0}
+body[data-profile="phone"] .native-home-panel .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;height:auto;margin:0 0 12px;padding:0}
 body[data-profile="phone"] .native-home-panel .page-head>*{min-width:0}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-left{flex:1 1 0}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{flex:0 1 auto;justify-content:flex-end;margin-left:auto}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center>.hitem{justify-content:flex-end}
-body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right{flex:1 0 100%;order:3;flex-wrap:nowrap;justify-content:flex-start;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"l c f" "r r r";align-items:center;gap:8px 10px;min-height:0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-left{grid-area:l;flex-wrap:nowrap;min-height:40px;overflow:hidden}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{grid-area:c;flex-wrap:nowrap;justify-content:flex-end;min-height:40px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center:empty{display:none}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.head-fixed{grid-area:f;flex-wrap:nowrap;gap:6px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right{grid-area:r;grid-column:1/-1;flex-wrap:nowrap;justify-content:flex-start;min-height:0;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right:empty{display:none}
 body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right::-webkit-scrollbar{display:none}
-body[data-profile="phone"] .native-home-panel .hzone,body[data-profile="phone"] .native-home-panel .head-fixed{flex-wrap:nowrap}
 body[data-profile="phone"] .native-home-panel .hzone>*,body[data-profile="phone"] .native-home-panel .head-fixed>*{flex:none}
+body[data-profile="phone"] .native-home-panel .hzone>.ht-h-date{flex:0 1 auto;min-width:0}
+body[data-profile="phone"] .native-home-panel .ht-h-date>.hitem-body{min-width:0;overflow:hidden}
 body[data-profile="phone"] .native-home-panel .native-home-date,body[data-profile="phone"] .native-home-panel .hitem .home-date{font-size:22px!important}
 body[data-profile="phone"] .native-home-panel .native-home-clock,body[data-profile="phone"] .native-home-panel .hitem .home-clock{font-size:28px!important}
 body[data-profile="phone"] .native-home-panel .page-head h1{font-size:24px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .round-btn{width:40px;height:40px}
+/* Personnalisation : Fond · Module · Terminé en tête, puis une ligne entière par zone (cible de dépôt visible même vide) ;
+   les éléments passent à la ligne au lieu de se serrer, leurs boutons suivent le texte au lieu de le recouvrir. */
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing{grid-template-columns:minmax(0,1fr);grid-template-areas:"f" "l" "c" "r";gap:10px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing>.head-fixed{justify-content:flex-end}
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing>.hzone{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:12px 14px;min-height:44px;margin:0;padding:6px 8px;overflow:visible}
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing .hitem{padding-right:0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing .hitem-tools{position:static;margin-left:6px;flex:none}
+body[data-profile="phone"] .native-home-panel .page-head.is-home.is-editing .hitem-tools button{width:28px;height:28px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .btn-glass{width:40px;height:40px;padding:0;justify-content:center;font-size:0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .btn-solid{height:40px;padding:0 14px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .icon{width:18px;height:18px}
+body[data-profile="phone"] .native-home-panel .edit-hint{margin:0 0 12px;font-size:13px;line-height:1.4}
 body[data-profile="phone"] .room-tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px 12px;padding:0 14px;scrollbar-width:none}
 body[data-profile="phone"] .room-tabs::-webkit-scrollbar{display:none}
 
@@ -37,10 +55,42 @@ body[data-profile="phone"] .native-home-panel .mod-head{gap:10px}
 body[data-profile="phone"] .native-home-panel .mod-head>.muted{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 body[data-profile="phone"] .native-home-panel .native-widget .mod-body{min-height:0}
 body[data-profile="phone"] .native-home-panel .native-home-tools{opacity:1}
+/* Personnalisation : la barre du module (taille, couleurs, réglages, retrait) occupe une bande en haut au lieu de recouvrir son titre. */
+body[data-profile="phone"] .native-home-panel.is-editing .mods>.mod:not(.add-tile){padding-top:56px!important}
+body[data-profile="phone"] .native-home-panel.is-editing .mods>.mod>.mod-tools{top:10px;left:10px;right:10px;flex-wrap:nowrap}
 body[data-profile="phone"] .note-input{font-size:16px}
 
-/* Projets et dialogues à la largeur du téléphone. */
+/* Projets : en-tête compact (recherche et boutons sur une ligne), filtres sur une ligne qui défile,
+   colonnes du Kanban en carrousel : une colonne par écran, la suivante dépasse pour inviter à glisser. */
 body[data-profile="phone"] .projects-panel{padding:0}
+body[data-profile="phone"] .projects-panel .pj-root{padding:4px 0 16px;gap:12px}
+body[data-profile="phone"] .pj-head{gap:10px}
+body[data-profile="phone"] .pj-head h1{font-size:26px}
+body[data-profile="phone"] .pj-head p{margin-top:4px;font-size:13px;line-height:1.4}
+body[data-profile="phone"] .pj-actions{width:100%;flex-wrap:nowrap;gap:8px}
+body[data-profile="phone"] .pj-search{flex:1 1 auto;min-width:0;height:42px;padding:0 14px}
+body[data-profile="phone"] .pj-search input{width:100%;min-width:0;font-size:16px}
+body[data-profile="phone"] .pj-round{flex:none;width:42px;height:42px}
+body[data-profile="phone"] .pj-actions .pj-cta{flex:none;width:42px;height:42px;padding:0;justify-content:center;font-size:0}
+body[data-profile="phone"] .pj-actions .pj-cta .icon{width:20px;height:20px}
+body[data-profile="phone"] .pj-filters,body[data-profile="phone"] .pj-root>.pj-chips{flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px}
+body[data-profile="phone"] .pj-filters::-webkit-scrollbar,body[data-profile="phone"] .pj-root>.pj-chips::-webkit-scrollbar,body[data-profile="phone"] .pj-board-scroll::-webkit-scrollbar{display:none}
+body[data-profile="phone"] .pj-filters>*,body[data-profile="phone"] .pj-chips>*{flex:none}
+body[data-profile="phone"] .pj-filters .pj-chips{flex-wrap:nowrap}
+body[data-profile="phone"] .pj-filters>.pj-attn{order:-1}
+body[data-profile="phone"] .pj-seg{width:auto;padding:3px}
+body[data-profile="phone"] .pj-seg button{flex:none;height:32px;padding:0 12px;font-size:13px}
+body[data-profile="phone"] .pj-chip{height:38px;padding:0 12px;font-size:13px}
+body[data-profile="phone"] .pj-board-scroll{margin:0 -14px;padding:0 14px 6px;scroll-snap-type:x mandatory;scroll-padding:0 14px;scrollbar-width:none;overscroll-behavior-x:contain}
+body[data-profile="phone"] .pj-board{grid-template-columns:repeat(5,calc(min(100vw,560px) - 56px));gap:10px}
+body[data-profile="phone"] .pj-col{scroll-snap-align:start}
+body[data-profile="phone"] .pj-context{padding:12px 14px}
+body[data-profile="phone"] .pj-context>div{flex-basis:100%}
+
+/* Dialogues à la largeur du téléphone. */
+/* Choix en pastilles (hauteur 1 à 8…) : toujours sur une ligne, les boutons se partagent la largeur (36 px au moins pour le doigt). */
+body[data-profile="phone"] .module-settings-dialog .segmented.inline{display:flex;width:100%}
+body[data-profile="phone"] .module-settings-dialog .segmented.inline button{flex:1 1 0;min-width:36px;padding:6px 0}
 body[data-profile="phone"] dialog[open]{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 body[data-profile="phone"] .connection-form select,body[data-profile="phone"] .connection-form input{font-size:16px}
 body[data-profile="phone"] .settings-section .connection-form+.setting-title{margin-top:18px}

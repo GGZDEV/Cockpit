@@ -188,11 +188,13 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     task.updatedAt = now(); save(); return task;
   }
   const attachmentLines = task => (task.attachments || []).map(a => `- ${a.name} (${a.type.split(';')[0]}, ${Math.max(1, Math.round(a.size / 1024))} Ko) — sur le PC : ${files.localPath(task.id, a)} — via l’accès agents Cockpit : GET tasks/${task.code}/attachments/${a.id}`);
+  // « Clore la tâche » : accepte le dernier résultat s'il attend une validation, puis passe la tâche en Terminé.
+  // Une tâche sans résultat (manuelle, question restée ouverte…) peut aussi être close.
   function accept(tid) {
     const task = findTask(tid);
     if (openRun(task)) throw new HttpError(409, 'Une exécution est en cours : attendez son résultat.');
-    const run = task.runs.findLast(r => r.status === 'succeeded' && r.outcome === 'result');
-    if (run) run.accepted = now();
+    const run = task.runs.at(-1);
+    if (run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted) run.accepted = now();
     Object.assign(task, { status: 'done', acceptedAt: now(), question: '', updatedAt: now() }); save(); return task;
   }
 

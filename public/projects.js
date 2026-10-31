@@ -1,6 +1,7 @@
 // Onglet Projets : projets personnels, tableau Kanban et tâches confiées aux agents OpenClaw.
 // L'état réel (projets, tâches, exécutions) vit sur le serveur du PC : /api/projects/*.
 import { esc, icon, read, write, uid, safeUrl, timeoutSignal } from './core.js';
+import { chatItems, composerMode, canClose, richText } from './task-chat.js';
 
 const COLUMNS = [
   { id: 'todo', label: 'À faire', color: '#f5c542', ring: 'solid' },
@@ -319,80 +320,95 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <p class="form-status pj-help" role="status"></p><div class="pj-form-actions"><button class="button primary" type="submit">Créer la tâche</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-task-new', true);
   }
 
-  // ----- Panneau de tâche ---------------------------------------------------------------
+  // ----- Panneau de tâche : une conversation avec l'agent -----------------------------------
   function eventsHTML(run) {
     return `<ol class="pj-events">${run.events.map(e => `<li class="ev-${esc(e.type)}"><time>${fmtTime(e.at)}</time><span>${esc(e.text)}</span></li>`).join('')}</ol>`;
   }
-  function resultHTML(text, links) {
-    return `<div class="pj-result">${esc(text || '')}</div>${links?.length ? `<ul class="pj-links">${links.map(l => `<li><a href="${esc(safeUrl(l.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(l.label || l.url)}</a></li>`).join('')}</ul>` : ''}`;
-  }
-  // Continuer la même tâche avec l'agent, dans sa conversation : pas besoin de recréer une tâche.
-  function continueForm(task, enabled) {
-    return `<form class="pj-form pj-continue" data-pj-form="launch" data-kind="reprise" data-id="${esc(task.id)}">
-      <label>Répondre à ${esc(task.agent?.name || 'l’agent')} <span class="pj-help">(il garde le fil de la tâche)</span><textarea name="note" rows="2" data-keep="reprise" placeholder="Une correction, une suite, une précision…" required></textarea></label>
-      <div class="pj-form-actions"><button class="button primary" type="button" data-pj="quick-continue" data-id="${esc(task.id)}" ${enabled ? '' : 'disabled'}>${G.launch} Oui, continue</button>
-        <button class="button" type="submit" ${enabled ? '' : 'disabled'}>Envoyer la réponse</button></div></form>`;
-  }
-  function liveHTML(task) {
-    const run = lastRun(task), running = openRun(task), busy = st.launching.has(task.id);
-    const canContinue = !running && !busy && !!task.agent;
-    const canLaunch = !running && !busy && task.status !== 'done';
-    const missing = [!task.instructions && 'des consignes', !task.agent && 'un agent'].filter(Boolean);
-    let primary = '';
-    if (running) {
-      primary = `<div class="pj-box is-live"><div class="pj-box-head"><span class="pj-pulse ${running.status}"></span><b>${RUN_STATUS[running.status]}</b><span class="muted">· ${esc(running.agent?.name || '')} · ${RUN_KIND[running.kind]}</span></div>
-        ${running.tracking === 'recovering' ? `<p class="pj-help">Suivi direct indisponible : l’état est relu dans l’historique OpenClaw${running.trackingError ? ' (' + esc(running.trackingError) + ')' : ''}. Rien n’est renvoyé à l’agent.</p>` : ''}
-        ${eventsHTML(running)}
-        ${running.liveText ? `<details class="pj-partial" data-key="partial"><summary>Réponse en cours de rédaction (non définitive)</summary><div class="pj-result">${esc(running.liveText)}</div></details>` : ''}
-        <p class="pj-help">${esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')}</p>
-        ${task.updatedAt && task.updatedAt > running.createdAt ? '<p class="pj-help is-warn">La tâche a été modifiée après ce lancement : l’agent travaille sur la version envoyée. Les modifications serviront au prochain lancement.</p>' : ''}</div>`;
-    } else if (run && task.status !== 'done' && run.status === 'succeeded' && run.outcome === 'question') {
-      primary = `<div class="pj-box is-ask"><div class="pj-box-head">${G.alert}<b>L’agent a besoin de vous</b></div>${resultHTML(run.result)}
-        <form class="pj-form" data-pj-form="launch" data-kind="answer" data-id="${esc(task.id)}"><label>Votre réponse<textarea name="note" rows="3" data-keep="answer" required></textarea></label>
-        <div class="pj-form-actions"><button class="button primary" type="submit" ${canLaunch ? '' : 'disabled'}>${G.launch} Répondre et lancer</button></div></form></div>`;
-    } else if (run && task.status !== 'done' && ['failed', 'interrupted'].includes(run.status)) {
-      primary = `<div class="pj-box is-bad"><div class="pj-box-head">${G.alert}<b>${run.status === 'failed' ? 'L’exécution a échoué' : 'L’exécution a été interrompue'}</b><span class="muted">· ${fmtTime(run.endedAt)}</span></div><div class="pj-result">${esc(run.error || '')}</div>
-        <form class="pj-form" data-pj-form="launch" data-kind="retry" data-id="${esc(task.id)}"><label>Précisions pour la relance (facultatif)<textarea name="note" rows="2" data-keep="retry"></textarea></label>
-        <div class="pj-form-actions"><button class="button primary" type="submit" ${canLaunch && !missing.length ? '' : 'disabled'}>${G.launch} Relancer</button></div></form></div>`;
-    } else if (run && run.status === 'succeeded' && run.outcome === 'result' && !run.accepted) {
-      primary = `<div class="pj-box is-ok"><div class="pj-box-head">${icon('check')}<b>Résultat de ${esc(run.agent?.name || 'l’agent')}</b><span class="muted">· ${fmtTime(run.endedAt)}</span></div>${resultHTML(run.result, run.links)}
-        ${task.status !== 'done' ? `<div class="pj-form-actions"><button class="button" data-pj="accept" data-id="${esc(task.id)}">${icon('check')} Accepter et terminer</button></div>` : ''}
-        ${continueForm(task, canContinue)}</div>`;
-    } else {
-      primary = `<div class="pj-box"><div class="pj-box-head"><b>${task.status === 'done' ? 'Tâche terminée' : task.agent ? 'Prête à être confiée à ' + esc(task.agent.name) : 'Tâche manuelle'}</b></div>
-        <p class="pj-help">${task.status === 'done' ? (task.agent && run ? 'Vous pouvez continuer avec l’agent ci-dessous : la tâche repassera « À valider » à son prochain résultat.' : 'Pour reprendre le travail, replacez la carte dans une autre colonne.') : task.agent ?(missing.length ? 'Avant de lancer, ajoutez ' + missing.join(' et ') + '.' : 'L’agent recevra les consignes, les critères et ' + (task.includeContext === false ? 'aucun contexte de projet.' : 'le contexte du projet.')) : 'Aucun agent assigné : déplacez la carte au fil de votre travail, ou choisissez un agent ci-dessous.'}</p>
-        ${task.agent && task.status !== 'done' ? `<div class="pj-form-actions"><button class="button primary pj-launch" data-pj="launch" data-id="${esc(task.id)}" ${canLaunch && !missing.length ? '' : 'disabled'}>${G.launch} ${busy ? 'Vérification…' : 'Lancer'}</button></div>` : ''}
-        ${run?.accepted ? `<p class="pj-help">Résultat accepté le ${fmtTime(run.accepted)}.</p>${resultHTML(run.result, run.links)}` : ''}
-        ${task.status === 'done' && task.agent && run ? continueForm(task, canContinue) : ''}</div>`;
+  const initial = name => esc(String(name || '').replace(/[^\p{L}\p{N}]/gu, '').slice(0, 1).toUpperCase() || 'A');
+  function messageHTML(item, task) {
+    const time = item.at ? `<time>${fmtTime(item.at)}</time>` : '';
+    if (item.role === 'system') return `<p class="pj-sys"><span>${esc(item.text)}</span>${time}</p>`;
+    if (item.role === 'user') {
+      const label = { brief: 'Consignes', answer: 'Vous · réponse à sa question', retry: 'Vous · précisions pour la relance' }[item.type] || 'Vous';
+      const files = item.attachments?.length ? `<div class="pj-msg-files">${item.attachments.map(a => `<button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}</small></button>`).join('')}</div>` : '';
+      return `<div class="pj-msg is-user"><div class="pj-msg-meta"><span>${label}</span>${time}</div>
+        <div class="pj-bubble">${item.text ? richText(item.text) : '<p class="pj-help">Pas encore de consignes : écrivez-les ci-dessous.</p>'}${files}</div></div>`;
     }
-    const history = task.runs.slice().reverse().filter(r => r !== running);
-    return `${primary}<section class="pj-section"><h3>Historique des exécutions</h3>${history.length ? history.map(r => `<details class="pj-run" data-key="run-${esc(r.id)}"><summary><span class="pj-run-state st-${r.status}">${RUN_STATUS[r.status]}</span>${RUN_KIND[r.kind]} · ${esc(r.agent?.name || '')}<span class="pj-grow"></span><time>${fmtTime(r.createdAt)}</time></summary>
-      ${r.note ? `<p class="pj-help"><b>${r.kind === 'answer' ? 'Votre réponse' : 'Précisions'} :</b> ${esc(r.note)}</p>` : ''}${eventsHTML(r)}${r.result ? resultHTML(r.result, r.links) : ''}${r.error ? `<div class="pj-result is-bad">${esc(r.error)}</div>` : ''}
-      <details class="pj-prompt"><summary>Consignes envoyées</summary><div class="pj-result">${esc(r.prompt || '')}</div></details></details>`).join('') : '<p class="pj-help">Aucune exécution pour l’instant.</p>'}</section>`;
+    const run = item.run, name = run.agent?.name || task.agent?.name || 'Agent';
+    const head = extra => `<div class="pj-msg-meta"><span class="pj-av" aria-hidden="true">${initial(name)}</span><b>${esc(name)}</b>${extra}</div>`;
+    const more = `<details class="pj-msg-more" data-key="run-${esc(run.id)}"><summary>Détails de l’exécution · ${RUN_KIND[run.kind] || ''}</summary>${eventsHTML(run)}
+      <details class="pj-prompt" data-key="prompt-${esc(run.id)}"><summary>Consignes envoyées</summary><div class="pj-result">${esc(run.prompt || '')}</div></details></details>`;
+    if (item.type === 'live') {
+      return `<div class="pj-msg is-agent is-live">${head(`<span class="pj-msg-tag">${RUN_STATUS[run.status]}</span>`)}
+        <div class="pj-bubble">${item.text ? `<div class="pj-draft" title="Réponse en cours de rédaction (non définitive)">${richText(item.text)}</div>` : ''}
+          <p class="pj-typing" role="status"><span class="pj-dots" aria-hidden="true"><i></i><i></i><i></i></span>${esc(run.events.at(-1)?.text || RUN_STATUS[run.status])}</p>
+          ${run.tracking === 'recovering' ? `<p class="pj-help">Suivi direct indisponible : l’état est relu dans l’historique OpenClaw${run.trackingError ? ' (' + esc(run.trackingError) + ')' : ''}. Rien n’est renvoyé à l’agent.</p>` : ''}
+          ${task.updatedAt && task.updatedAt > run.createdAt ? '<p class="pj-help is-warn">La tâche a été modifiée après ce lancement : l’agent travaille sur la version envoyée. Les modifications serviront au prochain message.</p>' : ''}</div>${more}</div>`;
+    }
+    const tone = { question: 'is-ask', error: 'is-bad', result: 'is-ok' }[item.type];
+    const tag = item.type === 'question' ? 'attend votre réponse' : item.type === 'error' ? (run.status === 'failed' ? 'Échec' : 'Interrompue') : '';
+    return `<div class="pj-msg is-agent ${tone}">${head(`${tag ? `<span class="pj-msg-tag">${tag}</span>` : ''}${time}`)}
+      <div class="pj-bubble">${item.text ? richText(item.text) : `<p class="pj-help">${item.type === 'error' ? 'Aucune explication.' : 'Réponse vide.'}</p>`}</div>${more}</div>`;
+  }
+  const threadHTML = task => chatItems(task).map(item => messageHTML(item, task)).join('');
+  function composerHTML(task) {
+    const m = composerMode(task, { busy: st.launching.has(task.id) }), agent = esc(task.agent?.name || 'l’agent');
+    // « Clore la tâche » reste sous la zone de saisie : visible quelle que soit la longueur du fil.
+    const foot = (left = '') => `<div class="pj-chatbox-foot">${left}<span class="pj-grow"></span><div class="pj-panel-actions">${closeHTML(task)}</div></div>`;
+    if (m.mode === 'manual') return foot('<p class="pj-help">Tâche manuelle : aucun agent ne répond ici. Choisissez un agent dans « Détails de la tâche » pour lui confier le travail.</p>');
+    const busy = m.mode === 'busy';
+    if (!busy && m.kind === 'initial' && !m.needsText) return `<form class="pj-chatbox is-launch" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="initial">
+      <p class="pj-help">${agent} recevra les consignes, les critères et ${task.includeContext === false ? 'aucun contexte de projet' : 'le contexte du projet'}. Rien ne démarre sans ce clic.</p>
+      <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
+    return `<form class="pj-chatbox" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="${esc(m.kind || '')}" ${m.setsInstructions ? 'data-sets="1"' : ''}>
+      <label class="sr-only" for="pj-chat-input">Message à ${agent}</label>
+      <textarea id="pj-chat-input" name="note" rows="2" maxlength="8000" data-keep="chat" placeholder="${busy ? `${agent} travaille : vous pourrez envoyer dès sa réponse…` : esc(m.placeholder)}" ${m.needsText ? 'required' : ''}></textarea>
+      <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button></form>
+      ${foot(`${m.quick ? `<button class="pj-chip" type="button" data-pj="quick-continue" data-id="${esc(task.id)}">${G.launch} Oui, continue</button>` : ''}
+        <span class="pj-help">${busy ? esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.') : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
+  }
+  function closeHTML(task) {
+    if (task.status === 'done') return `<span class="pj-closed">${icon('check')} Tâche close</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
+    const run = lastRun(task), pendingResult = run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted;
+    return `<button class="button pj-close" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}
+      title="${!canClose(task) ? 'Attendez la réponse de l’agent' : pendingResult ? 'Accepter le résultat de l’agent et passer la tâche en Terminé' : 'Passer la tâche en Terminé'}">${icon('check')} Clore la tâche</button>`;
   }
   async function openPanel(taskId) {
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
     st.panel = taskId; loadAgents().then(() => { const sel = modal.querySelector('[data-pj-panel] select[name=agent]'); if (sel && !sel.matches(':focus')) sel.innerHTML = agentOptions(st.tasks.find(t => t.id === taskId)?.agent); });
-    const p = projectOf(task);
+    const p = projectOf(task), parts = { thread: threadHTML(task), composer: composerHTML(task) };
     showModal(task.code + ' · ' + task.title, (p?.name || '') + ' · ' + (COLUMNS.find(c => c.id === task.status)?.label || '') + (task.createdBy ? ' · créée par ' + task.createdBy : ''),`<div class="pj-panel" data-pj-panel="${esc(task.id)}">
       <div class="pj-panel-bar"><label>Colonne<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${task.status === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
         <span class="pj-help">Déplacer la carte ne lance ni n’arrête aucun agent.</span></div>
-      <div class="pj-live" aria-live="polite">${liveHTML(task)}</div>
-      <section class="pj-section"><h3>Détails de la tâche</h3><form class="pj-form" data-pj-form="edit-task" data-id="${esc(task.id)}">${taskFields(task)}
-        <div class="pj-form-actions"><button class="button primary" type="submit">Enregistrer</button><button class="button pj-danger" type="button" data-pj="delete-task" data-id="${esc(task.id)}">Supprimer</button></div></form></section></div>`, 'pj-task', true);
+      <details class="pj-details" ${task.agent ? '' : 'open'}><summary>Détails de la tâche <span class="muted">· consignes, pièces jointes, agent, priorité</span></summary>
+        <form class="pj-form" data-pj-form="edit-task" data-id="${esc(task.id)}">${taskFields(task)}
+        <div class="pj-form-actions"><button class="button primary" type="submit">Enregistrer</button><button class="button pj-danger" type="button" data-pj="delete-task" data-id="${esc(task.id)}">Supprimer</button></div></form></details>
+      <div class="pj-thread" data-pj-part="thread" aria-live="polite">${parts.thread}</div>
+      <div class="pj-composer" data-pj-part="composer">${parts.composer}</div></div>`, 'pj-task', true);
     modal.classList.add('pj-drawer');
+    for (const [name, html] of Object.entries(parts)) { const el = modal.querySelector(`[data-pj-part="${name}"]`); if (el) el.dataset.html = html; }
+    requestAnimationFrame(() => { modal.scrollTop = modal.scrollHeight; });
     schedule();
+  }
+  // Remplace une partie du panneau sans perdre la saisie en cours, le focus ni les détails ouverts.
+  function patch(el, next) {
+    if (!el || el.dataset.html === next) return false;
+    const kept = {}; el.querySelectorAll('[data-keep]').forEach(x => { kept[x.dataset.keep] = x.value; });
+    const open = new Set([...el.querySelectorAll('details[open]')].map(d => d.dataset.key || ''));
+    const focused = el.contains(document.activeElement) ? document.activeElement.dataset?.keep : undefined;
+    el.innerHTML = next; el.dataset.html = next;
+    el.querySelectorAll('[data-keep]').forEach(x => { if (kept[x.dataset.keep]) x.value = kept[x.dataset.keep]; if (focused && focused === x.dataset.keep) x.focus(); });
+    el.querySelectorAll('details').forEach(d => { if (open.has(d.dataset.key || '')) d.open = true; });
+    return true;
   }
   function updatePanel() {
     const panel = modal.open && modal.querySelector('[data-pj-panel]'); if (!panel) return;
-    const task = st.tasks.find(t => t.id === panel.dataset.pjPanel); const live = panel.querySelector('.pj-live'); if (!task || !live) return;
-    const next = liveHTML(task); if (live.dataset.html === next) return;
-    const kept = {}; live.querySelectorAll('[data-keep]').forEach(el => { kept[el.dataset.keep] = el.value; });
-    const open = new Set([...live.querySelectorAll('details[open]')].map(d => d.dataset.key || ''));
-    const focused = document.activeElement?.dataset?.keep;
-    live.innerHTML = next; live.dataset.html = next;
-    live.querySelectorAll('[data-keep]').forEach(el => { if (kept[el.dataset.keep]) el.value = kept[el.dataset.keep]; if (focused === el.dataset.keep) el.focus(); });
-    live.querySelectorAll('details').forEach(d => { if (open.has(d.dataset.key || '')) d.open = true; });
+    const task = st.tasks.find(t => t.id === panel.dataset.pjPanel); if (!task) return;
+    const part = name => panel.querySelector(`[data-pj-part="${name}"]`);
+    const nearEnd = modal.scrollHeight - modal.scrollTop - modal.clientHeight < 160;
+    const grew = patch(part('thread'), threadHTML(task));
+    patch(part('composer'), composerHTML(task));
+    if (grew && nearEnd) modal.scrollTop = modal.scrollHeight;
     const select = panel.querySelector('[data-pj-move]'); if (select && document.activeElement !== select) select.value = task.status;
     const subtitle = modal.querySelector('.dialog-heading p'); if (subtitle) subtitle.textContent = (projectOf(task)?.name || '') + ' · ' + (COLUMNS.find(c => c.id === task.status)?.label || '');
   }
@@ -402,6 +418,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (st.launching.has(taskId)) return; // un double clic ne crée qu'un lancement
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
     const key = uid(); st.launching.add(taskId); if (button) button.disabled = true; updatePanel();
+    let sent = false;
     try {
       // La même clé est renvoyée en cas de nouvelle tentative réseau : le serveur ne crée pas de doublon.
       let result, attempt = 0;
@@ -409,9 +426,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         try { result = await api('tasks/' + taskId + '/launch', 'POST', { launchKey: key, kind, note }); break; }
         catch (e) { if (!/fetch|network|réseau|timeout|abort/i.test(e.message) || ++attempt > 1) throw e; }
       }
-      upsert(result.task); toast(result.repeated ? 'Ce lancement était déjà enregistré.' : 'Demande transmise. La tâche passera en cours dès que l’agent confirme son démarrage.');
+      upsert(result.task); sent = true; toast(result.repeated ? 'Ce lancement était déjà enregistré.' : 'Message transmis. La tâche passera en cours dès que l’agent confirme son démarrage.');
     } catch (e) { toast(e.message); }
     finally { st.launching.delete(taskId); render(); updatePanel(); refresh(); }
+    return sent;
   }
   async function move(taskId, status) {
     const task = st.tasks.find(t => t.id === taskId); if (!task || task.status === status) return;
@@ -442,8 +460,9 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'quick-add': st.quickAdd = idv; render(); requestAnimationFrame(() => document.querySelector('#pj-quick-title')?.focus()); break;
         case 'quick-cancel': st.quickAdd = null; render(); break;
         case 'open-task': await openPanel(idv); break;
-        case 'launch': await launch(idv, undefined, '', el); break;
-        case 'accept': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Résultat accepté : tâche terminée.'); render(); updatePanel(); break; }
+        // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
+        case 'close-task': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Tâche close.'); render(); updatePanel(); break; }
+        case 'reopen': await move(idv, 'todo'); break;
         case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
         case 'quick-continue': await launch(idv, 'reprise', 'Oui, continue.', el); break;
         case 'request-agent': {
@@ -461,6 +480,12 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         case 'delete-task': { const t = st.tasks.find(t => t.id === idv); if (!t || !confirm(`Supprimer définitivement « ${t.title} » et son historique ?`)) break; await api('tasks/' + idv, 'DELETE'); st.tasks = st.tasks.filter(x => x.id !== idv); modal.close(); render(); break; }
       }
     } catch (e) { toast(e.message); }
+  });
+  // Ctrl+Entrée (ou Cmd+Entrée) envoie le message ; Entrée seule passe à la ligne.
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
+    const form = event.target.closest?.('[data-pj-form=chat]'); if (!form) return;
+    event.preventDefault(); const button = form.querySelector('[type=submit]'); if (button && !button.disabled) form.requestSubmit(button);
   });
   document.addEventListener('input', event => {
     if (event.target.id !== 'pj-search') return;
@@ -509,10 +534,18 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
         modal.close(); render();
-      } else if (kind === 'launch') {
-        await launch(form.dataset.id, form.dataset.kind, String(fd.get('note') || '').trim(), submit);
-        if (!openRun(st.tasks.find(t => t.id === form.dataset.id) || { runs: [] })) return;
-        form.reset();
+      } else if (kind === 'chat') {
+        const taskId = form.dataset.id, note = String(fd.get('note') || '').trim(), sets = !!form.dataset.sets;
+        if (sets) {
+          // Première demande d'une tâche sans consignes : le message devient ses consignes.
+          if (!note) throw new Error('Écrivez d’abord ce que l’agent doit faire.');
+          const saved = await api('tasks/' + taskId, 'PATCH', { instructions: note }); upsert(saved);
+          const field = modal.querySelector('[data-pj-form=edit-task] [name=instructions]'); if (field && !field.value.trim()) field.value = saved.instructions;
+        }
+        // Le message quitte la zone de saisie dès l'envoi ; il y revient si l'envoi échoue.
+        const box = () => modal.querySelector('[data-pj-form=chat] [name=note]');
+        if (box()) box().value = '';
+        if (!await launch(taskId, form.dataset.kind, sets ? '' : note, submit) && !sets && box() && !box().value) box().value = note;
       }
     } catch (e) { if (status) status.textContent = e.message; toast(e.message); }
     finally { if (submit?.isConnected) submit.disabled = false; }

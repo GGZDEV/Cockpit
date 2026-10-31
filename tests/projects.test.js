@@ -158,3 +158,26 @@ test('publishing follows the project procedure, automatic only when the user all
   assert.match(feed.state.sends[1], /## Publication \(autorisée par l’utilisateur pour ce projet\)/);
   assert.match(feed.state.sends[1], /publie-le toi-même en suivant exactement la procédure/);
 });
+
+test('closing a task from the chat: with or without a result, never while the agent works', async t => {
+  const { api, feed } = await setup(t);
+  const project = (await api('projects', 'POST', { name: 'Cockpit' })).body;
+  const manual = (await api('tasks', 'POST', { projectId: project.id, title: 'Sans agent' })).body;
+  const closed = (await api('tasks/' + manual.id + '/accept', 'POST', {})).body;
+  assert.equal(closed.status, 'done'); assert.ok(closed.acceptedAt);
+  const task = (await api('tasks', 'POST', { projectId: project.id, title: 'Chat', instructions: 'Faire', agent })).body;
+  feed.state.hold = [];
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '1' }); await settle();
+  const busy = await api('tasks/' + task.id + '/accept', 'POST', {});
+  assert.equal(busy.status, 409, 'an agent at work keeps the task open');
+  feed.state.hold.forEach(f => f()); feed.state.hold = null; await settle();
+  // Une question après un résultat : clore ne valide pas l'ancien résultat à sa place.
+  feed.state.reply = 'Quelle couleur ?\nSTATUT: BLOQUÉ';
+  await api('tasks/' + task.id + '/launch', 'POST', { launchKey: '2', kind: 'reprise', note: 'Et le thème ?' }); await settle();
+  const saved = (await api('state')).body.tasks.find(x => x.id === task.id);
+  assert.equal(saved.runs[0].outcome, 'result');
+  assert.equal(saved.runs.at(-1).outcome, 'question');
+  const done = (await api('tasks/' + task.id + '/accept', 'POST', {})).body;
+  assert.equal(done.status, 'done');
+  assert.equal(done.runs.some(r => r.accepted), false, 'no result was validated by closing on a question');
+});

@@ -4,6 +4,7 @@ const fs = require('node:fs'), os = require('node:os'), path = require('node:pat
 const { createProjects } = require('../projects.cjs');
 const { createAgentAccess, loadClients } = require('../agent-access.cjs');
 const { createWorkspaces, githubRepo } = require('../workspace.cjs');
+const { RULES, agentSettings, configCommand } = require('../project-agent.cjs');
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
 const GH = name => 'https://github.com/ggzdev/' + name;
@@ -205,6 +206,9 @@ test('the user can ask OpenClaw to create the project agent; Cockpit links it on
   assert.equal(saved.agentRequest.status, 'done');
   assert.match(messages[0], /Objectif : Vendre/); assert.match(messages[0], /Dépôt : https:\/\/github\.com\/ggzdev\/vitrine/); assert.match(messages[0], /ne crée pas de projet dans Cockpit/);
   assert.match(messages[0], /anthropic\/claude-opus-5-5/); assert.match(messages[0], /openai\/gpt-5\.6-sol/); assert.match(messages[0], /chaîne de secours/);
+  assert.ok(messages[0].includes(configCommand('site-vitrine', agentSettings({ repository: true }))), 'economical tools and skills for a code project');
+  assert.ok(messages[0].includes(RULES)); assert.match(messages[0], /remplace le modèle générique/);
+  assert.match(messages[0], /----- IDENTITY\.md -----\n# IDENTITY\.md\n\n- Name: site-vitrine/); assert.match(messages[0], /STATUT: TERMINÉ/);
   assert.equal((await ui('tasks', 'POST', { projectId: project.id, title: 'Accueil' })).body.agent.agentId, 'site-vitrine');
   assert.equal((await ui('projects/' + project.id + '/agent-request', 'POST', {})).status, 409, 'already has an agent');
 });

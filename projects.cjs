@@ -9,6 +9,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { createWorkspaces, githubRepo, sameRepo } = require('./workspace.cjs');
 const { createAttachments, AttachmentError } = require('./attachments.cjs');
+const { RULES, agentSettings, configCommand, workspaceFiles } = require('./project-agent.cjs');
 
 const PROJECT_STATUS = ['prep', 'active', 'paused', 'done'];
 const TASK_STATUS = ['todo', 'doing', 'blocked', 'review', 'done'];
@@ -396,22 +397,33 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   const AGENT_WAIT = 30 * 60000;
   const slug = value => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'projet';
   function agentRequestText(project, agentId) {
-    const c = project.context || {}, lines = [
+    const c = project.context || {}, settings = agentSettings(project), files = workspaceFiles(agentId);
+    const head = [
       `Bonjour, c'est Cockpit, à la demande de l'utilisateur (clic sur « Créer l'agent OpenClaw » du projet ${project.key}).`,
       `Crée un agent OpenClaw dédié à ce projet, avec l'identifiant exact « ${agentId} », en utilisant les commandes OpenClaw dont tu disposes (vérifie leur syntaxe avec openclaw agents --help). Donne-lui son propre espace de travail.`,
       'Configure son modèle primaire exact sur anthropic/claude-opus-5-5 et sa chaîne de secours sur [openai/gpt-5.6-sol]. Le secours doit être explicite dans la configuration propre à cet agent afin de prendre le relais en cas de limite, quota, indisponibilité ou autre erreur admissible au basculement.',
-      'Dans cet espace, écris le contexte ci-dessous dans AGENTS.md' + (c.repository ? ' et clone le dépôt du projet' : '') + '.',
+      (settings.kind === 'code'
+        ? 'Réglages économes en jetons pour un agent de développement (fichiers, commandes, git et GitHub, web, navigateur, captures ; sans messagerie, automatisations, appareils, médias génératifs ni wiki).'
+        : 'Réglages pour un agent généraliste (profil OpenClaw « coding » avec navigateur, toutes les compétences).')
+        + ' Applique modèle, outils et compétences en une commande, puis vérifie l’entrée avec openclaw config get :',
+      configCommand(agentId, settings),
+      'Si le projet exige un outil ou une compétence absent de cette liste, ajoute-le explicitement à son entrée plutôt que de retirer le profil.',
+      'Dans cet espace, écris dans AGENTS.md uniquement le contexte ci-dessous (il remplace le modèle générique d’OpenClaw)' + (c.repository ? ' et clone le dépôt du projet' : '') + '. Remplace aussi les modèles USER.md, IDENTITY.md et SOUL.md par les versions courtes données à la fin.',
       'Règles : aucun secret (clé, jeton, mot de passe) dans ce contexte ; ne crée pas de projet dans Cockpit (il existe déjà, Cockpit associera l’agent tout seul) ; ne crée ni ne modifie aucun dépôt.',
-      '', `## Projet ${project.key} — ${project.name}`];
-    if (project.description) lines.push(project.description);
-    if (c.objective) lines.push('', 'Objectif : ' + c.objective);
-    if (c.instructions) lines.push('', 'Instructions générales :', c.instructions);
-    if (c.repository) lines.push('', 'Dépôt : ' + c.repository);
-    if (c.environment) lines.push('Environnement : ' + c.environment);
-    if (c.resources) lines.push('', 'Ressources :', c.resources);
-    if (c.links?.length) lines.push('', 'Liens :', ...c.links.map(l => '- ' + (l.label ? l.label + ' : ' : '') + l.url));
-    lines.push('', 'Termine ta réponse par une ligne seule : STATUT: TERMINÉ si l’agent existe, ou STATUT: ÉCHEC avec la raison au-dessus.');
-    return lines.join('\n').slice(0, 30000);
+      '', '----- AGENTS.md -----', `## Projet ${project.key} — ${project.name}`];
+    const context = [];
+    if (project.description) context.push(project.description);
+    if (c.objective) context.push('', 'Objectif : ' + c.objective);
+    if (c.instructions) context.push('', 'Instructions générales :', c.instructions);
+    if (c.repository) context.push('', 'Dépôt : ' + c.repository);
+    if (c.environment) context.push('Environnement : ' + c.environment);
+    if (c.resources) context.push('', 'Ressources :', c.resources);
+    if (c.links?.length) context.push('', 'Liens :', ...c.links.map(l => '- ' + (l.label ? l.label + ' : ' : '') + l.url));
+    const tail = ['', RULES, '----- fin d’AGENTS.md -----',
+      ...Object.entries(files).flatMap(([name, body]) => ['', `----- ${name} -----`, body.trimEnd()]),
+      '', 'Termine ta réponse par une ligne seule : STATUT: TERMINÉ si l’agent existe, ou STATUT: ÉCHEC avec la raison au-dessus.'].join('\n');
+    const start = head.join('\n') + '\n';
+    return start + context.join('\n').slice(0, Math.max(0, 30000 - start.length - tail.length - 1)) + '\n' + tail;
   }
   // Envoie un message dans une conversation Cockpit et attend la réponse complète.
   async function converse(conversationId, message) {

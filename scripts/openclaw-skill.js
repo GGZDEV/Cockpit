@@ -4,6 +4,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { loadClients, tailscaleAddress, PORT } = require('../agent-access.cjs');
+const { GENERAL, RULES, agentSettings, configCommand, workspaceFiles } = require('../project-agent.cjs');
 
 function skill(base, token) {
   const auth = `-H "Authorization: Bearer ${token}"`;
@@ -29,8 +30,17 @@ Ne communique jamais cette clé et ne l'écris nulle part ailleurs (ni dans un d
 ## Créer un projet (toujours dans cet ordre)
 1. **Vérifie** qu'il n'existe pas : \`curl -s ${auth} ${base}state\`
 2. **Dépôt GitHub (obligatoire)** : celui que l'utilisateur donne, sinon crée-le **privé** avec tes propres accès GitHub (par ex. \`gh repo create <compte>/<nom> --private\`). Si tu n'as pas d'accès GitHub, demande l'adresse à l'utilisateur. Ne mets jamais de jeton GitHub dans Cockpit.
-3. **Agent dédié** : crée un agent OpenClaw pour ce projet avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`). Configure exactement son modèle sur \`{ primary: "anthropic/claude-opus-5-5", fallbacks: ["openai/gpt-5.6-sol"] }\` : Opus 5.5 par défaut, GPT-5.6 Sol uniquement en secours lorsque le modèle primaire atteint une limite ou subit une erreur admissible au basculement.
-4. **Contexte de l'agent** : dans son espace de travail, écris le contexte du projet dans \`AGENTS.md\` (objectif, conventions, dépôt, ce qu'il doit demander avant d'agir) et clone-y le dépôt pour qu'il puisse travailler dessus. C'est l'équivalent, côté OpenClaw, d'un projet Claude avec son contexte.
+3. **Agent dédié** : crée un agent OpenClaw pour ce projet avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`). Configure exactement son modèle sur \`{ primary: "anthropic/claude-opus-5-5", fallbacks: ["openai/gpt-5.6-sol"] }\` : Opus 5.5 par défaut, GPT-5.6 Sol uniquement en secours lorsque le modèle primaire atteint une limite ou subit une erreur admissible au basculement. Applique modèle, outils et compétences économes en une commande (remplace \`<id>\`), puis vérifie avec \`openclaw config get agents.entries.<id>\` :
+\`\`\`
+${configCommand('<id>', agentSettings({ repository: true }))}
+\`\`\`
+Ces réglages gardent fichiers, commandes, git/GitHub, web, navigateur et captures, sans messagerie, automatisations, appareils, médias génératifs ni wiki. Projet sans code : \`"tools":${JSON.stringify(GENERAL.tools)}\` et pas de \`skills\`. Un outil ou une compétence manquant s'ajoute explicitement à l'entrée de l'agent.
+4. **Contexte de l'agent** : dans son espace de travail, écris dans \`AGENTS.md\` uniquement le contexte du projet (objectif, conventions, dépôt, ce qu'il doit demander avant d'agir) suivi des règles ci-dessous — il remplace le modèle générique d'OpenClaw, relu à chaque tour — et clone-y le dépôt pour qu'il puisse travailler dessus. C'est l'équivalent, côté OpenClaw, d'un projet Claude avec son contexte.
+\`\`\`
+${RULES}
+\`\`\`
+Remplace aussi les modèles \`USER.md\`, \`IDENTITY.md\` et \`SOUL.md\` par ces versions courtes :
+${Object.entries(workspaceFiles('<id>', '<date du jour>')).map(([name, body]) => '- `' + name + '` :\n\`\`\`\n' + body.trimEnd() + '\n\`\`\`').join('\n')}
 5. **Projet Cockpit** (l'agent doit apparaître dans \`agents\` ; Cockpit relit la passerelle s'il est nouveau) :
 \`\`\`
 curl -s -X POST ${json} ${base}projects -d '{"name":"Site vitrine","description":"…","status":"active","priority":2,"repository":"https://github.com/<compte>/<dépôt>","agent":"site-vitrine","context":{"objective":"…","instructions":"…"}}'

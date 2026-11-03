@@ -11,7 +11,7 @@ function skill(base, token) {
   const json = `${auth} -H "Content-Type: application/json"`;
   return `---
 name: cockpit-projets
-description: Créer, consulter et modifier les projets et tâches de l'utilisateur dans l'onglet Projets de Cockpit (son tableau de bord personnel). Chaque nouveau projet a un dépôt GitHub, un agent OpenClaw dédié avec son contexte, et une copie locale sur le PC pour Claude Code. À utiliser quand il demande de créer un projet, d'ajouter une tâche, de joindre un fichier, de réorganiser ou de faire le point.
+description: Projets Cockpit : créer un projet, ajouter une tâche, joindre un fichier, réorganiser, faire le point. Un projet = dépôt GitHub + dossier local avec CLAUDE.md ; chaque tâche part vers Claude Code (Codex en option), sans agent OpenClaw par défaut.
 ---
 
 # Projets de Cockpit
@@ -23,40 +23,44 @@ Ne communique jamais cette clé et ne l'écris nulle part ailleurs (ni dans un d
 ## Règles
 - Avant de créer, liste l'existant pour éviter les doublons.
 - Tu peux créer et modifier des projets et des tâches, joindre des fichiers, archiver un projet.
-- Tu ne peux **pas** lancer une exécution d'agent, valider un résultat ni supprimer : dis à l'utilisateur de le faire dans l'onglet Projets (bouton « Lancer »). Assigner un agent ne lance rien.
+- Tu ne peux **pas** lancer une exécution d'agent, valider un résultat ni supprimer : dis à l'utilisateur de le faire dans l'onglet Projets (bouton « Lancer »). Choisir un moteur ou assigner un agent ne lance rien.
 - Aucun secret (mot de passe, clé, jeton) dans les projets, les tâches, les pièces jointes ou les contextes.
 - En cas d'erreur, le champ \`error\` explique quoi corriger (souvent la liste des valeurs valides). N'invente pas de champ : ceux qui ne sont pas listés ici sont ignorés.
 
-## Créer un projet (toujours dans cet ordre)
-Par défaut, un projet est traité par **Claude Code directement sur le PC** (moteur \`claude\`, sans agent OpenClaw) : Cockpit prépare alors le dossier cloné et son \`CLAUDE.md\` court. Dans ce cas, **saute les étapes 3 et 4 et n'envoie pas \`agent\`**. Pour garder le moteur OpenClaw, suis les étapes 3 à 5 en envoyant \`agent\` (le projet reste alors sur OpenClaw). Le champ \`engine\` (\`claude\`, \`codex\`, \`openclaw\`) peut aussi être donné explicitement.
+## Créer un projet
+Un projet = un dépôt GitHub + une copie locale sur le PC avec un \`CLAUDE.md\` court. **Aucun agent OpenClaw n'est créé par défaut** : n'envoie pas \`agent\`. Cockpit clone le dépôt, l'analyse sans IA et écrit le \`CLAUDE.md\` (pile, commandes, objectif et consignes du projet, règles de sortie courte), exclu de Git ; un \`CLAUDE.md\` du dépôt ou retouché à la main n'est jamais écrasé.
 1. **Vérifie** qu'il n'existe pas : \`curl -s ${auth} ${base}state\`
 2. **Dépôt GitHub (obligatoire)** : celui que l'utilisateur donne, sinon crée-le **privé** avec tes propres accès GitHub (par ex. \`gh repo create <compte>/<nom> --private\`). Si tu n'as pas d'accès GitHub, demande l'adresse à l'utilisateur. Ne mets jamais de jeton GitHub dans Cockpit.
-3. **Agent dédié** : crée un agent OpenClaw pour ce projet avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`). Configure exactement son modèle sur \`{ primary: "anthropic/claude-opus-5-5", fallbacks: ["openai/gpt-5.6-sol"] }\` : Opus 5.5 par défaut, GPT-5.6 Sol uniquement en secours lorsque le modèle primaire atteint une limite ou subit une erreur admissible au basculement. Applique modèle, outils et compétences économes en une commande (remplace \`<id>\`), puis vérifie avec \`openclaw config get agents.entries.<id>\` :
+3. **Projet Cockpit** (\`context.objective\` et \`context.instructions\` nourrissent le \`CLAUDE.md\` : courts, sans secret) :
+\`\`\`
+curl -s -X POST ${json} ${base}projects -d '{"name":"Site vitrine","description":"…","status":"active","priority":2,"repository":"https://github.com/<compte>/<dépôt>","engine":"claude","context":{"objective":"…","instructions":"…"}}'
+\`\`\`
+\`engine\` est facultatif : \`claude\` (défaut), \`codex\` ou \`openclaw\`. Changer plus tard : \`PATCH projects/<code>\` avec \`{"engine":"codex"}\`.
+4. **Dossier local** : vérifie \`localFolder\` (\`cloning\`, puis \`ready\` avec \`path\`, ou \`failed\` avec \`error\`, souvent un dépôt privé inaccessible au PC) et \`claudeMd.status\` dans la réponse ou dans \`state\`. Après correction : \`curl -s -X POST ${json} ${base}projects/<code>/clone -d '{}'\`
+5. Résume à l'utilisateur : dépôt, moteur, dossier local, tâches ajoutées. Les moteurs directs ne poussent ni ne déploient jamais ; la publication reste à l'utilisateur.
+
+### Moteur OpenClaw hérité (facultatif)
+Seulement si l'utilisateur veut un agent OpenClaw dédié (\`engine\` \`openclaw\`, ou \`agent\` donné sans \`engine\`, qui garde le projet sur OpenClaw). Dans ce cas, ajoute avant l'étape 3 :
+- **Agent dédié** : crée-le avec les commandes OpenClaw dont tu disposes (vérifie la syntaxe avec \`openclaw agents --help\`), avec son propre espace de travail. Identifiant court en minuscules (ex. \`site-vitrine\`). Configure exactement son modèle sur \`{ primary: "anthropic/claude-opus-5-5", fallbacks: ["openai/gpt-5.6-sol"] }\`, puis applique modèle, outils et compétences économes en une commande (remplace \`<id>\`) et vérifie avec \`openclaw config get agents.entries.<id>\` :
 \`\`\`
 ${configCommand('<id>', agentSettings({ repository: true }))}
 \`\`\`
-Ces réglages gardent fichiers, commandes, git/GitHub, web, navigateur et captures, sans messagerie, automatisations, appareils, médias génératifs ni wiki. Projet sans code : \`"tools":${JSON.stringify(GENERAL.tools)}\` et pas de \`skills\`. Un outil ou une compétence manquant s'ajoute explicitement à l'entrée de l'agent.
-4. **Contexte de l'agent** : dans son espace de travail, écris dans \`AGENTS.md\` uniquement le contexte du projet (objectif, conventions, dépôt, ce qu'il doit demander avant d'agir) suivi des règles ci-dessous — il remplace le modèle générique d'OpenClaw, relu à chaque tour — et clone-y le dépôt pour qu'il puisse travailler dessus. C'est l'équivalent, côté OpenClaw, d'un projet Claude avec son contexte.
+Projet sans code : \`"tools":${JSON.stringify(GENERAL.tools)}\` et pas de \`skills\`. Un outil ou une compétence manquant s'ajoute explicitement à l'entrée de l'agent.
+- **Contexte de l'agent** : dans son espace de travail, écris dans \`AGENTS.md\` uniquement le contexte du projet (objectif, conventions, dépôt, ce qu'il doit demander avant d'agir) suivi des règles ci-dessous, et clone-y le dépôt.
 \`\`\`
 ${RULES}
 \`\`\`
 Remplace aussi les modèles \`USER.md\`, \`IDENTITY.md\` et \`SOUL.md\` par ces versions courtes :
-${Object.entries(workspaceFiles('<id>', '<date du jour>')).map(([name, body]) => '- `' + name + '` :\n\`\`\`\n' + body.trimEnd() + '\n\`\`\`').join('\n')}
-5. **Projet Cockpit** (l'agent doit apparaître dans \`agents\` ; Cockpit relit la passerelle s'il est nouveau) :
-\`\`\`
-curl -s -X POST ${json} ${base}projects -d '{"name":"Site vitrine","description":"…","status":"active","priority":2,"repository":"https://github.com/<compte>/<dépôt>","agent":"site-vitrine","context":{"objective":"…","instructions":"…"}}'
-\`\`\`
-6. **Copie locale sur le PC** : Cockpit clone aussitôt le dépôt sur le PC de l'utilisateur, pour Claude Code. Vérifie \`localFolder\` dans la réponse ou dans \`state\` : \`cloning\`, puis \`ready\` (avec \`path\`) ou \`failed\` (avec \`error\`, souvent un dépôt privé auquel le PC n'a pas accès). Après correction : \`curl -s -X POST ${json} ${base}projects/<code>/clone -d '{}'\`
-7. **Publication** : si tu connais la façon de publier le projet (où pousser, quelle commande de déploiement), décris-la dans \`context.publishing\`. Publier automatiquement reste un choix de l'utilisateur, qu'il coche lui-même dans Cockpit.
-8. Résume à l'utilisateur : dépôt, agent créé, dossier local sur le PC, tâches ajoutées.
+${Object.entries(workspaceFiles('<id>', '<date du jour>')).map(([name, body]) => '- \`' + name + '\` :\n\`\`\`\n' + body.trimEnd() + '\n\`\`\`').join('\n')}
+- **Projet Cockpit** : même appel qu'à l'étape 3, avec \`"agent":"<id>"\` (l'agent doit apparaître dans \`agents\`). \`context.publishing\` (où pousser, quelle commande de déploiement) ne sert qu'à ce moteur ; la publication automatique reste un choix que l'utilisateur coche lui-même.
 
 ## Tâches
-Une tâche = un titre, une description (\`instructions\`), un résultat attendu (\`expected\`). Le contexte du projet, son dépôt et son dossier local sont joints automatiquement au lancement. L'agent du projet est repris par défaut.
+Une tâche = un titre, une description (\`instructions\`), un résultat attendu (\`expected\`). Elle suit le moteur du projet. Au clic sur « Lancer » (toi, tu ne lances rien), Claude Code (ou Codex) travaille directement dans un worktree et une branche à part, **en une seule session reprise à chaque message suivant**, sans renvoyer les consignes ; le contexte du projet, son dépôt et son dossier local sont joints automatiquement. Le plan préalable (« Plan d'abord ») est une option de la tâche, désactivée par défaut ; elle se règle, comme le modèle, dans l'interface Projets, pas par ce service.
 \`\`\`
 curl -s -X POST ${json} ${base}tasks -d '{"project":"SV","title":"…","instructions":"…","expected":"…"}'
 \`\`\`
-Champs facultatifs : \`criteria\`, \`links\` (adresses web : \`[{"url":"https://…","label":"…"}]\`), \`priority\`, \`due\`, \`agent\` (\`null\` = tâche manuelle), \`status\`.
-Modifier (colonne, consignes, agent…) : \`curl -s -X PATCH ${json} ${base}tasks/SV-3 -d '{"status":"blocked"}'\`
+Champs facultatifs : \`criteria\`, \`links\` (adresses web : \`[{"url":"https://…","label":"…"}]\`), \`priority\`, \`due\`, \`status\`, \`engine\` (\`claude\`, \`codex\` ou \`openclaw\` ; absent = celui du projet), \`agent\` (moteur OpenClaw seulement ; \`null\` = tâche manuelle ; un \`agent\` donné sans \`engine\` rend la tâche OpenClaw).
+Modifier (colonne, consignes, moteur…) : \`curl -s -X PATCH ${json} ${base}tasks/SV-3 -d '{"status":"blocked"}'\`
 Détail d'une tâche : \`curl -s ${auth} ${base}tasks/SV-3\`
 
 ## Pièces jointes

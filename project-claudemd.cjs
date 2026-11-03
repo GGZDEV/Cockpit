@@ -80,7 +80,8 @@ function render(project, analysis) {
     '- Lire par plages (`Read` avec offset/limit) ; jamais `cat` sur un gros fichier ; chercher avec `grep -n … | head -40`.',
     '- Plafonner toute sortie de commande : `| tail -30` pour tests et build, `git diff --stat` avant `git diff <fichier>`, `ls`/`find` bornés.',
     '- Tests : d’abord le fichier concerné ; la suite complète une seule fois avant de conclure.',
-    '- Ne rien publier : pas de push, de déploiement ni d’envoi hors de la machine. Un seul commit local à la fin (`git add -A && git commit -m "<résumé court>"`).',
+    '- Modifier les fichiers avec `Edit`/`Write` (pas de script python ou `sed -i`, refusés). Les tests peuvent réécrire des fichiers suivis (ex. `runtime.json`) : relire `git status` et n’ajouter au commit que ce que tu as modifié.',
+    '- Ne rien publier : pas de push, de déploiement ni d’envoi hors de la machine. Un seul commit local à la fin (`git add <fichiers modifiés> && git commit -m "<résumé court>"`, jamais `git add -A`).',
     '- Réponse finale courte : ce qui a changé (fichiers), résultat des tests, point restant. Pas de récit des étapes.',
     '- Si une réponse de l’utilisateur est indispensable, finir par la ligne seule `STATUT: BLOQUÉ` (question au-dessus) ; si c’est impossible, `STATUT: ÉCHEC` (raison au-dessus).');
   return out.join('\n') + '\n';

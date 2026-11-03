@@ -72,8 +72,9 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   assert.equal(run.summary.branch, done.direct.branch); assert.match(done.direct.branch, /^cockpit\/al-1-/);
   assert.deepEqual(run.summary.files, ['A\tfeature.txt']); assert.deepEqual(run.summary.commits.map(c => c.replace(/^\w+ /, '')), ['Fonction ajoutée']); assert.deepEqual(run.summary.uncommitted, []);
   const m = run.metrics;
-  assert.deepEqual([m.engine, m.model, m.input, m.cacheWrite, m.cacheRead, m.output, m.calls, m.firstCallContext], ['claude', 'claude-sonnet-5-5', 19, 1300, 2000, 150, 3, 1010]);
-  assert.equal(m.totalTokens, 19 + 1300 + 2000 + 150); assert.equal(m.source, 'stream'); assert.equal(m.byModel.length, 2);
+  // Totaux du résultat final (tous les modèles, auxiliaire compris) : le flux ne donne pas les sorties complètes. Appels et premier contexte : vus dans le flux.
+  assert.deepEqual([m.engine, m.model, m.input, m.cacheWrite, m.cacheRead, m.output, m.calls, m.firstCallContext], ['claude', 'claude-sonnet-5-5', 321, 1300, 2000, 202, 3, 1010]);
+  assert.equal(m.totalTokens, 321 + 1300 + 2000 + 202); assert.equal(m.source, 'modelUsage'); assert.equal(m.byModel.length, 2);
   assert.ok(run.events.some(e => e.text === 'Bash · git commit -m x --token=***'), 'secrets masked in the activity log');
 });
 
@@ -89,6 +90,8 @@ test('the same session is resumed on every message: same folder, short follow-up
   const [r1, r2] = done.runs;
   assert.ok(Math.abs(r1.metrics.costUsd - 0.0123) < 1e-9 && Math.abs(r2.metrics.costUsd - 0.0123) < 1e-9, 'the cumulative cost announced by a resumed session is reduced to this run');
   assert.ok(Math.abs(done.direct.costTotal - 0.0246) < 1e-9);
+  for (const run of [r1, r2]) assert.deepEqual([run.metrics.input, run.metrics.cacheRead, run.metrics.output, run.metrics.totalTokens], [321, 2000, 202, 3823], 'tokens too are reduced to this run (the session reports cumulative totals)');
+  assert.deepEqual(done.direct.usage, { input: 642, cacheWrite: 2600, cacheRead: 4000, output: 404 });
   assert.equal(arg(second.args, '--max-budget-usd'), String(5 + 0.0123), 'the cap of a resumed run is added to what the conversation already spent');
   assert.equal(done.runs.length, 2); assert.equal(done.direct.sessionId, arg(first.args, '--session-id'));
 });

@@ -11,7 +11,7 @@ inchangé, pour les projets et tâches qui l'utilisent déjà. Objectif : le moi
 | Sessions | plusieurs appels obligatoires par tâche | **une session par tâche**, reprise à chaque message (`--resume`) |
 | Consignes du projet | prompt système ajouté + rappelées dans chaque demande | **un `CLAUDE.md` court et stable** dans le dossier (il est mis en cache par Claude) |
 | Plan | toujours | **option par tâche**, désactivée par défaut |
-| Demande envoyée | contrat complet (cadre, publication, contexte) | titre + consignes + résultat attendu + critères, **~100 jetons** |
+| Demande envoyée | contrat complet (cadre, publication, contexte) | titre + consignes + résultat attendu + critères (**~120 jetons** pour la tâche mesurée) |
 
 ## Ce qui se passe pour une tâche
 
@@ -59,7 +59,7 @@ Quand Cockpit clone le dépôt d'un projet (ou en retrouve la copie locale), il 
 
 1. analyse le dépôt **sans IA** (`project-claudemd.cjs`) : `package.json`/lockfile, `pyproject`, `Cargo.toml`, `go.mod`, Makefile…
    → pile, commande de tests, dossiers, indentation, linter ;
-2. écrit un `CLAUDE.md` de ~1 600 caractères (≈ 500 jetons) : objectif et consignes du projet, pile, commandes, conventions et
+2. écrit un `CLAUDE.md` de ~1 800 caractères (≈ 550 jetons) : objectif et consignes du projet, pile, commandes, conventions et
    **règles de sortie plafonnée** (lecture par plages, `| tail -30`, `git diff --stat`, tests ciblés puis suite une fois, réponse
    courte, `STATUT: BLOQUÉ/ÉCHEC`) ;
 3. l'exclut de Git localement (`.git/info/exclude`) : jamais commité par accident ;
@@ -70,6 +70,15 @@ Chaque tâche ouvre ou reprend sa session dans **son worktree** (les sessions de
 le `CLAUDE.md` y est copié à la création. Le fichier reste court et stable : le modifier en cours de tâche casserait le cache.
 Le projet est créé par l'interface ou par un agent (`POST projects` : sans `agent`, moteur Claude Code ; avec `agent`, moteur
 OpenClaw comme avant).
+
+## Mesure réelle (une tâche, Sonnet 5.5, n = 1)
+
+Tâche « logo dans le header », même commit `9a09d21` que les essais précédents : **162 124 jetons** (10 appels, 50 s, socle au 1er appel
+7 127), contre 168 413 pour Claude Code lancé à la main, 315 671 pour Cockpit via OpenClaw (config optimisée) et 329 441 avant
+optimisation. Modèle relevé dans le journal de session : `claude-sonnet-5-5` pour les 10 appels. Détail, méthode et limites :
+`benchmarks/cockpit-direct-2026-11-03/RAPPORT.md` (dans l'espace de travail OpenClaw).
+Sans appel d'API (faux serveur local), la première requête pèse 18,7 k caractères avec ce profil, contre 24,5 k avec seulement
+`--tools` + `--disable-slash-commands`, et 69,5 k pour `claude -p` « tel quel » (20 outils, liste de compétences).
 
 ## Choix du moteur
 

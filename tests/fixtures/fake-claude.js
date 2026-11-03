@@ -56,10 +56,14 @@ function main() {
     : plan ? 'Plan prêt : ajouter feature.txt puis lancer les tests.' : 'Fait : feature.txt ajouté et commité.';
   out({ type: 'assistant', message: { id: 'msg_4', model, content: [{ type: 'text', text }], usage: usage(5, 200, 1000, 80) } });
   const session = sessions[id] || { cost: 0 }, cost = session.cost + (mode === 'budget' ? 0.5 : 0.0123);
-  sessions[id] = { ...session, cost }; fs.writeFileSync(store, JSON.stringify(sessions));
+  // Comme Claude Code lors d'une reprise : les compteurs annoncés sont cumulés sur toute la conversation.
+  const add = (a, b) => ({ inputTokens: (a?.inputTokens || 0) + b.inputTokens, outputTokens: (a?.outputTokens || 0) + b.outputTokens, cacheReadInputTokens: (a?.cacheReadInputTokens || 0) + b.cacheReadInputTokens, cacheCreationInputTokens: (a?.cacheCreationInputTokens || 0) + b.cacheCreationInputTokens, costUSD: (a?.costUSD || 0) + b.costUSD });
+  const modelUsage = { ...(session.modelUsage || {}) };
+  modelUsage[model] = add(modelUsage[model], { inputTokens: 21, outputTokens: 190, cacheReadInputTokens: 2000, cacheCreationInputTokens: 1300, costUSD: 0.012 });
+  modelUsage['claude-haiku-5-5'] = add(modelUsage['claude-haiku-5-5'], { inputTokens: 300, outputTokens: 12, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.0003 });
+  sessions[id] = { ...session, cost, modelUsage }; fs.writeFileSync(store, JSON.stringify(sessions));
   if (mode === 'error' || mode === 'budget') { out({ type: 'result', subtype: mode === 'budget' ? 'error_max_budget_usd' : 'error_during_execution', is_error: true, duration_ms: 50, num_turns: 1, session_id: id, total_cost_usd: cost, errors: ['Erreur simulée'] }); process.exit(1); }
   // Coût annoncé = cumul de la conversation entière (comme Claude Code lors d'une reprise).
   out({ type: 'result', subtype: 'success', is_error: false, duration_ms: 1234, duration_api_ms: 1000, num_turns: 3, result: text, session_id: id, total_cost_usd: cost,
-    usage: usage(21, 1300, 2000, 190), permission_denials: [],
-    modelUsage: { [model]: { inputTokens: 21, outputTokens: 190, cacheReadInputTokens: 2000, cacheCreationInputTokens: 1300, costUSD: 0.012 }, 'claude-haiku-5-5': { inputTokens: 300, outputTokens: 12, cacheReadInputTokens: 0, cacheCreationInputTokens: 0, costUSD: 0.0003 } } });
+    usage: usage(21, 1300, 2000, 190), permission_denials: [], modelUsage });
 }

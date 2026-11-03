@@ -540,9 +540,9 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       else if (ev.kind === 'tool') { event(run, 'tool', ev.text); saveSoon(); }
       else if (ev.kind === 'text') { run.liveText = harness.redact(collector.state.text).slice(0, 20000); saveSoon(); }
     } });
-    run.metrics = result.collector.metrics({ costBefore, durationMs: result.durationMs, model: run.model });
+    run.metrics = result.collector.metrics({ costBefore, usageBefore: run.fresh ? null : d.usage || null, durationMs: result.durationMs, model: run.model });
     run.durationMs = result.durationMs;
-    if (run.engine === 'claude' && run.metrics.costTotal) d.costTotal = run.metrics.costTotal;
+    if (run.engine === 'claude') { if (run.metrics.costTotal) d.costTotal = run.metrics.costTotal; if (run.metrics.usageTotal) d.usage = run.metrics.usageTotal; }
     const out = result.collector.outcome({ code: result.code, stderr: result.stderr });
     if (run.fresh && !result.collector.state.sessionId) delete d.sessionId; // session jamais créée : la prochaine demande repart de zéro
     if (closing) return fail(task, run, 'interrupted', `Cockpit s’est arrêté pendant l’exécution. La session ${label} et le worktree sont conservés : « Relancer » reprend.`);

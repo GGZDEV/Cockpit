@@ -24,8 +24,9 @@ test('analysis detects the stack, the test command and the folders without any A
 test('the generated file stays short whatever the project context, and is French', () => {
   const huge = 'x'.repeat(50000), a = md.analyze(__dirname);
   const text = md.render({ name: 'N'.repeat(500), description: huge, context: { objective: huge, instructions: Array.from({ length: 500 }, (_, i) => 'règle ' + i).join('\n'), environment: huge } }, a);
-  assert.ok(text.length < 4000, 'bounded: ' + text.length);
+  assert.ok(text.length < 4500, 'bounded: ' + text.length);
   assert.match(text, /^<!-- Généré par Cockpit/); assert.match(text, /## Règles de travail \(économie de jetons\)/);
+  assert.match(text, /jamais `git add -A`/); assert.match(text, /relire `git status`/);
 });
 
 test('prepare: generates once, ignores the file in Git, never overwrites an existing or edited file', async t => {

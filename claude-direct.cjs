@@ -82,21 +82,26 @@ function createCollector() {
     if (m.type === 'result') { st.result = m; return { kind: 'result' }; }
     return null;
   }
-  // Compteurs de cette exécution : somme des appels distincts vus dans le flux (même méthode que les mesures de référence, dédupliquées par message).
-  // Le résultat final sert de repli ; modelUsage (appels auxiliaires inclus) est gardé à titre indicatif.
-  // La reprise d'une session annonce un coût cumulé pour toute la conversation : costBefore (cumul de la précédente exécution) en est retiré.
-  function metrics({ costBefore = 0 } = {}) {
+  // Compteurs de cette exécution. Le flux ne donne les sorties qu'en partie (le compteur final d'un message arrive après lui) :
+  // les totaux viennent donc du résultat final (modelUsage : tous les modèles, appels auxiliaires inclus), vérifié sur un passage réel
+  // contre le journal de session (mêmes chiffres). Une session reprise annonce des cumuls pour toute la conversation : costBefore et
+  // usageBefore (cumuls de la précédente exécution) en sont retirés. Repli : usage du résultat, puis somme des appels vus dans le flux.
+  const FIELDS = ['input', 'cacheWrite', 'cacheRead', 'output'];
+  function metrics({ costBefore = 0, usageBefore = null } = {}) {
     const r = st.result || {}, sum = { input: 0, cacheWrite: 0, cacheRead: 0, output: 0 };
     for (const { usage: u } of st.calls.values()) { sum.input += u.input_tokens || 0; sum.cacheWrite += u.cache_creation_input_tokens || 0; sum.cacheRead += u.cache_read_input_tokens || 0; sum.output += u.output_tokens || 0; }
-    const u = r.usage, fromResult = u && typeof u.input_tokens === 'number' && !st.calls.size;
-    const total = fromResult ? { input: u.input_tokens, cacheWrite: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, output: u.output_tokens || 0 } : sum;
     const byModel = Object.entries(r.modelUsage && typeof r.modelUsage === 'object' ? r.modelUsage : {}).map(([model, x]) => ({ model,
       input: x.inputTokens || 0, cacheWrite: x.cacheCreationInputTokens || 0, cacheRead: x.cacheReadInputTokens || 0, output: x.outputTokens || 0, costUsd: x.costUSD || 0 }));
+    const u = r.usage;
+    const cumulative = byModel.length ? Object.fromEntries(FIELDS.map(k => [k, byModel.reduce((a, m) => a + m[k], 0)]))
+      : u && typeof u.input_tokens === 'number' ? { input: u.input_tokens, cacheWrite: u.cache_creation_input_tokens || 0, cacheRead: u.cache_read_input_tokens || 0, output: u.output_tokens || 0 } : null;
+    // Cumul croissant : la part de cette exécution est la différence ; sinon les chiffres sont déjà ceux de l'exécution.
+    const total = !cumulative ? sum : usageBefore && FIELDS.every(k => cumulative[k] >= usageBefore[k]) ? Object.fromEntries(FIELDS.map(k => [k, cumulative[k] - usageBefore[k]])) : cumulative;
     const first = st.calls.values().next().value, raw = Number(r.total_cost_usd) || 0;
     return { engine: 'claude', model: [...st.models].join(', ') || st.model, ...total, totalTokens: total.input + total.cacheWrite + total.cacheRead + total.output,
       calls: st.calls.size, turns: r.num_turns || 0, tools: st.tools, firstCallContext: first ? ctx(first.usage) : null,
-      durationMs: r.duration_ms || 0, apiMs: r.duration_api_ms || 0, costUsd: raw >= costBefore ? raw - costBefore : raw, costTotal: raw,
-      denials: Array.isArray(r.permission_denials) ? r.permission_denials.length : 0, byModel, source: fromResult ? 'result' : 'stream' };
+      durationMs: r.duration_ms || 0, apiMs: r.duration_api_ms || 0, costUsd: raw >= costBefore ? raw - costBefore : raw, costTotal: raw, usageTotal: cumulative,
+      denials: Array.isArray(r.permission_denials) ? r.permission_denials.length : 0, byModel, source: byModel.length ? 'modelUsage' : u ? 'result' : 'stream' };
   }
   // Issue normalisée : réussite, texte final, erreur lisible, budget atteint.
   function outcome({ code, stderr = '' } = {}) {

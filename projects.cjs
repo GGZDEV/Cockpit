@@ -181,14 +181,13 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     catch (error) { throw error.status ? new HttpError(error.status, error.message) : error; }
     return project.claudeMd;
   }
-  // Moteur d'une tâche : celui de la tâche, sinon celui du projet. Un projet ou une tâche d'avant les moteurs directs reste sur OpenClaw
-  // (agent dédié, conversation déjà engagée) ; un projet sans agent mais avec dossier local prêt passe sur Claude Code.
+  // Moteur d'une tâche : celui de la tâche, sinon celui du projet. Un projet ou une tâche d'avant les moteurs directs (aucun moteur
+  // enregistré, conversation déjà engagée) reste sur OpenClaw : rien ne bascule sans choix explicite.
   function engineOf(task, project) {
     if (!directEnabled) return 'openclaw';
     if (task.engine) return task.engine;
     if (task.runs?.length) return 'openclaw';
-    if (project?.engine) return project.engine;
-    return !project?.agent && project?.workspace?.status === 'ready' ? 'claude' : 'openclaw';
+    return project?.engine || 'openclaw';
   }
   function retryWorkspace(project) {
     if (!githubRepo(project.context?.repository)) throw new HttpError(400, 'Ce projet n’a pas d’adresse GitHub à cloner.');
@@ -731,7 +730,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   function viewProject(p) {
     const tasks = store.tasks.filter(t => t.projectId === p.id), count = s => tasks.filter(t => t.status === s).length;
     return { id: p.id, key: p.key, name: p.name, status: p.status, priority: p.priority, due: p.due || '', description: p.description || '', archived: !!p.archived, context: p.context || {},
-      agent: p.agent ? p.agent.agentId + ' (' + p.agent.name + ')' : null, engine: p.engine || (p.agent ? 'openclaw' : 'claude'),
+      agent: p.agent ? p.agent.agentId + ' (' + p.agent.name + ')' : null, engine: p.engine || 'openclaw',
       claudeMd: p.claudeMd ? { status: p.claudeMd.status, chars: p.claudeMd.chars } : null,
       ...(p.agentRequest && !p.agent ? { agentRequest: { status: p.agentRequest.status, agentId: p.agentRequest.agentId, ...(p.agentRequest.error ? { error: p.agentRequest.error } : {}) } } : {}),
       localFolder: p.workspace ? { status: p.workspace.status, path: p.workspace.path, ...(p.workspace.error ? { error: p.workspace.error } : {}) } : null,
@@ -772,7 +771,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         return { project: viewProject(project), tasks: store.tasks.filter(t => t.projectId === project.id && t.status !== 'done').map(viewTask) };
       }
       case 'POST projects': {
-        const input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'key', 'context']);
+        const input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'key', 'context', 'engine']);
         input.context = { ...(input.context && typeof input.context === 'object' ? input.context : {}), ...('repository' in body ? { repository: body.repository } : {}) };
         delete input.context.autoPublish; // autoriser la publication automatique reste un choix de l'utilisateur
         const repo = githubRepo(input.context.repository);
@@ -781,10 +780,12 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         if (twin) throw new HttpError(409, 'Ce dépôt est déjà celui du projet ' + twin.key + ' (' + twin.name + ').');
         input.status = word(input.status, PROJECT_WORDS, PROJECT_STATUS) ?? 'prep'; if ('priority' in input) input.priority = word(input.priority, PRIORITY_WORDS, []);
         if ('agent' in body) input.agent = await agentAssignee(body.agent);
+        // Un agent OpenClaw donné à la création sans moteur précisé garde le comportement d'avant : le projet reste sur OpenClaw.
+        if (input.agent && !('engine' in body)) input.engine = 'openclaw';
         const project = createProject(input); project.createdBy = client; save(); return viewProject(project);
       }
       case 'PATCH projects/:ref': {
-        const project = agentProject(ref), input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'archived', 'context']);
+        const project = agentProject(ref), input = pick(body, ['name', 'description', 'status', 'priority', 'due', 'archived', 'context', 'engine']);
         if ('repository' in body) input.context = { ...(input.context || {}), repository: body.repository };
         if (input.context && typeof input.context === 'object') { input.context = { ...input.context }; delete input.context.autoPublish; }
         if (input.context && 'repository' in input.context && !githubRepo(input.context.repository)) throw new HttpError(400, 'Le dépôt doit rester une adresse GitHub : https://github.com/<compte>/<dépôt>.');
@@ -796,9 +797,10 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       case 'POST tasks': {
         const project = agentProject(body.project ?? body.projectId);
         if (project.archived) throw new HttpError(409, 'Ce projet est archivé : restaurez-le avant d’y ajouter une tâche.');
-        const input = pick(body, ['title', 'instructions', 'expected', 'criteria', 'resources', 'links', 'priority', 'due', 'includeContext']);
+        const input = pick(body, ['title', 'instructions', 'expected', 'criteria', 'resources', 'links', 'priority', 'due', 'includeContext', 'engine']);
         if ('priority' in input) input.priority = word(input.priority, PRIORITY_WORDS, []);
         const assignee = 'agent' in body ? await agentAssignee(body.agent) : project.agent || null;
+        if (assignee && 'agent' in body && !('engine' in body)) input.engine = 'openclaw'; // agent OpenClaw choisi explicitement pour cette tâche
         const status = word(body.status, TASK_WORDS, TASK_STATUS) ?? 'todo';
         if (!TASK_STATUS.includes(status)) throw new HttpError(400, 'Colonne inconnue : utilisez À faire, Bloqué, À valider ou Terminé.');
         agentStatusGuard({ status: 'todo', runs: [] }, status, assignee);
@@ -807,9 +809,10 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       case 'PATCH tasks/:ref': {
         const task = agentTask(ref);
         if (openRun(task)) throw new HttpError(409, 'Une exécution est en cours sur ' + task.code + ' : attendez son résultat avant de modifier la tâche.');
-        const input = pick(body, ['title', 'instructions', 'expected', 'criteria', 'resources', 'links', 'priority', 'due', 'includeContext']);
+        const input = pick(body, ['title', 'instructions', 'expected', 'criteria', 'resources', 'links', 'priority', 'due', 'includeContext', 'engine']);
         if ('priority' in input) input.priority = word(input.priority, PRIORITY_WORDS, []);
         if ('agent' in body) input.agent = await agentAssignee(body.agent);
+        if (input.agent && !('engine' in body) && !task.runs.length) input.engine = 'openclaw';
         if ('status' in body) { input.status = word(body.status, TASK_WORDS, TASK_STATUS); agentStatusGuard(task, input.status, 'agent' in input ? input.agent : task.agent); }
         if (body.project ?? body.projectId) { const project = agentProject(body.project ?? body.projectId); if (project.id !== task.projectId) throw new HttpError(400, 'Déplacer une tâche vers un autre projet n’est pas possible : créez-la dans le bon projet.'); }
         const updated = updateTask(task.id, input); updated.updatedBy = client; save(); return viewTask(updated);

@@ -98,6 +98,8 @@ La publication tablette est indépendante du service PC. Pour les données Cockp
 
 ## Projets et tâches confiées aux agents
 
+> **Moteurs directs.** Une tâche peut partir directement vers **Claude Code** (par défaut pour les nouveaux projets) ou **Codex** sur ce PC, en une session par tâche, sans OpenClaw ; OpenClaw reste un moteur au choix. Voir [docs/DIRECT-ENGINES.md](docs/DIRECT-ENGINES.md) (architecture, activation, retour arrière, `COCKPIT_DIRECT=0`). Les paragraphes ci-dessous décrivent le moteur OpenClaw.
+
 L’onglet **Projets** (bureau et tablette) regroupe des projets personnels : grille de projets (statut, priorité, échéance, progression, tâches en cours / bloquées / à valider) et tableau Kanban **À faire · En cours · Bloqué · À valider · Terminé**. Chaque projet porte un contexte (objectif, instructions, ressources, liens, dépôt, environnement) transmis aux agents quand la tâche le demande.
 
 - **Aucun lancement implicite.** Créer une tâche, assigner un agent ou déplacer une carte ne lance rien. Seul le bouton **Lancer** (ou « Répondre et lancer », « Lancer la reprise », « Relancer ») démarre une exécution.

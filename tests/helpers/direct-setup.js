@@ -66,6 +66,17 @@ async function setup(t, { engine: engineOptions = {}, codexEnabled = false, code
     const out = Buffer.concat(res.chunks);
     return { status: res.status, body: /json/.test(res.headers['Content-Type'] || '') ? JSON.parse(out) : out };
   };
+  // Accès des agents (API /agent/v1) sans serveur HTTP : mêmes routes que Claude, Codex ou l'agent cockpit d'OpenClaw.
+  const agent = async (route, method = 'GET', body) => {
+    const res = { status: 0, headers: {}, chunks: [], writeHead(s, h) { this.status = s; this.headers = h || {}; }, end(v) { if (v) this.chunks.push(Buffer.from(v)); this.done?.(); }, on() { return this; }, once() { return this; }, emit() {}, write(c) { this.chunks.push(Buffer.from(c)); return true; } };
+    const finished = new Promise(r => { res.done = r; });
+    const data = body ? Buffer.from(JSON.stringify(body)) : null;
+    const req = { method, headers: {}, async *[Symbol.asyncIterator]() { if (data) yield data; } };
+    const json = (r, st, v) => { r.writeHead(st, { 'Content-Type': 'application/json' }); r.end(JSON.stringify(v)); };
+    service().agentHandle(req, res, new URL('http://localhost/agent/v1/' + route), json, 'claude');
+    await finished;
+    return { status: res.status, body: JSON.parse(Buffer.concat(res.chunks)) };
+  };
   const read = file => () => fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : [];
   // Les appels « --help » du sondage d'options ne sont pas des exécutions : ils ne passent pas par le journal.
   const calls = read(log), codexCalls = read(codexLog);
@@ -85,7 +96,7 @@ async function setup(t, { engine: engineOptions = {}, codexEnabled = false, code
   let n = 0;
   const create = async (pid, extra = {}) => (await ui('tasks', 'POST', { projectId: pid, title: 'Tâche ' + (++n), instructions: 'Ajoute feature.txt', ...extra })).body;
   const launch = (tid, body = {}) => ui('tasks/' + tid + '/launch', 'POST', { launchKey: 'k' + (++n), ...body });
-  return { ui, calls, codexCalls, mode, codexMode, task, until, lastDone, project, create, launch, dir, root, engine, codexEngine: codexEng, services, make, feed };
+  return { ui, agent, calls, codexCalls, mode, codexMode, task, until, lastDone, project, create, launch, dir, root, engine, codexEngine: codexEng, services, make, feed };
 }
 const arg = (args, name) => args[args.indexOf(name) + 1];
 

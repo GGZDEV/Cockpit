@@ -66,3 +66,23 @@ test('nothing secret is stored: project data holds no token, key or login', asyn
   const p = await project('alpha'), task = await create(p.id); await launch(task.id); await lastDone(task.id);
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'data', 'projects.json'), 'utf8'), /ghp_abcdef|sk-ant-should|oauth-keep|sk-openai/);
 });
+
+test('agent access: a project created without agent runs on Claude Code and gets its CLAUDE.md; an explicit OpenClaw agent keeps the old behaviour', async t => {
+  const { agent, ui, launch, lastDone, calls, feed, root } = await setup(t);
+  const repo = name => 'https://github.com/ggzdev/' + name;
+  const a = await agent('projects', 'POST', { name: 'Alpha', repository: repo('alpha') });
+  assert.equal(a.status, 201); assert.equal(a.body.engine, 'claude');
+  await new Promise(r => setTimeout(r, 40));
+  assert.equal((await agent('state')).body.projects.find(p => p.key === a.body.key).claudeMd.status, 'generated');
+  assert.ok(fs.existsSync(path.join(root, 'alpha', 'CLAUDE.md')));
+  const b = await agent('projects', 'POST', { name: 'Beta', repository: repo('beta'), agent: 'homelab' });
+  assert.equal(b.body.engine, 'openclaw', 'an explicit OpenClaw agent keeps the project on OpenClaw');
+  const task = await agent('tasks', 'POST', { project: a.body.key, title: 'T', instructions: 'Ajoute feature.txt' });
+  assert.equal(task.body.engine, 'claude');
+  const t2 = await agent('tasks', 'POST', { project: a.body.key, title: 'T2', instructions: 'x', agent: 'homelab' });
+  assert.equal(t2.body.engine, 'openclaw', 'an agent chosen for one task sends that task to OpenClaw');
+  const id = (await ui('state')).body.tasks.find(x => x.code === task.body.code).id;
+  assert.equal((await launch(id)).status, 202); await lastDone(id);
+  assert.equal(calls().length, 1); assert.equal(feed.sends.length, 0);
+  assert.equal((await agent('tasks/' + task.body.code + '/launch', 'POST', {})).status, 403, 'launching stays the user’s gesture');
+});

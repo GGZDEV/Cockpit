@@ -10,10 +10,12 @@ export function chatItems(task) {
   const items = [{ role: 'user', type: 'brief', at: task.createdAt, text: task.instructions || '', attachments: task.attachments || [] }];
   const agentName = run => run.agent?.name || task.agent?.name || 'l’agent';
   for (const run of task.runs || []) {
-    if (['reprise', 'answer'].includes(run.kind) && run.note) items.push({ role: 'user', type: run.kind, at: run.createdAt, text: run.note, run });
+    if (run.kind === 'execute') items.push({ role: 'user', type: 'execute', at: run.createdAt, text: run.note || 'Plan accepté : exécute-le.', run });
+    else if (['reprise', 'answer'].includes(run.kind) && run.note) items.push({ role: 'user', type: run.kind, at: run.createdAt, text: run.note, run });
     else if (run.kind === 'retry') items.push(run.note ? { role: 'user', type: 'retry', at: run.createdAt, text: run.note, run } : { role: 'system', type: 'retry', at: run.createdAt, text: 'Relance envoyée à ' + agentName(run) });
     else items.push({ role: 'system', type: 'launch', at: run.createdAt, text: 'Confiée à ' + agentName(run) });
     if (OPEN.includes(run.status)) items.push({ role: 'agent', type: 'live', at: run.startedAt || run.createdAt, text: run.liveText || '', run });
+    else if (run.status === 'succeeded' && run.outcome === 'plan') items.push({ role: 'agent', type: 'plan', at: run.endedAt, text: run.result || '', run });
     else if (run.status === 'succeeded' && run.outcome === 'question') items.push({ role: 'agent', type: 'question', at: run.endedAt, text: run.result || '', run });
     else if (run.status === 'succeeded') items.push({ role: 'agent', type: 'result', at: run.endedAt, text: run.result || '', run });
     else items.push({ role: 'agent', type: 'error', at: run.endedAt, text: run.error || '', run });
@@ -25,14 +27,16 @@ export function chatItems(task) {
 
 // Ce que la zone de saisie propose, selon l'état de la tâche.
 // kind = type de lancement envoyé au serveur ; needsText = message obligatoire.
-export function composerMode(task, { busy = false } = {}) {
+// direct : la tâche est traitée par Claude Code ou Codex (aucun agent OpenClaw à choisir) ; alt : seconde action proposée.
+export function composerMode(task, { busy = false, direct = false } = {}) {
   const runs = task.runs || [], last = runs.at(-1), done = task.status === 'done';
-  if (!task.agent) return { mode: 'manual' };
+  if (!task.agent && !direct) return { mode: 'manual' };
   if (busy || runs.some(r => OPEN.includes(r.status))) return { mode: 'busy' };
   if (!runs.length) return task.instructions
     ? { mode: 'send', kind: 'initial', needsText: false, label: 'Lancer' }
     : { mode: 'send', kind: 'initial', needsText: true, setsInstructions: true, label: 'Envoyer', placeholder: 'Décrivez ce que l’agent doit faire…' };
   if (!done && ['failed', 'interrupted'].includes(last.status)) return { mode: 'send', kind: 'retry', needsText: false, label: 'Relancer', placeholder: 'Précisions pour la relance (facultatif)…' };
+  if (!done && last.outcome === 'plan') return { mode: 'send', kind: 'execute', needsText: false, label: 'Exécuter le plan', placeholder: 'Une remarque avant d’exécuter, ou ce qu’il faut changer dans le plan…', alt: { kind: 'reprise', label: 'Réviser le plan' } };
   if (!done && last.outcome === 'question') return { mode: 'send', kind: 'answer', needsText: true, label: 'Répondre', placeholder: 'Votre réponse à sa question…' };
   return { mode: 'send', kind: 'reprise', needsText: true, label: 'Envoyer', placeholder: 'Une correction, une suite, une précision…', quick: true };
 }

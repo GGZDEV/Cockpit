@@ -24,7 +24,7 @@ async function setup(t) {
   const feed = await fakeFeedMe();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-agents-'));
   const workspaces = fakeWorkspaces(path.join(dir, 'dev'));
-  const projects = createProjects({ dataDir: dir, discover: async () => feed.origin, reconcileEvery: 3600000, workspaces });
+  const projects = createProjects({ dataDir: dir, discover: async () => feed.origin, reconcileEvery: 3600000, workspaces, directEnabled: false });
   const file = path.join(dir, 'agent-access.json');
   const clients = loadClients(file);
   const server = createAgentAccess({ projects, file, clients });

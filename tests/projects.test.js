@@ -30,7 +30,7 @@ function fakeFeedMe({ connected = true } = {}) {
 async function setup(t, options) {
   const feed = await fakeFeedMe(options);
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-projects-'));
-  const make = () => createProjects({ dataDir, discover: async () => feed.origin, reconcileEvery: 3600000 });
+  const make = () => createProjects({ dataDir, discover: async () => feed.origin, reconcileEvery: 3600000, directEnabled: false });
   let projects = make();
   const server = createServer({ projects: { handle: (...a) => projects.handle(...a), allowedRoute: (...a) => projects.allowedRoute(...a) } });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));

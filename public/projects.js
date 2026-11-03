@@ -1,4 +1,4 @@
-// Onglet Projets : projets personnels, tableau Kanban et tâches confiées aux agents OpenClaw.
+// Onglet Projets : projets personnels, tableau Kanban et tâches confiées à Claude Code, Codex ou aux agents OpenClaw.
 // L'état réel (projets, tâches, exécutions) vit sur le serveur du PC : /api/projects/*.
 import { esc, icon, read, write, uid, safeUrl, timeoutSignal } from './core.js';
 import { chatItems, composerMode, canClose, richText } from './task-chat.js';
@@ -13,7 +13,8 @@ const COLUMNS = [
 const PROJECT_STATUS = { prep: 'À préparer', active: 'Actif', paused: 'En pause', done: 'Terminé' };
 const PRIORITY = { 0: ['Sans priorité', 0, '#85858a'], 1: ['Priorité basse', 1, '#9a9a9f'], 2: ['Priorité moyenne', 2, '#f5c542'], 3: ['Priorité haute', 3, '#ff9f43'], 4: ['Urgent', 3, '#ff5a5a'] };
 const RUN_STATUS = { pending: 'En attente de démarrage', started: 'Démarrée', succeeded: 'Réussie', failed: 'Échouée', interrupted: 'Interrompue' };
-const RUN_KIND = { initial: 'Lancement', reprise: 'Reprise', answer: 'Réponse à une question', retry: 'Relance' };
+const RUN_KIND = { initial: 'Lancement', reprise: 'Reprise', answer: 'Réponse à une question', retry: 'Relance', execute: 'Exécution du plan' };
+const ENGINE = { claude: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw' };
 const PALETTE = ['#3dd68c', '#b48cff', '#4c9dff', '#ff9f43', '#ff6b8a', '#22d3ee', '#f5c542'];
 const OPEN = ['pending', 'started'];
 const ACCEPT = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.zip,.txt,.md,.csv,.json,.log';
@@ -43,7 +44,7 @@ const G = {
 };
 
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
-  const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], capabilities: {}, agents: null, agentsError: '',
+  const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
     view: read('mb.projects.view', 'board') === 'grid' ? 'grid' : 'board', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
     projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null };
   let pollTimer;
@@ -56,12 +57,16 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return data;
   }
   const projectOf = task => st.projects.find(p => p.id === task.projectId);
+  // Moteur qui traite la tâche (calculé par le serveur) ; Claude Code et Codex n'ont pas d'agent OpenClaw à choisir.
+  const engineOf = task => st.engines[task.id] || 'openclaw';
+  const isDirect = task => engineOf(task) !== 'openclaw';
+  const assignee = task => isDirect(task) ? { name: ENGINE[engineOf(task)] } : task.agent;
   const visibleProjects = () => st.projects.filter(p => !p.archived);
   function upsert(task) { const i = st.tasks.findIndex(t => t.id === task.id); if (i >= 0) st.tasks[i] = task; else st.tasks.push(task); }
 
   async function refresh(quiet = true) {
     if (st.loading) return; st.loading = true;
-    try { const data = await api('state'); Object.assign(st, { projects: data.projects, tasks: data.tasks, capabilities: data.capabilities || {}, error: '', loaded: true }); }
+    try { const data = await api('state'); Object.assign(st, { projects: data.projects, tasks: data.tasks, engines: data.engineByTask || {}, capabilities: data.capabilities || {}, error: '', loaded: true }); }
     catch (e) { st.error = e.message; if (!quiet) toast(e.message); }
     finally { st.loading = false; }
     if (!st.projects.some(p => p.id === st.project)) st.project = 'all';
@@ -86,10 +91,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const q = st.search.trim().toLowerCase(), p = projectOf(task);
     if (!p || p.archived) return false;
     if (st.project !== 'all' && task.projectId !== st.project) return false;
-    if (st.who === 'me' && task.agent) return false;
-    if (st.who === 'agents' && !task.agent) return false;
+    if (st.who === 'me' && assignee(task)) return false;
+    if (st.who === 'agents' && !assignee(task)) return false;
     if (st.attention && !needsMe(task)) return false;
-    return !q || [task.title, task.code, task.instructions, p.name, task.agent?.name].some(v => String(v || '').toLowerCase().includes(q));
+    return !q || [task.title, task.code, task.instructions, p.name, assignee(task)?.name].some(v => String(v || '').toLowerCase().includes(q));
   }
   function needsMe(task) { const run = lastRun(task); return task.status === 'review' || task.status === 'blocked' || (run && ['failed', 'interrupted'].includes(run.status) && task.status !== 'done'); }
   function runBadge(task) {
@@ -99,6 +104,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (run.status === 'failed') return '<span class="pj-tag is-bad"><i></i>Échec</span>';
     if (run.status === 'interrupted') return '<span class="pj-tag is-bad"><i></i>Interrompue</span>';
     if (run.outcome === 'question' && task.status === 'blocked') return '<span class="pj-tag is-ask"><i></i>Question de l’agent</span>';
+    if (run.outcome === 'plan' && task.status === 'review') return '<span class="pj-tag is-ok"><i></i>Plan à relire</span>';
     if (run.outcome === 'result' && task.status === 'review' && !run.accepted) return '<span class="pj-tag is-ok"><i></i>Résultat à valider</span>';
     return '';
   }
@@ -112,8 +118,9 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return `<span class="pj-due ${state}">${icon('calendar')}${due === t ? 'Aujourd’hui' : fmtDay(due)}</span>`;
   }
   function avatar(task) {
-    if (!task.agent) return `<span class="pj-av is-me" aria-hidden="true">M</span><span class="pj-who">Manuelle</span>`;
-    const name = task.agent.name || task.agent.agentId;
+    const who = assignee(task);
+    if (!who) return `<span class="pj-av is-me" aria-hidden="true">M</span><span class="pj-who">Manuelle</span>`;
+    const name = who.name || who.agentId;
     return `<span class="pj-av" aria-hidden="true">${esc(name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 1).toUpperCase() || 'A')}</span><span class="pj-who">${esc(name)}</span>`;
   }
   function card(task) {
@@ -176,7 +183,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       .sort((a, b) => ['active', 'prep', 'paused', 'done'].indexOf(a.status) - ['active', 'prep', 'paused', 'done'].indexOf(b.status) || (b.priority || 0) - (a.priority || 0));
     const filters = `<div class="pj-chips" role="group" aria-label="Statut du projet">${[['all', 'Tous'], ...Object.entries(PROJECT_STATUS)].map(([id, label]) => `<button class="pj-chip" data-pj="project-status" data-id="${id}" aria-pressed="${st.projectStatus === id}">${label}</button>`).join('')}
       <button class="pj-chip" data-pj="toggle-archived" aria-pressed="${st.archived}">${G.archive} Archivés</button></div>`;
-    if (!st.projects.length) return `<div class="pj-empty"><h2>Aucun projet pour l’instant</h2><p>Un projet regroupe vos tâches et le contexte que vos agents OpenClaw recevront : objectif, consignes, ressources, dépôt…</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`;
+    if (!st.projects.length) return `<div class="pj-empty"><h2>Aucun projet pour l’instant</h2><p>Un projet regroupe vos tâches et le contexte que vos agents recevront : objectif, consignes, ressources, dépôt…</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`;
     return `${filters}<div class="pj-pgrid">${list.map(projectCard).join('') || `<div class="pj-empty"><p>${st.archived ? 'Aucun projet archivé.' : 'Aucun projet ne correspond à ces filtres.'}</p></div>`}</div>`;
   }
   function html() {
@@ -188,7 +195,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const tabs = [['all', 'Tout'], ['me', 'Mes tâches'], ['agents', 'Agents']].map(([id, label]) => `<button data-pj="who" data-id="${id}" aria-pressed="${st.who === id}">${label}</button>`).join('');
     const chips = [{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<button class="pj-chip" data-pj="project" data-id="${esc(p.id)}" aria-pressed="${st.project === p.id}">${p.color ? `<i style="background:${esc(p.color)}"></i>` : ''}${esc(p.name)}<span>${st.tasks.filter(t => (p.id === 'all' ? projectOf(t) && !projectOf(t).archived : t.projectId === p.id)).length}</span></button>`).join('');
     const error = st.error ? `<div class="pj-banner is-bad" role="alert">${G.alert}<span>${esc(st.error)}</span><button class="button" data-pj="reload">Réessayer</button></div>` : '';
-    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet, écrivez une tâche, choisissez un agent puis cliquez sur « Lancer ». Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
+    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite directement sur ce PC. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
       : `<div class="pj-filters"><div class="pj-seg" role="group" aria-label="Assignation">${tabs}</div><div class="pj-chips" role="group" aria-label="Projet">${chips}</div>
         ${attention ? `<button class="pj-chip pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>${board()}`;
     return `<div class="pj-root" data-scroll="page:projects">
@@ -211,7 +218,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (!repo) return '';
     const link = isGithub(repo) ? `<a href="${esc(safeUrl(repo))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(repo.replace('https://github.com/', ''))}</a>` : esc(repo);
     const state = w ? `<span class="pj-ws s-${esc(w.status)}">${WORKSPACE[w.status] || ''}</span>${w.status === 'ready' ? `<code>${esc(w.path)}</code>` : ''}${w.status === 'failed' ? `<span class="pj-help is-bad">${esc(w.error || '')}</span><button class="button" data-pj="retry-clone" data-id="${esc(p.id)}">${icon('refresh')} Réessayer</button>` : ''}` : '';
-    return `<div class="pj-repo">${link}${state}</div>`;
+    const md = p.claudeMd, mdLine = md ? `<span class="pj-ws s-ready">CLAUDE.md ${md.status === 'generated' ? 'généré par Cockpit' : 'déjà présent, laissé tel quel'} · ${md.chars} car.</span>${md.status === 'generated' ? `<button class="button" type="button" data-pj="regen-claude-md" data-id="${esc(p.id)}">${icon('refresh')} Régénérer</button>` : ''}` : '';
+    return `<div class="pj-repo">${link}${state}</div>${mdLine ? `<div class="pj-repo">${mdLine}</div>` : ''}`;
   }
   function attachmentsHTML(task) {
     const list = task.attachments || [];
@@ -275,19 +283,23 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         <div data-pj-atts="${esc(task.id || '')}">${task.id ? attachmentsHTML(task) : ''}</div><ul class="pj-atts pj-pending"></ul>
         <label class="button pj-pick">${icon('plus')} Ajouter des fichiers<input type="file" name="files" multiple accept="${ACCEPT}" class="sr-only"></label></div>
       <label>Adresses utiles (une par ligne, « libellé | adresse » possible)<textarea name="links" rows="2" placeholder="https://…">${esc(linksText(task.links))}</textarea></label>
-      <details class="pj-more"><summary>Plus d’options <span class="muted">· ${esc(task.agent ? 'agent : ' + task.agent.name : 'tâche manuelle')}</span></summary><div class="pj-form">
+      <details class="pj-more"><summary>Plus d’options <span class="muted">· ${esc(task.id && isDirect(task) ? ENGINE[engineOf(task)] : task.agent ? 'agent : ' + task.agent.name : 'moteur du projet')}</span></summary><div class="pj-form">
+        <div class="pj-three"><label>Moteur<select name="engine"><option value="">Celui du projet</option>${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${task.engine === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+          <label>Modèle<input name="model" maxlength="80" value="${esc(task.model || '')}" placeholder="Celui du projet"></label>
+          <label class="pj-check"><input type="checkbox" name="planFirst" ${task.planFirst ? 'checked' : ''}> Plan d’abord (lecture seule)</label></div>
+        <p class="pj-help">Claude Code et Codex travaillent directement sur ce PC, dans un dossier à part pour cette tâche. Le plan préalable est facultatif : sans lui, le travail démarre tout de suite.</p>
         <div class="pj-three"><label>Agent OpenClaw<select name="agent">${agentOptions(task.agent)}</select></label><label>Priorité${prioritySelect(task.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(task.due || '')}"></label></div>
         ${agentHelp()}
         <label>Critères de réussite<textarea name="criteria" rows="2" maxlength="4000" placeholder="Comment vérifier que c’est réussi">${esc(task.criteria || '')}</textarea></label>
         <label>Ressources de la tâche<textarea name="resources" rows="2" maxlength="12000" placeholder="Chemins, extraits utiles…">${esc(task.resources || '')}</textarea></label>
-        <label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent</label></div></details>`;
+        <label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent OpenClaw (Claude Code et Codex le lisent dans CLAUDE.md)</label></div></details>`;
   }
   function readTask(form) {
     const fd = new FormData(form), value = String(fd.get('agent') || '');
     const option = form.elements.agent?.selectedOptions?.[0];
     const [connectionId, agentId] = value.split('|');
     return { title: fd.get('title'), instructions: fd.get('instructions'), expected: fd.get('expected'), criteria: fd.get('criteria'), resources: fd.get('resources'), links: parseLinks(fd.get('links')),
-      priority: Number(fd.get('priority')), due: fd.get('due') || '', includeContext: fd.has('includeContext'), agent: value ? { connectionId, agentId, name: option?.dataset.name || agentId } : null,
+      priority: Number(fd.get('priority')), due: fd.get('due') || '', includeContext: fd.has('includeContext'), engine: fd.get('engine') || '', model: String(fd.get('model') || '').trim(), planFirst: fd.has('planFirst'), agent: value ? { connectionId, agentId, name: option?.dataset.name || agentId } : null,
       ...(fd.has('projectId') ? { projectId: fd.get('projectId') } : {}) };
   }
   async function projectForm(p = {}) {
@@ -306,6 +318,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label><label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label></div>
       <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
       ${p.id ? agentLine(p) + workspaceHTML(p) : ''}
+      <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'openclaw') === v ? 'selected' : ''}>${l}${v !== 'openclaw' && st.capabilities.engines && !st.capabilities.engines[v] ? ' (désactivé sur ce PC)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
+        <label>Modèle Claude Code<input name="model" maxlength="80" value="${esc(p.direct?.model || '')}" placeholder="${esc(st.capabilities.directDefaults?.model || 'claude-sonnet-5-5')}"></label>
+        <label>Secours automatique<select name="fallback"><option value="">Aucun</option>${['claude', 'codex'].map(v => `<option value="${v}" ${p.direct?.fallback === v ? 'selected' : ''}>${ENGINE[v]}</option>`).join('')}</select></label></div>
+      <p class="pj-help">Claude Code (ou Codex) reçoit chaque tâche directement, dans une seule session reprise à chaque message. OpenClaw reste possible : il garde son agent et sa conversation. Le secours ne se déclenche que si le moteur échoue avant d’avoir touché au dossier.</p>
       <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
       <label>Publication<textarea name="publishing" rows="3" maxlength="4000" placeholder="Comment publier ce projet : branche et dépôt où pousser, commande de déploiement, vérification à faire…">${esc(c.publishing || '')}</textarea></label>
       <label class="pj-check"><input type="checkbox" name="autoPublish" ${c.autoPublish ? 'checked' : ''}> L’agent publie lui-même à la fin d’une tâche, en suivant cette procédure</label>
@@ -329,14 +345,14 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const time = item.at ? `<time>${fmtTime(item.at)}</time>` : '';
     if (item.role === 'system') return `<p class="pj-sys"><span>${esc(item.text)}</span>${time}</p>`;
     if (item.role === 'user') {
-      const label = { brief: 'Consignes', answer: 'Vous · réponse à sa question', retry: 'Vous · précisions pour la relance' }[item.type] || 'Vous';
+      const label = { brief: 'Consignes', answer: 'Vous · réponse à sa question', retry: 'Vous · précisions pour la relance', execute: 'Vous · exécution du plan' }[item.type] || 'Vous';
       const files = item.attachments?.length ? `<div class="pj-msg-files">${item.attachments.map(a => `<button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}</small></button>`).join('')}</div>` : '';
       return `<div class="pj-msg is-user"><div class="pj-msg-meta"><span>${label}</span>${time}</div>
         <div class="pj-bubble">${item.text ? richText(item.text) : '<p class="pj-help">Pas encore de consignes : écrivez-les ci-dessous.</p>'}${files}</div></div>`;
     }
-    const run = item.run, name = run.agent?.name || task.agent?.name || 'Agent';
+    const run = item.run, name = run.agent?.name || assignee(task)?.name || 'Agent';
     const head = extra => `<div class="pj-msg-meta"><span class="pj-av" aria-hidden="true">${initial(name)}</span><b>${esc(name)}</b>${extra}</div>`;
-    const more = `<details class="pj-msg-more" data-key="run-${esc(run.id)}"><summary>Détails de l’exécution · ${RUN_KIND[run.kind] || ''}</summary>${eventsHTML(run)}
+    const more = `<details class="pj-msg-more" data-key="run-${esc(run.id)}"><summary>Détails de l’exécution · ${RUN_KIND[run.kind] || ''}</summary>${eventsHTML(run)}${runFacts(run, task)}
       <details class="pj-prompt" data-key="prompt-${esc(run.id)}"><summary>Consignes envoyées</summary><div class="pj-result">${esc(run.prompt || '')}</div></details></details>`;
     if (item.type === 'live') {
       return `<div class="pj-msg is-agent is-live">${head(`<span class="pj-msg-tag">${RUN_STATUS[run.status]}</span>`)}
@@ -345,27 +361,42 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
           ${run.tracking === 'recovering' ? `<p class="pj-help">Suivi direct indisponible : l’état est relu dans l’historique OpenClaw${run.trackingError ? ' (' + esc(run.trackingError) + ')' : ''}. Rien n’est renvoyé à l’agent.</p>` : ''}
           ${task.updatedAt && task.updatedAt > run.createdAt ? '<p class="pj-help is-warn">La tâche a été modifiée après ce lancement : l’agent travaille sur la version envoyée. Les modifications serviront au prochain message.</p>' : ''}</div>${more}</div>`;
     }
-    const tone = { question: 'is-ask', error: 'is-bad', result: 'is-ok' }[item.type];
-    const tag = item.type === 'question' ? 'attend votre réponse' : item.type === 'error' ? (run.status === 'failed' ? 'Échec' : 'Interrompue') : '';
+    const tone = { question: 'is-ask', error: 'is-bad', result: 'is-ok', plan: 'is-ok' }[item.type];
+    const tag = item.type === 'question' ? 'attend votre réponse' : item.type === 'plan' ? 'plan, rien n’a été modifié' : item.type === 'error' ? (run.status === 'failed' ? 'Échec' : 'Interrompue') : '';
     return `<div class="pj-msg is-agent ${tone}">${head(`${tag ? `<span class="pj-msg-tag">${tag}</span>` : ''}${time}`)}
-      <div class="pj-bubble">${item.text ? richText(item.text) : `<p class="pj-help">${item.type === 'error' ? 'Aucune explication.' : 'Réponse vide.'}</p>`}</div>${more}</div>`;
+      <div class="pj-bubble">${item.text ? richText(item.text) : `<p class="pj-help">${item.type === 'error' ? 'Aucune explication.' : 'Réponse vide.'}</p>`}${runSummary(run)}</div>${more}</div>`;
+  }
+  // Moteurs directs : ce que Cockpit a relevé dans le dossier de la tâche (aucun jeton), en une ligne sous la réponse.
+  function runSummary(run) {
+    const s = run.summary; if (!s || run.mode === 'plan') return '';
+    const n = (count, one, many) => count + ' ' + (count > 1 ? many : one);
+    return `<p class="pj-help pj-run-summary">Branche <code>${esc(s.branch)}</code> · ${n(s.files.length, 'fichier modifié', 'fichiers modifiés')} · ${n(s.commits.length, 'commit', 'commits')}${s.uncommitted.length ? ' · <b>' + n(s.uncommitted.length, 'changement non commité', 'changements non commités') + '</b>' : ''}</p>`;
+  }
+  const fmtTokens = n => n >= 1000 ? Math.round(n / 100) / 10 + ' k' : String(n);
+  function runFacts(run, task) {
+    if (!run.engine) return '';
+    const m = run.metrics, d = task.direct || {};
+    const used = m ? [m.model, m.totalTokens != null ? fmtTokens(m.totalTokens) + ' jetons' : '', m.calls ? m.calls + ' appels' : '', run.durationMs ? Math.round(run.durationMs / 1000) + ' s' : ''].filter(Boolean).join(' · ') : '';
+    const resume = d.engine === 'claude' && d.sessionId && d.cwd ? `<p class="pj-help">Reprendre à la main : dans <code>${esc(d.cwd)}</code>, lancer <code>claude --resume ${esc(d.sessionId)}</code></p>` : '';
+    return `${used ? `<p class="pj-help">${esc(used)}</p>` : ''}${resume}`;
   }
   const threadHTML = task => chatItems(task).map(item => messageHTML(item, task)).join('');
   function composerHTML(task) {
-    const m = composerMode(task, { busy: st.launching.has(task.id) }), agent = esc(task.agent?.name || 'l’agent');
+    const direct = isDirect(task), m = composerMode(task, { busy: st.launching.has(task.id), direct }), agent = esc(assignee(task)?.name || 'l’agent');
     // « Clore la tâche » reste sous la zone de saisie : visible quelle que soit la longueur du fil.
     const foot = (left = '') => `<div class="pj-chatbox-foot">${left}<span class="pj-grow"></span><div class="pj-panel-actions">${closeHTML(task)}</div></div>`;
     if (m.mode === 'manual') return foot('<p class="pj-help">Tâche manuelle : aucun agent ne répond ici. Choisissez un agent dans « Détails de la tâche » pour lui confier le travail.</p>');
     const busy = m.mode === 'busy';
     if (!busy && m.kind === 'initial' && !m.needsText) return `<form class="pj-chatbox is-launch" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="initial">
-      <p class="pj-help">${agent} recevra les consignes, les critères et ${task.includeContext === false ? 'aucun contexte de projet' : 'le contexte du projet'}. Rien ne démarre sans ce clic.</p>
+      <p class="pj-help">${direct ? `${agent} reçoit les consignes de la tâche${task.planFirst ? ' et commence par un plan en lecture seule' : ''} ; les consignes du projet sont dans le CLAUDE.md du dossier.` : `${agent} recevra les consignes, les critères et ${task.includeContext === false ? 'aucun contexte de projet' : 'le contexte du projet'}.`} Rien ne démarre sans ce clic.</p>
       <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
     return `<form class="pj-chatbox" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="${esc(m.kind || '')}" ${m.setsInstructions ? 'data-sets="1"' : ''}>
       <label class="sr-only" for="pj-chat-input">Message à ${agent}</label>
       <textarea id="pj-chat-input" name="note" rows="2" maxlength="8000" data-keep="chat" placeholder="${busy ? `${agent} travaille : vous pourrez envoyer dès sa réponse…` : esc(m.placeholder)}" ${m.needsText ? 'required' : ''}></textarea>
-      <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button></form>
+      <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button>
+      ${m.alt ? `<button class="button pj-send" type="submit" name="alt" value="${esc(m.alt.kind)}">${m.alt.label}</button>` : ''}</form>
       ${foot(`${m.quick ? `<button class="pj-chip" type="button" data-pj="quick-continue" data-id="${esc(task.id)}">${G.launch} Oui, continue</button>` : ''}
-        <span class="pj-help">${busy ? esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.') : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
+        ${busy && direct && openRun(task) ? `<button class="button" type="button" data-pj="stop-run" data-id="${esc(task.id)}">Arrêter</button>` : ''}<span class="pj-help">${busy ? (direct ? `${agent} travaille : la session et le dossier sont conservés si vous l’arrêtez.` : esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')) : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
   }
   function closeHTML(task) {
     if (task.status === 'done') return `<span class="pj-closed">${icon('check')} Tâche close</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
@@ -463,6 +494,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
         case 'close-task': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Tâche close.'); render(); updatePanel(); break; }
         case 'reopen': await move(idv, 'todo'); break;
+        case 'stop-run': { el.disabled = true; upsert(await api('tasks/' + idv + '/stop', 'POST', {})); toast('Arrêt demandé : la session et le dossier de travail sont conservés.'); updatePanel(); break; }
+        case 'regen-claude-md': { const saved = await api('projects/' + idv + '/claude-md', 'POST', {}); const i = st.projects.findIndex(x => x.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('CLAUDE.md régénéré.'); render(); break; }
         case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
         case 'quick-continue': await launch(idv, 'reprise', 'Oui, continue.', el); break;
         case 'request-agent': {
@@ -530,6 +563,7 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         const agentValue = String(fd.get('agent') || ''), [agentConnection, agentId] = agentValue.split('|');
         const body = { name: fd.get('name'), key: fd.get('key'), description: fd.get('description'), status: fd.get('status'), priority: Number(fd.get('priority')), due: fd.get('due') || '', color: fd.get('color'),
           agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
+          engine: fd.get('engine'), direct: { model: String(fd.get('model') || '').trim(), fallback: fd.get('fallback') || '' },
           context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment'), publishing: fd.get('publishing'), autoPublish: fd.has('autoPublish') } };
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
@@ -545,7 +579,10 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         // Le message quitte la zone de saisie dès l'envoi ; il y revient si l'envoi échoue.
         const box = () => modal.querySelector('[data-pj-form=chat] [name=note]');
         if (box()) box().value = '';
-        if (!await launch(taskId, form.dataset.kind, sets ? '' : note, submit) && !sets && box() && !box().value) box().value = note;
+        // Deuxième bouton (ex. « Réviser le plan ») : son type de lancement remplace celui du formulaire, le message est alors obligatoire.
+        const kind = event.submitter?.name === 'alt' ? event.submitter.value : form.dataset.kind;
+        if (event.submitter?.name === 'alt' && !note) throw new Error('Écrivez ce qu’il faut changer.');
+        if (!await launch(taskId, kind, sets ? '' : note, submit) && !sets && box() && !box().value) box().value = note;
       }
     } catch (e) { if (status) status.textContent = e.message; toast(e.message); }
     finally { if (submit?.isConnected) submit.disabled = false; }

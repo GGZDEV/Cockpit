@@ -84,3 +84,17 @@ test('lists in agent replies keep their bullets even where the home design reset
   assert.match(css, /\.pj-bubble ul\{list-style:disc\}/);
   assert.match(css, /\.pj-bubble ol\{list-style:decimal\}/);
 });
+
+test('direct engines (Claude Code, Codex): no agent to choose, optional plan with its own actions, plan and execution in the thread', () => {
+  const claude = { name: 'Claude Code' };
+  assert.equal(composerMode({ agent: null, runs: [] }).mode, 'manual', 'an OpenClaw task with no agent is still manual');
+  const first = composerMode({ agent: null, instructions: 'X', runs: [] }, { direct: true });
+  assert.deepEqual([first.mode, first.kind, first.needsText, first.label], ['send', 'initial', false, 'Lancer']);
+  const runPlan = (kind, extra) => ({ ...run(kind, { agent: claude, outcome: 'plan', result: '1. Faire' }), ...extra });
+  const planned = composerMode({ agent: null, status: 'review', instructions: 'X', runs: [runPlan('initial')] }, { direct: true });
+  assert.deepEqual([planned.kind, planned.label, planned.needsText, planned.alt.kind, planned.alt.label], ['execute', 'Exécuter le plan', false, 'reprise', 'Réviser le plan']);
+  const items = JSON.parse(JSON.stringify(chatItems({ id: 't', status: 'review', agent: null, instructions: 'X', createdAt: '2026-10-30T09:00:00Z', runs: [
+    runPlan('initial'), { ...run('execute', { agent: claude }), note: '' }] }).map(i => [i.role, i.type, i.text])));
+  assert.deepEqual(items, [['user', 'brief', 'X'], ['system', 'launch', 'Confiée à Claude Code'], ['agent', 'plan', '1. Faire'], ['user', 'execute', 'Plan accepté : exécute-le.'], ['agent', 'result', 'Fait']]);
+  assert.equal(composerMode({ agent: null, status: 'doing', runs: [run('initial', { status: 'started' })] }, { direct: true }).mode, 'busy');
+});

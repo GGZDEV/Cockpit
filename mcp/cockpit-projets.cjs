@@ -24,14 +24,15 @@ const CONTEXT = { type: 'object', description: 'Contexte transmis aux agents Ope
   objective: { type: 'string' }, instructions: { type: 'string', description: 'Consignes générales du projet.' }, resources: { type: 'string' },
   repository: { type: 'string', description: 'Adresse GitHub https://github.com/<compte>/<dépôt> (obligatoire à la création). Cockpit la clone sur le PC de l’utilisateur.' }, environment: { type: 'string' }, links: LINKS,
   publishing: { type: 'string', description: 'Procédure de publication du projet (dépôt et branche où pousser, commande de déploiement, vérification). Seul l’utilisateur peut autoriser l’agent à publier automatiquement.' } } };
+const ENGINE = { type: 'string', enum: ['claude', 'codex', 'openclaw'], description: 'Moteur qui traitera les tâches : claude (Claude Code direct sur le PC, par défaut), codex, ou openclaw (agent OpenClaw, choisi d’office si un agent est donné).' };
 const AGENT = { type: ['string', 'null'], description: 'Agent OpenClaw (identifiant ou nom, voir projets_agents). null = aucun.' };
 const TASK_FIELDS = {
   title: { type: 'string' }, instructions: { type: 'string', description: 'Consignes précises pour la personne ou l’agent qui fera la tâche.' },
   expected: { type: 'string', description: 'Résultat attendu.' }, criteria: { type: 'string', description: 'Critères de réussite.' },
   resources: { type: 'string' }, links: LINKS, priority: PRIORITY, due: DATE,
   agent: { type: ['string', 'null'], description: 'Agent OpenClaw à qui confier la tâche (identifiant ou nom, voir projets_agents). Par défaut : l’agent du projet. null ou "manuelle" = tâche manuelle. Assigner ne lance rien.' },
-  status: { type: 'string', description: STATUS_TASK }, includeContext: { type: 'boolean', description: 'Joindre le contexte du projet au lancement (oui par défaut).' } };
-const PROJECT_FIELDS = { name: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', description: 'prep (À préparer), active (Actif), paused (En pause), done (Terminé).' }, priority: PRIORITY, due: DATE, context: CONTEXT,
+  status: { type: 'string', description: STATUS_TASK }, engine: ENGINE, includeContext: { type: 'boolean', description: 'Joindre le contexte du projet au lancement (oui par défaut).' } };
+const PROJECT_FIELDS = { engine: ENGINE, name: { type: 'string' }, description: { type: 'string' }, status: { type: 'string', description: 'prep (À préparer), active (Actif), paused (En pause), done (Terminé).' }, priority: PRIORITY, due: DATE, context: CONTEXT,
   agent: { ...AGENT, description: 'Agent OpenClaw du projet : les nouvelles tâches lui sont confiées par défaut. ' + AGENT.description } };
 
 const READ = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };

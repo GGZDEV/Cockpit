@@ -63,6 +63,10 @@ Champs facultatifs : \`criteria\`, \`links\` (adresses web : \`[{"url":"https://
 Modifier (colonne, consignes, moteur…) : \`curl -s -X PATCH ${json} ${base}tasks/SV-3 -d '{"status":"blocked"}'\`
 Détail d'une tâche : \`curl -s ${auth} ${base}tasks/SV-3\`
 
+## Déploiement (lecture seule pour toi)
+Chaque projet peut avoir un **déploiement** : URL https, mode automatique ou manuel, branche de production, dernier état. Un service dédié (réseau local) déploie depuis GitHub ; Cockpit l'enregistre et affiche l'état. \`state\` renvoie \`deploy\` (\`url\`, \`auto\`, \`branch\`, \`type\`, \`registered\`, \`last.status\` : \`pending\`, \`running\`, \`succeeded\`, \`failed\` ou \`rolled_back\`) et, pour un projet créé avec un nouveau dépôt, \`newRepository\` (\`status\`, \`step\`, \`error\`).
+Tu ne peux **pas** : régler l'URL, activer le déploiement automatique, déployer, ni valider un nom public (\`deploy\`, \`deployment\`, \`newRepository\` sont ignorés ou refusés en 403). L'utilisateur le fait dans l'onglet Projets (« Déployer », « Valider la mise en ligne publique de x.ggz.ovh »). Pour un projet à mettre en ligne, dis-lui de renseigner l'URL et le type de déploiement dans « Modifier le projet » ; si \`deploy.registered\` n'est pas \`ok\`, c'est qu'il manque un réglage ou que le service est injoignable. Un push sur la branche de production ne déploie que si le mode automatique est actif.
+
 ## Pièces jointes
 Captures (png, jpg, gif, webp), PDF, zip, textes (txt, md, csv, json, log) ; 10 Mo par fichier, 20 par tâche. Le contenu est vérifié : un fichier renommé est refusé.
 Joindre un fichier (contenu en base64 dans un fichier JSON) :

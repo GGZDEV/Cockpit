@@ -98,6 +98,8 @@ La publication tablette est indépendante du service PC. Pour les données Cockp
 
 ## Projets et tâches confiées aux agents
 
+> **Création et déploiement.** Un projet peut être créé avec un nouveau dépôt GitHub, puis déployé par un service dédié (bouton « Déployer » ou mode automatique) : voir [docs/PROJETS-DEPLOIEMENT.md](docs/PROJETS-DEPLOIEMENT.md).
+
 > **Moteurs directs.** Une tâche peut partir directement vers **Claude Code** (par défaut pour les nouveaux projets) ou **Codex** sur ce PC, en une session par tâche, sans OpenClaw ; OpenClaw reste un moteur au choix. Voir [docs/DIRECT-ENGINES.md](docs/DIRECT-ENGINES.md) (architecture, activation, retour arrière, `COCKPIT_DIRECT=0`). Les paragraphes ci-dessous décrivent le moteur OpenClaw.
 
 L’onglet **Projets** (bureau et tablette) regroupe des projets personnels : grille de projets (statut, priorité, échéance, progression, tâches en cours / bloquées / à valider) et tableau Kanban **À faire · En cours · Bloqué · À valider · Terminé**. Chaque projet porte un contexte (objectif, instructions, ressources, liens, dépôt, environnement) transmis aux agents quand la tâche le demande.
@@ -155,6 +157,10 @@ public/modules.js     catalogue, rendus et dispositions initiales
 public/app.js         navigation, composition, réglages et chat
 public/projects.js    onglet Projets : grille, Kanban, panneau de tâche
 projects.cjs          projets, tâches et suivi des exécutions OpenClaw côté serveur
+deployer-client.cjs    client du service de déploiement (jeton COCKPIT_DEPLOYER_TOKEN, jamais affiché)
+project-deploy.cjs    réglages de déploiement d'un projet : validation et corps du PUT
+project-bootstrap.cjs squelette, premier commit et push d'un projet neuf
+github-repos.cjs      création de dépôt GitHub via le GitHub CLI
 workspace.cjs        clone des dépôts GitHub des projets sur ce PC
 attachments.cjs      pièces jointes des tâches (data/attachments/)
 public/styles.css     présentation et adaptations aux écrans

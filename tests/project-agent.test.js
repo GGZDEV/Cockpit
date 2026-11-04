@@ -50,3 +50,10 @@ test('the generated OpenClaw skill creates project agents with the same settings
   assert.ok(text.includes(RULES));
   for (const name of ['USER.md', 'IDENTITY.md', 'SOUL.md']) assert.ok(text.includes('`' + name + '`'), name);
 });
+
+test('the generated skill documents the read-only deployment state and keeps deploying, auto mode and public names with the user', () => {
+  const text = skill('http://100.64.0.1:3890/agent/v1/', 'TOKEN');
+  assert.match(text, /## Déploiement \(lecture seule pour toi\)/); assert.match(text, /deploy\.registered/); assert.match(text, /Valider la mise en ligne publique de x\.ggz\.ovh/);
+  assert.match(text, /Tu ne peux \*\*pas\*\* : régler l'URL, activer le déploiement automatique, déployer/);
+  assert.doesNotMatch(text, /COCKPIT_DEPLOYER_TOKEN/, 'no server configuration in the agent skill');
+});

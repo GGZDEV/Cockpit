@@ -3,7 +3,8 @@ const fs = require('node:fs'), path = require('node:path'), crypto = require('no
 const project = path.resolve(__dirname, '..'), source = path.join(project, 'public');
 function walk(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]).sort(); }
 // keepRuntime : depuis le serveur OpenClaw, garder l'adresse du relais du PC enregistrée dans public/runtime.json.
-function buildTablet({ keepRuntime = false } = {}) {
+function buildTablet({ keepRuntime = false, sourceDirectory = process.env.COCKPIT_PUBLIC_SOURCE || source } = {}) {
+  const source = path.resolve(sourceDirectory);
   if (!keepRuntime) require('./relay-runtime').writeRuntime();
   const files = walk(source), hash = crypto.createHash('sha256');
   for (const file of files) { hash.update(path.relative(source, file).replaceAll('\\', '/')); hash.update(fs.readFileSync(file)); }

@@ -4,7 +4,8 @@ function runtime() {
   const config=require('../deploy/config.json'),haOrigin=new URL(config.url).origin,host=new URL(haOrigin).hostname,prefix=host.split('.').slice(0,3).join('.')+'.';
   const addresses=Object.values(os.networkInterfaces()).flat().filter(item=>item.family==='IPv4' && !item.internal);
   const address=addresses.find(item=>item.address.startsWith(prefix))?.address;
-  return {haOrigin,pcOrigin:address?'http://'+address+':3889':null};
+  const saved=JSON.parse(fs.readFileSync(path.join(__dirname,'..','public','runtime.json'),'utf8'));
+  return {...(saved.agentsOrigin ? {agentsOrigin:saved.agentsOrigin} : {}),haOrigin,pcOrigin:address?'http://'+address+':3889':null};
 }
 function writeRuntime() {
   const value=runtime(),file=path.join(__dirname,'..','public','runtime.json'),json=JSON.stringify(value);

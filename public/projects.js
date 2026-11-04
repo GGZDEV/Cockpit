@@ -20,6 +20,9 @@ const OPEN = ['pending', 'started'];
 const ACCEPT = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.zip,.txt,.md,.csv,.json,.log';
 const MAX_FILE = 10 * 1024 * 1024;
 const WORKSPACE = { cloning: 'Clonage en cours…', ready: 'Copie locale prête', failed: 'Clonage échoué' };
+const DEPLOY_STATUS = { pending: ['En attente', 's-cloning'], running: ['En cours', 's-cloning'], succeeded: ['Réussi', 's-ready'], failed: ['Échoué', 's-failed'], rolled_back: ['Revenu en arrière', 's-warn'], unknown: ['État inconnu', 's-failed'] };
+const DEPLOY_ACTIVE = ['pending', 'running'];
+const BOOTSTRAP_STEP = { repo: 'Création du dépôt GitHub…', clone: 'Copie locale du dépôt…', push: 'Premier commit et envoi sur GitHub…', claudemd: 'Préparation du CLAUDE.md…', register: 'Enregistrement auprès du service de déploiement…', '': 'Création en cours…' };
 const fmtSize = n => n < 1024 * 1024 ? Math.max(1, Math.round(n / 1024)) + ' Ko' : (n / 1024 / 1024).toFixed(1).replace('.', ',') + ' Mo';
 const isGithub = value => /^https:\/\/github\.com\/[A-Za-z0-9-]+\/[A-Za-z0-9._-]+?(\.git)?\/?$/i.test(String(value || '').trim());
 
@@ -46,7 +49,7 @@ const G = {
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
     view: read('mb.projects.view', 'board') === 'grid' ? 'grid' : 'board', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
-    projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null };
+    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null };
   let pollTimer;
   const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
 
@@ -66,11 +69,12 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
 
   async function refresh(quiet = true) {
     if (st.loading) return; st.loading = true;
-    try { const data = await api('state'); Object.assign(st, { projects: data.projects, tasks: data.tasks, engines: data.engineByTask || {}, capabilities: data.capabilities || {}, error: '', loaded: true }); }
+    try { const data = await api('state'); Object.assign(st, { projects: data.projects, tasks: data.tasks, deployInfo: data.deployInfo || {}, engines: data.engineByTask || {}, capabilities: data.capabilities || {}, error: '', loaded: true }); }
     catch (e) { st.error = e.message; if (!quiet) toast(e.message); }
     finally { st.loading = false; }
     if (!st.projects.some(p => p.id === st.project)) st.project = 'all';
     render(); updatePanel(); schedule();
+    refreshDeploys().then(() => schedule());
   }
   async function loadAgents(force = false) {
     if (st.agents && !force) return st.agents;
@@ -82,7 +86,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     clearTimeout(pollTimer);
     const panelOpen = modal.open && modal.querySelector('[data-pj-panel]');
     if (!isActive() && !panelOpen) return;
-    const running = st.tasks.some(openRun);
+    const running = st.tasks.some(openRun) || st.projects.some(p => deployActive(p) || bootstrapBusy(p));
     pollTimer = setTimeout(() => { if (!document.hidden) refresh(); else schedule(); }, running ? 2500 : 20000);
   }
 
@@ -149,7 +153,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const context = project ? `<section class="pj-context" aria-label="Contexte du projet">
         <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : '<p class="muted">Aucun objectif renseigné : ajoutez le contexte que les agents recevront.</p>'}
         ${agentLine(project)}
-        ${workspaceHTML(project)}</div>
+        ${workspaceHTML(project)}${bootstrapHTML(project)}${deployHTML(project)}</div>
         <button class="button" data-pj="edit-project" data-id="${esc(project.id)}">${icon('edit')} Projet et contexte</button></section>` : '';
     return `${context}<div class="pj-board-scroll"><div class="pj-board">${COLUMNS.map(col => {
       const tasks = list.filter(t => t.status === col.id);
@@ -169,6 +173,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <header><span class="pj-pdot"></span><h3><button class="pj-link" data-pj="open-project" data-id="${esc(p.id)}">${esc(p.name)}</button></h3><span class="pj-status s-${p.status}">${PROJECT_STATUS[p.status]}</span></header>
       <p class="pj-pdesc">${esc(p.description || 'Pas de description')}</p>
       <div class="pj-pmeta">${p.priority ? prioBars(p.priority) + `<span>${PRIORITY[p.priority][0]}</span>` : ''}${dueChip(p.due, p.status === 'done')}<span class="muted">${esc(p.key)}</span></div>
+      ${deploySummary(p)}
       <div class="pj-progress" role="progressbar" aria-label="Progression" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><span style="width:${pct}%"></span></div>
       <div class="pj-pstats"><span>${done}/${tasks.length} terminées · ${pct} %</span><span class="pj-grow"></span>
         <span title="En cours">${count('doing')} en cours</span><span class="${count('blocked') ? 'is-bad' : ''}">${count('blocked')} bloquée${count('blocked') > 1 ? 's' : ''}</span><span class="${count('review') ? 'is-ok' : ''}">${count('review')} à valider</span></div>
@@ -221,6 +226,108 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const md = p.claudeMd, mdLine = md ? `<span class="pj-ws s-ready">CLAUDE.md ${md.status === 'generated' ? 'généré par Cockpit' : 'déjà présent, laissé tel quel'} · ${md.chars} car.</span>${md.status === 'generated' ? `<button class="button" type="button" data-pj="regen-claude-md" data-id="${esc(p.id)}">${icon('refresh')} Régénérer</button>` : ''}` : '';
     return `<div class="pj-repo">${link}${state}</div>${mdLine ? `<div class="pj-repo">${mdLine}</div>` : ''}`;
   }
+  // ----- Déploiement et création d'un projet neuf ---------------------------------------------
+  const deployOf = p => ({ url: '', auto: false, branch: 'main', type: '', config: {}, buildCmd: '', testCmd: '', publicDomain: '', publicUpstream: '', ...(p.deployment || {}) });
+  const deployActive = p => DEPLOY_ACTIVE.includes(p.deployState?.last?.status);
+  const bootstrapBusy = p => ['pending', 'running'].includes(p.bootstrap?.status);
+  const TRIGGER = { auto: 'automatique', manual: 'manuel', rollback: 'retour arrière' };
+  function bootstrapHTML(p) {
+    const b = p.bootstrap; if (!b || b.status === 'done') return '';
+    if (b.status === 'failed') return `<div class="pj-repo"><span class="pj-ws s-failed">Création interrompue</span><span class="pj-help is-bad">${esc(b.error || '')}</span><button class="button" type="button" data-pj="retry-bootstrap" data-id="${esc(p.id)}">${icon('refresh')} Réessayer</button></div>`;
+    return `<div class="pj-repo"><span class="pj-ws s-cloning">${esc(BOOTSTRAP_STEP[b.step] || BOOTSTRAP_STEP[''])}</span></div>`;
+  }
+  function deployPill(last) {
+    const [label, tone] = DEPLOY_STATUS[last.status] || DEPLOY_STATUS.unknown;
+    return `<span class="pj-ws ${tone}">${label}</span>`;
+  }
+  // Bloc « Déploiement » d'un projet : lien, mode, dernier déploiement et journal court, boutons. Le jeton n'apparaît nulle part ici.
+  function deployHTML(p) {
+    if (!p.context?.repository && !p.deployment) return '';
+    const d = deployOf(p), s = p.deployState || {}, last = s.last, info = st.deployInfo[p.id] || {}, service = st.capabilities.deploy || {};
+    const link = d.url ? `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(d.url.replace(/^https:\/\//, ''))}</a>` : '<span class="muted">Aucune URL de déploiement</span>';
+    const busy = deployActive(p) || bootstrapBusy(p);
+    const why = bootstrapBusy(p) ? 'La création du projet est en cours.' : info.missing || (service.configured === false ? service.reason : '') || (busy ? 'Un déploiement est en cours.' : '');
+    const line = last ? `<div class="pj-repo">${deployPill(last)}<span class="pj-help">Dernier déploiement${last.trigger ? ' (' + TRIGGER[last.trigger] + ')' : ''} · ${fmtTime(last.finishedAt || last.startedAt || last.createdAt)}${last.commit ? ' · ' + esc(String(last.commit).slice(0, 7)) : ''}${last.step && busy ? ' · étape : ' + esc(last.step) : ''}</span></div>${last.message ? `<p class="pj-help">${esc(last.message)}</p>` : ''}${last.log?.length ? `<details class="pj-more" data-key="deploy-log-${esc(p.id)}"><summary>Journal court (${last.log.length} ligne${last.log.length > 1 ? 's' : ''})</summary><pre class="pj-deploy-log">${esc(last.log.join('\n'))}</pre></details>` : ''}`
+      : s.registered?.status === 'ok' ? '<p class="pj-help">Enregistré auprès du service de déploiement. Jamais déployé.</p>' : '';
+    const reg = s.registered, problem = reg?.status === 'failed' ? `<div class="pj-repo"><span class="pj-ws s-failed">Non enregistré auprès du service</span><span class="pj-help is-bad">${esc(reg.error || '')}</span><button class="button" type="button" data-pj="deploy-register" data-id="${esc(p.id)}">${icon('refresh')} Réenregistrer</button></div>`
+      : reg?.status === 'pending' && d.url ? `<p class="pj-help">${esc(reg.error || '')}</p>` : '';
+    const poll = s.error ? `<p class="pj-help is-warn">Le service de déploiement ne répond pas : dernier état connu affiché. ${esc(s.error)}</p>` : '';
+    const sub = s.subdomain;
+    const pub = !d.publicDomain ? '' : sub?.status === 'awaiting_validation'
+      ? `<div class="pj-repo"><button class="button primary" type="button" data-pj="deploy-public" data-id="${esc(p.id)}" data-name="${esc(d.publicDomain)}">Valider la mise en ligne publique de ${esc(d.publicDomain)}</button><span class="pj-help">Le service ne publie rien sur Internet sans votre accord.</span></div>`
+      : sub?.status === 'published' ? `<div class="pj-repo"><span class="pj-ws s-ready">En ligne publiquement</span><code>${esc(d.publicDomain)}</code></div>`
+      : sub?.status === 'failed' ? `<div class="pj-repo"><span class="pj-ws s-failed">Mise en ligne publique échouée</span><span class="pj-help is-bad">${esc(sub.detail || '')}</span></div>`
+      : sub?.status === 'approved' ? `<div class="pj-repo"><span class="pj-ws s-cloning">Mise en ligne publique validée, en cours</span><code>${esc(d.publicDomain)}</code></div>`
+      : `<p class="pj-help">Nom public ${esc(d.publicDomain)} : demande de validation pas encore enregistrée.</p>`;
+    return `<div class="pj-deploy" data-pj-deploy="${esc(p.id)}"><div class="pj-repo"><b>Déploiement</b><span class="pj-ws ${d.auto ? 's-ready' : ''}">${d.auto ? 'Automatique' : 'Manuel'}</span>${link}</div>
+      ${d.auto ? `<p class="pj-help">Le service déploie tout seul dès qu’un nouveau commit arrive sur la branche « ${esc(d.branch)} » de GitHub (vérification chaque minute).</p>` : ''}${line}${problem}${poll}${pub}
+      <div class="pj-repo"><button class="button ${d.auto ? '' : 'primary'}" type="button" data-pj="deploy" data-id="${esc(p.id)}" ${why ? 'disabled' : ''} title="${esc(why || (d.auto ? 'Redéployer maintenant, sans attendre le service' : 'Déployer maintenant'))}">${G.launch} ${d.auto ? 'Redéployer' : 'Déployer'}</button>
+        ${s.registered?.status === 'ok' ? `<button class="button" type="button" data-pj="deploy-refresh" data-id="${esc(p.id)}">${icon('refresh')} Actualiser</button>` : ''}
+        ${why ? `<span class="pj-help ${info.missing ? 'is-warn' : ''}">${esc(why)}</span>` : ''}</div></div>`;
+  }
+  // Ligne courte pour la vue en cartes des projets.
+  function deploySummary(p) {
+    const d = deployOf(p), last = p.deployState?.last; if (!d.url && !last) return '';
+    return `<div class="pj-repo">${last ? deployPill(last) : '<span class="pj-ws">Pas déployé</span>'}${d.url ? `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(d.url.replace(/^https:\/\//, ''))}</a>` : ''}</div>`;
+  }
+  const typeFields = (type, config = {}) => {
+    const t = st.capabilities.deploy?.types?.[type];
+    return t ? `<div class="pj-two">${t.fields.map(f => `<label>${esc(f.label)}<input name="cfg_${esc(f.key)}" maxlength="300" value="${esc(config[f.key] ?? f.def ?? '')}" ${f.help ? `placeholder="${esc(f.help)}"` : ''} autocomplete="off"></label>`).join('')}</div>` : '<p class="pj-help">Choisissez un type pour voir ses réglages.</p>';
+  };
+  function deployFields(p) {
+    const d = deployOf(p), types = st.capabilities.deploy?.types || {}, suffix = st.capabilities.deploy?.publicSuffix || '.ggz.ovh';
+    return `<details class="pj-more" data-key="deploy-fields" ${d.url || d.type || !p.id ? 'open' : ''}><summary>Déploiement <span class="muted">· ${d.url ? esc(d.url.replace(/^https:\/\//, '')) : 'non configuré'}</span></summary><div class="pj-form">
+      <label>URL de déploiement<input type="url" name="deployUrl" maxlength="300" value="${esc(d.url)}" placeholder="https://mon-site.ggz.ovh" autocomplete="off"></label>
+      <label class="pj-check"><input type="checkbox" name="deployAuto" ${d.auto ? 'checked' : ''}> Déploiement automatique</label>
+      <p class="pj-help">Sans cette case, vous déployez avec le bouton « Déployer ». Avec elle, le service de déploiement déploie seul dès qu’un nouveau commit arrive sur la branche de production (le bouton reste utilisable pour redéployer).</p>
+      <div class="pj-two"><label>Branche de production<input name="deployBranch" maxlength="100" value="${esc(d.branch)}"></label>
+        <label>Type de déploiement<select name="deployType"><option value="">À choisir</option>${Object.entries(types).map(([v, t]) => `<option value="${esc(v)}" ${d.type === v ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label></div>
+      <div data-pj-typefields>${typeFields(d.type, d.config)}</div>
+      <details class="pj-more" data-key="deploy-advanced"><summary>Options avancées <span class="muted">· construction, tests, nom public</span></summary><div class="pj-form">
+        <div class="pj-two"><label>Commande de construction (facultatif)<input name="deployBuild" maxlength="300" value="${esc(d.buildCmd)}" placeholder="npm ci && npm run build"></label><label>Commande de tests (facultatif)<input name="deployTest" maxlength="300" value="${esc(d.testCmd)}" placeholder="npm test"></label></div>
+        <p class="pj-help">Ces commandes sont exécutées par le service de déploiement, dans sa copie du dépôt, avant la mise en ligne.</p>
+        <div class="pj-two"><label>Nom public (facultatif)<input name="deployDomain" maxlength="100" value="${esc(d.publicDomain)}" placeholder="mon-site${esc(suffix)}"></label><label>Adresse interne du site<input name="deployUpstream" maxlength="120" value="${esc(d.publicUpstream)}" placeholder="http://192.168.1.194:7000"></label></div>
+        <p class="pj-help">Un nom public n’est jamais mis en ligne sans votre accord : après l’enregistrement, un bouton « Valider la mise en ligne publique » apparaît dans le projet.</p></div></details>
+    </div></details>`;
+  }
+  function newRepoFields() {
+    return `<fieldset class="pj-repomode"><legend>Dépôt GitHub</legend>
+      <label class="pj-check"><input type="radio" name="repoMode" value="existing" checked> À partir d’un dépôt existant (copie locale automatique)</label>
+      <label class="pj-check"><input type="radio" name="repoMode" value="new"> Projet neuf : créer le dépôt GitHub, le squelette et le premier envoi</label>
+      <div data-pj-newrepo hidden class="pj-form"><div class="pj-three"><label>Nom du dépôt<input name="newRepoName" maxlength="100" placeholder="Automatique, d’après le nom du projet"></label><label>Compte GitHub<input name="newRepoOwner" maxlength="39" placeholder="Celui de ce PC"></label>
+        <label class="pj-check"><input type="checkbox" name="newRepoPublic"> Dépôt public</label></div>
+        <p class="pj-help" data-pj-ghstatus>Vérification de GitHub…</p></div></fieldset>`;
+  }
+  async function loadDeployConfig() {
+    if (st.deployConfig && Date.now() - st.deployConfig.at < 30000) return st.deployConfig;
+    try { st.deployConfig = { ...(await api('deploy-config')), at: Date.now() }; } catch (e) { st.deployConfig = { error: e.message, at: Date.now() }; }
+    return st.deployConfig;
+  }
+  function showGithubStatus() {
+    loadDeployConfig().then(cfg => {
+      const el = modal.querySelector('[data-pj-ghstatus]'); if (!el) return;
+      const g = cfg.github;
+      el.className = 'pj-help ' + (g?.available ? '' : 'is-warn');
+      el.textContent = cfg.error ? cfg.error : g?.available ? `GitHub est prêt${g.account ? ' (compte ' + g.account + ')' : ''}. Le dépôt est créé privé, sauf si vous cochez « Dépôt public ».`
+        : (g?.reason || 'GitHub n’est pas utilisable.') + ' Le projet sera créé quand même ; la création du dépôt se relancera avec « Réessayer ».';
+    });
+  }
+  const setProject = saved => {
+    const project = saved.project || saved, i = st.projects.findIndex(x => x.id === project.id);
+    if (i >= 0) st.projects[i] = project; else st.projects.push(project);
+    render();
+    const box = modal.open && modal.querySelector(`[data-pj-deploy="${CSS.escape(project.id)}"]`); if (box) box.outerHTML = deployHTML(project);
+    return project;
+  };
+  async function refreshDeploys() {
+    // Déploiements en cours : relus auprès du service à chaque passage ; les autres une fois à l'ouverture de l'onglet.
+    for (const p of st.projects) {
+      if (p.archived || p.deployState?.registered?.status !== 'ok' || !(deployActive(p) || !st.deployChecked.has(p.id))) continue;
+      st.deployChecked.add(p.id);
+      try { setProject(await api('projects/' + p.id + '/deploy')); } catch { /* le dernier état connu reste affiché */ }
+    }
+  }
+
   function attachmentsHTML(task) {
     const list = task.attachments || [];
     return list.length ? `<ul class="pj-atts">${list.map(a => `<li><button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}${a.by ? ' · ' + esc(a.by) : ''}</small></button>
@@ -304,6 +411,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   }
   async function projectForm(p = {}) {
     await loadAgents();
+    if (!p.id) showGithubStatus();
     const c = p.context || {};
     showModal(p.id ? 'Modifier le projet' : 'Nouveau projet', 'Le contexte est transmis aux agents lorsqu’une tâche le demande. Les secrets n’ont rien à faire ici.', `<form class="pj-form" data-pj-form="project" data-id="${esc(p.id || '')}">
       <div class="pj-two"><label>Nom<input name="name" required maxlength="120" value="${esc(p.name || '')}"></label><label>Préfixe des tâches<input name="key" maxlength="6" value="${esc(p.key || '')}" placeholder="Automatique"></label></div>
@@ -315,9 +423,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <label>Instructions générales<textarea name="instructions" rows="4" maxlength="12000" placeholder="Conventions, ton, outils à utiliser ou à éviter…">${esc(c.instructions || '')}</textarea></label>
       <label>Ressources et documents<textarea name="resources" rows="3" maxlength="12000">${esc(c.resources || '')}</textarea></label>
       <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="3">${esc(linksText(c.links))}</textarea></label>
+      ${p.id ? '' : newRepoFields()}
       <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label><label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label></div>
       <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
-      ${p.id ? agentLine(p) + workspaceHTML(p) : ''}
+      ${p.id ? agentLine(p) + workspaceHTML(p) + bootstrapHTML(p) : ''}
       <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'openclaw') === v ? 'selected' : ''}>${l}${v !== 'openclaw' && st.capabilities.engines && !st.capabilities.engines[v] ? ' (désactivé sur ce PC)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
         <label>Modèle Claude Code<input name="model" maxlength="80" value="${esc(p.direct?.model || '')}" placeholder="${esc(st.capabilities.directDefaults?.model || 'claude-sonnet-5-5')}"></label>
         <label>Secours automatique<select name="fallback"><option value="">Aucun</option>${['claude', 'codex'].map(v => `<option value="${v}" ${p.direct?.fallback === v ? 'selected' : ''}>${ENGINE[v]}</option>`).join('')}</select></label></div>
@@ -326,6 +435,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <label>Publication<textarea name="publishing" rows="3" maxlength="4000" placeholder="Comment publier ce projet : branche et dépôt où pousser, commande de déploiement, vérification à faire…">${esc(c.publishing || '')}</textarea></label>
       <label class="pj-check"><input type="checkbox" name="autoPublish" ${c.autoPublish ? 'checked' : ''}> L’agent publie lui-même à la fin d’une tâche, en suivant cette procédure</label>
       <p class="pj-help">Sans cette case, il prépare tout et vous demande avant de publier. La procédure doit pouvoir s’exécuter là où l’agent travaille (le serveur OpenClaw pour un agent OpenClaw). Seul vous pouvez cocher cette case : les agents ne le peuvent pas.</p>
+      ${deployFields(p)}${p.id ? deployHTML(p) : ''}
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
   }
@@ -497,6 +607,21 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'stop-run': { el.disabled = true; upsert(await api('tasks/' + idv + '/stop', 'POST', {})); toast('Arrêt demandé : la session et le dossier de travail sont conservés.'); updatePanel(); break; }
         case 'regen-claude-md': { const saved = await api('projects/' + idv + '/claude-md', 'POST', {}); const i = st.projects.findIndex(x => x.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('CLAUDE.md régénéré.'); render(); break; }
         case 'retry-clone': { const saved = await api('projects/' + idv + '/clone', 'POST', {}); const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('Nouveau clonage lancé.'); render(); setTimeout(refresh, 4000); break; }
+        case 'deploy': {
+          const p = st.projects.find(x => x.id === idv); if (!p) break;
+          if (!confirm(`Déployer « ${p.name} » en production sur ${deployOf(p).url} ?\n\nLe service de déploiement prend la version qui est sur GitHub (branche ${deployOf(p).branch}).`)) break;
+          el.disabled = true;
+          const result = await api('projects/' + idv + '/deploy', 'POST', {}); setProject(result);
+          toast(result.warnings?.length ? 'Déploiement lancé. Attention : ' + result.warnings[0] : 'Déploiement lancé : le suivi s’affiche dans le projet.'); refresh(); break;
+        }
+        case 'deploy-refresh': setProject(await api('projects/' + idv + '/deploy')); break;
+        case 'deploy-register': el.disabled = true; setProject(await api('projects/' + idv + '/deploy-register', 'POST', {})); toast('Projet réenregistré auprès du service de déploiement.'); break;
+        case 'deploy-public': {
+          const name = el.dataset.name;
+          if (!confirm(`Valider la mise en ligne publique de ${name} ?\n\nLe service de déploiement publiera ce site sur Internet à cette adresse. Sans votre accord, rien n’est publié.`)) break;
+          el.disabled = true; setProject(await api('projects/' + idv + '/deploy-public', 'POST', { name })); toast('Accord enregistré pour ' + name + '. Le service s’occupe de la mise en ligne.'); break;
+        }
+        case 'retry-bootstrap': { setProject(await api('projects/' + idv + '/bootstrap', 'POST', {})); toast('Création relancée.'); setTimeout(refresh, 2000); break; }
         case 'quick-continue': await launch(idv, 'reprise', 'Oui, continue.', el); break;
         case 'request-agent': {
           const p = st.projects.find(x => x.id === idv); if (!p) break;
@@ -528,6 +653,8 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
     const el = event.target;
     if (el.matches('[data-pj-move]')) move(el.dataset.pjMove, el.value);
     if (el.matches('.pj-form input[type=file][name=files]')) { addFiles(el.form, el.files); el.value = ''; }
+    if (el.matches('select[name=deployType]')) { const box = el.form.querySelector('[data-pj-typefields]'); if (box) box.innerHTML = typeFields(el.value, {}); }
+    if (el.matches('input[name=repoMode]')) { const fresh = el.form.elements.repoMode.value === 'new'; el.form.querySelector('[data-pj-newrepo]').hidden = !fresh; el.form.elements.repository.disabled = fresh; }
     // Nouvelle tâche : changer de projet reprend l'agent de ce projet.
     if (el.matches('[data-pj-form=task] select[name=projectId]')) { const p = st.projects.find(x => x.id === el.value); const sel = el.form.elements.agent; if (sel) sel.innerHTML = agentOptions(p?.agent || null); }
   });
@@ -564,8 +691,12 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         const body = { name: fd.get('name'), key: fd.get('key'), description: fd.get('description'), status: fd.get('status'), priority: Number(fd.get('priority')), due: fd.get('due') || '', color: fd.get('color'),
           agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
           engine: fd.get('engine'), direct: { model: String(fd.get('model') || '').trim(), fallback: fd.get('fallback') || '' },
-          context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment'), publishing: fd.get('publishing'), autoPublish: fd.has('autoPublish') } };
+          context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment'), publishing: fd.get('publishing'), autoPublish: fd.has('autoPublish') },
+          deployment: { url: String(fd.get('deployUrl') || '').trim(), auto: fd.has('deployAuto'), branch: String(fd.get('deployBranch') || '').trim(), type: fd.get('deployType') || '', config: Object.fromEntries([...fd.entries()].filter(([k]) => k.startsWith('cfg_')).map(([k, v]) => [k.slice(4), v])),
+            buildCmd: fd.get('deployBuild') || '', testCmd: fd.get('deployTest') || '', publicDomain: String(fd.get('deployDomain') || '').trim(), publicUpstream: String(fd.get('deployUpstream') || '').trim() } };
+        if (!form.dataset.id && fd.get('repoMode') === 'new') { delete body.context.repository; body.newRepository = { name: String(fd.get('newRepoName') || '').trim(), owner: String(fd.get('newRepoOwner') || '').trim(), private: !fd.has('newRepoPublic') }; }
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
+        if (body.newRepository) toast('Projet créé. Le dépôt GitHub, la copie locale et le premier envoi se préparent : suivez l’avancement dans le projet.');
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
         modal.close(); render();
       } else if (kind === 'chat') {

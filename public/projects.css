@@ -229,3 +229,12 @@ dialog.pj-drawer>.dialog-body{flex:1 0 auto;display:flex;flex-direction:column}
   .pj-panel-bar label{width:auto;flex:1 1 160px}
 }
 @media(max-width:550px){.pj-actions{width:100%}.pj-cta{flex:1;justify-content:center}.pj-seg{width:100%}.pj-seg button{flex:1;padding:0 8px}.pj-chatbox textarea{font-size:16px}}
+
+/* Déploiement et création d'un projet neuf */
+.pj-deploy{display:flex;flex-direction:column;gap:8px;margin-top:6px;padding-top:10px;border-top:1px solid var(--pj-soft,var(--ui-line))}
+.pj-deploy .pj-repo b{font-size:13px}
+.pj-ws.s-warn{background:rgba(255,184,107,.16);color:#ffb86b}
+.pj-deploy-log{margin:6px 0 0;padding:10px 12px;max-height:220px;overflow:auto;border-radius:10px;background:var(--surface-3,#1b1b1b);font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}
+.pj-repomode{display:flex;flex-direction:column;gap:8px;border:1px solid var(--ui-line);border-radius:12px;padding:10px 12px}
+.pj-repomode legend{font-size:13px;font-weight:600;padding:0 6px}
+.pj-repomode[hidden],.pj-repomode [hidden]{display:none}

@@ -54,7 +54,7 @@ function createWorkspaces({ root = process.env.COCKPIT_WORKSPACES || path.dirnam
       return { path: dest, reused: false };
     } finally { busy.delete(key); }
   }
-  return { clone, target: repository => { const repo = githubRepo(repository); return repo ? target(repo) : ''; }, root };
+  return { clone, git, target: repository => { const repo = githubRepo(repository); return repo ? target(repo) : ''; }, root };
 }
 
 module.exports = { createWorkspaces, githubRepo, sameRepo };

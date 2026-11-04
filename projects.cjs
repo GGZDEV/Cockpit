@@ -16,6 +16,10 @@ const claude = require('./claude-direct.cjs');
 const codex = require('./codex-direct.cjs');
 const harness = require('./direct-harness.cjs');
 const claudemd = require('./project-claudemd.cjs');
+const deploy = require('./project-deploy.cjs');
+const bootstrap = require('./project-bootstrap.cjs');
+const { createDeployerClient, DeployerError, HTTP: DEPLOY_HTTP } = require('./deployer-client.cjs');
+const { createGithub, OWNER, NAME } = require('./github-repos.cjs');
 
 const PROJECT_STATUS = ['prep', 'active', 'paused', 'done'];
 const TASK_STATUS = ['todo', 'doing', 'blocked', 'review', 'done'];
@@ -55,7 +59,7 @@ function cleanAgent(a) {
 }
 
 function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetchImpl = fetch, reconcileEvery = 15000, log = () => {}, workspaces = createWorkspaces(),
-  directEnabled = process.env.COCKPIT_DIRECT !== '0', claudeEngine, codexEngine } = {}) {
+  directEnabled = process.env.COCKPIT_DIRECT !== '0', claudeEngine, codexEngine, deployer = createDeployerClient({ fetchImpl }), github = createGithub() } = {}) {
   // Moteurs directs actifs par défaut ; COCKPIT_DIRECT=0 les coupe tous (retour à OpenClaw seul). Le même worktree sert aux deux moteurs.
   const claudeRun = claudeEngine || claude.createEngine({ enabled: directEnabled, workspacesRoot: workspaces.root });
   const engines = { claude: claudeRun, codex: codexEngine || codex.createEngine({ enabled: directEnabled && process.env.COCKPIT_CODEX_DIRECT !== '0', workspacesRoot: workspaces.root, worktreeRoot: claudeRun.worktreeRoot }) };
@@ -120,6 +124,10 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if ('agent' in body) out.agent = cleanAgent(body.agent);
     if ('engine' in body) { if (ENGINES.includes(body.engine)) out.engine = body.engine; else delete out.engine; }
     if (body.direct && typeof body.direct === 'object') out.direct = harness.directSettings(body.direct, out.direct);
+    // Déploiement : réglages validés (project.deployment) ; l'état du service vit à part (project.deployState).
+    if (body.deployment && typeof body.deployment === 'object' && !Array.isArray(body.deployment)) {
+      try { out.deployment = deploy.cleanSettings(body.deployment, out.deployment); } catch (error) { throw error instanceof deploy.InputError ? new HttpError(400, error.message) : error; }
+    }
     if ('key' in body && text(body.key, 6)) out.key = text(body.key, 6).toUpperCase().replace(/[^A-Z0-9]/g, '') || out.key;
     if (body.context && typeof body.context === 'object') {
       const c = { ...(out.context || {}) };
@@ -151,18 +159,27 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     // Un nouveau projet travaille avec Claude Code par défaut (si les moteurs directs sont actifs) ; OpenClaw reste un choix explicite.
     const project = projectInput({ status: 'prep', priority: 0, due: '', description: '', color: '#3dd68c', ...(directEnabled ? { engine: 'claude' } : {}), ...body, context: body.context || {} }, { id: id(), createdAt: now(), seq: 0, archived: false });
     project.key ||= projectKey(project.name);
-    store.projects.push(project); syncWorkspace(project); save(); return project;
+    const plan = newRepositoryPlan(body, project);
+    if (plan) project.bootstrap = { status: 'pending', step: '', error: '', at: now(), request: plan };
+    store.projects.push(project); syncWorkspace(project); save();
+    if (plan) runBootstrap(project); else queueRegistration(project).catch(error => log('Déploiement : ' + error.message));
+    return project;
   }
   function updateProject(pid, body) {
     const index = store.projects.findIndex(p => p.id === pid); if (index < 0) throw new HttpError(404, 'Projet introuvable.');
-    store.projects[index] = { ...projectInput(body, store.projects[index]), updatedAt: now() }; syncWorkspace(store.projects[index]); save(); return store.projects[index];
+    // Mise à jour sur place : les suivis en arrière-plan (création, déploiement) gardent le même objet projet.
+    const project = store.projects[index], next = { ...projectInput(body, project), updatedAt: now() };
+    for (const key of Object.keys(project)) if (!(key in next)) delete project[key];
+    Object.assign(project, next); syncWorkspace(project); save();
+    queueRegistration(project).catch(error => log('Déploiement : ' + error.message));
+    return store.projects[index];
   }
 
   // ----- Dossier local (clone GitHub sur ce PC) ------------------------------------------
   // Le clone démarre dès qu'un projet reçoit une adresse GitHub ; un dossier existant n'est jamais écrasé.
   function syncWorkspace(project, { retry = false } = {}) {
     const repo = githubRepo(project.context?.repository), w = project.workspace;
-    if (!repo) return;
+    if (!repo || (project.bootstrap && project.bootstrap.status !== 'done')) return; // projet neuf : le clonage fait partie de sa création
     // Même dépôt déjà traité : on ne recommence que sur demande explicite (« Réessayer »).
     if (w && sameRepo(w.repo, repo.web) && (w.status === 'cloning' || !retry)) return;
     const workspace = { repo: repo.web, path: workspaces.target(repo.web), status: 'cloning', at: now() };
@@ -599,6 +616,195 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   // Régénère le CLAUDE.md d'un projet (seulement s'il a été généré par Cockpit et jamais retouché).
   async function regenerateClaudeMd(pid) { const project = findProject(pid); await prepareClaudeMd(project, { regenerate: true }); project.updatedAt = now(); save(); return project; }
 
+  // ----- Déploiement : service dédié (CT 113), nouveau projet --------------------------------------
+  // Cockpit enregistre le projet auprès du service (PUT), déclenche un déploiement manuel à la demande et affiche l'état.
+  // Le service clone lui-même depuis GitHub et sonde la branche de production quand le déploiement automatique est actif.
+  // Jeton : uniquement dans la configuration du serveur Cockpit ; rien d'identifiant ne passe par l'interface ni par project.deployState.
+  const ACTIVE = ['pending', 'running'];
+  const sha = value => crypto.createHash('sha256').update(value).digest('hex').slice(0, 16);
+  const deployState = project => project.deployState ||= {};
+  const deployActive = project => ACTIVE.includes(project.deployState?.last?.status);
+  const asDeployHttp = error => error instanceof DeployerError ? new HttpError(DEPLOY_HTTP[error.code] || 502, error.message) : error;
+  let ticks = 0;
+
+  // Identifiant du projet dans le service ([a-z0-9-], 40 caractères) : tiré du nom, figé à la première réussite, jamais réutilisé
+  // pour un autre dépôt (un projet inconnu de ce nom est créé, un projet du même dépôt est repris, un autre dépôt fait passer au nom suivant).
+  async function claimSlug(project) {
+    const state = deployState(project);
+    if (state.slugClaimed && state.slug) return state.slug;
+    const repo = githubRepo(project.context?.repository).web;
+    const taken = new Set(store.projects.filter(p => p !== project).map(p => p.deployState?.slug).filter(Boolean));
+    const base = slug(project.name);
+    for (let n = 1; n <= 6; n++) {
+      const candidate = n === 1 ? base : base.slice(0, 38) + '-' + n;
+      if (taken.has(candidate)) continue;
+      const existing = await deployer.getProject(candidate);
+      if (!existing || deploy.sameRepoName(existing.repo, repo)) { state.slug = candidate; state.slugClaimed = true; return candidate; }
+    }
+    throw new DeployerError('conflict', 'Aucun identifiant libre pour ce projet dans le service de déploiement (plusieurs projets portent un nom proche).');
+  }
+  // Enregistre (ou met à jour) le projet auprès du service. Ne lève jamais pour une panne du service : le résultat est dans deployState.registered.
+  async function registerNow(project, { force = false } = {}) {
+    const d = deploy.settingsOf(project), state = deployState(project);
+    if (project.archived) return state.registered;
+    if (!d.url && !d.type && !state.slug) { if (!Object.keys(state).length) delete project.deployState; return null; } // projet sans déploiement : rien à faire
+    const lacking = deploy.missing(project);
+    if (lacking.length) { state.registered = { status: 'pending', at: now(), error: 'À compléter : ' + lacking.join(', ') + '.' }; save(); return state.registered; }
+    if (!deployer.configured) { state.registered = { status: 'failed', retry: false, at: now(), error: deployer.reason }; save(); return state.registered; }
+    const body = deploy.payload(project), hash = sha(JSON.stringify(body));
+    if (!force && state.registered?.status === 'ok' && state.registered.hash === hash) return state.registered;
+    try {
+      const result = await deployer.putProject(await claimSlug(project), body);
+      state.registered = { status: 'ok', hash, at: now(), error: '' };
+      if (d.publicDomain) state.subdomain = { name: d.publicDomain, status: result.subdomainStatus || state.subdomain?.status || '', detail: '' };
+      else delete state.subdomain;
+    } catch (error) {
+      if (!(error instanceof DeployerError)) throw error;
+      state.registered = { status: 'failed', retry: ['unreachable', 'timeout'].includes(error.code), at: now(), error: text(error.message, 400) };
+    }
+    save(); return state.registered;
+  }
+  // Une seule inscription à la fois par projet (créer puis modifier vite ne produit pas deux PUT concurrents).
+  const registrations = new Map();
+  function queueRegistration(project, options) {
+    const next = (registrations.get(project.id) || Promise.resolve()).catch(() => {}).then(() => registerNow(project, options));
+    registrations.set(project.id, next);
+    next.catch(() => {}).finally(() => { if (registrations.get(project.id) === next) registrations.delete(project.id); });
+    return next;
+  }
+  // Relit l'état côté service (dernier déploiement, journal court, nom public). Une panne du service est notée sans effacer l'état connu.
+  async function refreshDeploy(project) {
+    const state = deployState(project);
+    if (!state.slug || state.registered?.status !== 'ok') return project;
+    try {
+      const remote = await deployer.getProject(state.slug);
+      if (!remote) state.registered = { status: 'failed', retry: false, at: now(), error: 'Le service de déploiement ne connaît plus ce projet : utilisez « Réenregistrer ».' };
+      else {
+        if (remote.latest) state.last = remote.latest;
+        if (deploy.settingsOf(project).publicDomain) { const sub = await deployer.getSubdomain(state.slug); if (sub) state.subdomain = { name: sub.name, status: sub.status, detail: sub.detail }; }
+        state.error = '';
+      }
+    } catch (error) { if (!(error instanceof DeployerError)) throw error; state.error = text(error.message, 300); }
+    state.checkedAt = now(); save(); return project;
+  }
+  async function unpushedWarning(project) {
+    const dir = project.workspace?.status === 'ready' ? project.workspace.path : '', branch = deploy.settingsOf(project).branch;
+    if (!dir || !workspaces.git) return '';
+    try {
+      const count = Number((await workspaces.git(['-C', dir, 'rev-list', '--count', `origin/${branch}..${branch}`])).trim());
+      return count > 0 ? `${count} commit${count > 1 ? 's' : ''} de la copie locale ${count > 1 ? 'ne sont' : 'n’est'} pas encore sur GitHub (branche ${branch}) : le service déploie la version de GitHub.` : '';
+    } catch { return ''; }
+  }
+  // Bouton « Déployer » : déploiement manuel (aussi quand le déploiement automatique est actif).
+  async function deployNow(pid) {
+    const project = findProject(pid), d = deploy.settingsOf(project), state = deployState(project);
+    const lacking = deploy.missingText(project);
+    if (lacking) throw new HttpError(409, lacking);
+    if (!deployer.configured) throw new HttpError(503, deployer.reason);
+    if (deployActive(project)) throw new HttpError(409, 'Un déploiement est déjà en cours pour ce projet.');
+    const registered = await queueRegistration(project);
+    if (registered?.status !== 'ok') throw new HttpError(registered?.status === 'pending' ? 409 : 502, registered?.error || 'Le projet n’est pas enregistré auprès du service de déploiement.');
+    const warning = await unpushedWarning(project);
+    try {
+      const started = await deployer.deploy(state.slug);
+      state.last = { id: started.deploymentId, status: started.status, trigger: 'manual', commit: '', previousCommit: '', createdAt: now(), startedAt: '', finishedAt: '', step: '', message: '', log: [] };
+      state.error = ''; save();
+    } catch (error) {
+      if (error instanceof DeployerError && error.service === 'deploy_in_progress') { await refreshDeploy(project); throw new HttpError(409, 'Un déploiement est déjà en cours pour ce projet.'); }
+      throw asDeployHttp(error);
+    }
+    await refreshDeploy(project);
+    log('Déploiement lancé : ' + project.key + ' (' + d.branch + ')');
+    return { project, warnings: warning ? [warning] : [] };
+  }
+  async function reregister(pid) {
+    const project = findProject(pid), lacking = deploy.missingText(project);
+    if (lacking) throw new HttpError(409, lacking);
+    const registered = await queueRegistration(project, { force: true });
+    if (registered?.status !== 'ok') throw new HttpError(502, registered?.error || 'Enregistrement impossible.');
+    return refreshDeploy(project);
+  }
+  // Nom public : le service n'agit qu'après l'accord de l'utilisateur sur CE nom. Cette route est la seule à appeler l'approbation.
+  async function validatePublic(pid, body) {
+    const project = findProject(pid), d = deploy.settingsOf(project), state = deployState(project);
+    if (!d.publicDomain) throw new HttpError(409, 'Ce projet n’a pas de nom public à valider.');
+    if (text(body.name, 120).toLowerCase() !== d.publicDomain) throw new HttpError(400, 'Le nom confirmé ne correspond pas au nom public du projet : rechargez la page.');
+    if (state.registered?.status !== 'ok') throw new HttpError(409, 'Le projet n’est pas encore enregistré auprès du service de déploiement.');
+    const sub = await deployer.getSubdomain(state.slug);
+    if (!sub || sub.name !== d.publicDomain) throw new HttpError(409, 'Le service de déploiement n’a pas de demande en attente pour ' + d.publicDomain + '. Utilisez « Réenregistrer » puis réessayez.');
+    if (sub.status !== 'awaiting_validation') throw new HttpError(409, 'Rien à valider : l’état du nom public est « ' + sub.status + ' ».');
+    await deployer.approveSubdomain(state.slug);
+    log('Mise en ligne publique validée par l’utilisateur : ' + d.publicDomain);
+    await refreshDeploy(project); return project;
+  }
+  async function deployTick() {
+    ticks++;
+    for (const project of store.projects) {
+      const state = project.deployState; if (project.archived || !state?.registered) continue;
+      if (state.registered.status === 'failed' && state.registered.retry && Date.now() - Date.parse(state.registered.at) > 60000) { await queueRegistration(project).catch(() => {}); continue; }
+      if (state.registered.status === 'ok' && (deployActive(project) || (deploy.settingsOf(project).auto && ticks % 4 === 0))) await refreshDeploy(project).catch(() => {});
+    }
+  }
+  // Ce que l'interface de création doit savoir : service configuré, GitHub utilisable.
+  async function deployConfig() {
+    const service = deployer.describe();
+    if (service.configured) { try { await deployer.health(); service.reachable = true; } catch (error) { service.reachable = !['unreachable', 'timeout'].includes(error.code); if (!service.reachable) service.error = error.message; } }
+    return { service, github: await github.status().catch(() => ({ available: false, reason: 'Contrôle de GitHub impossible.' })), publicSuffix: deploy.PUBLIC_SUFFIX() };
+  }
+
+  // Projet nouveau : dépôt GitHub créé, copie locale, squelette, premier push, enregistrement. Chaque étape est reprenable.
+  function newRepositoryPlan(body, project) {
+    const request = body.newRepository;
+    if (request === undefined || request === null || request === false) return null;
+    if (typeof request !== 'object' || Array.isArray(request)) throw new HttpError(400, 'Nouveau dépôt : réglages invalides.');
+    if (githubRepo(project.context?.repository)) throw new HttpError(400, 'Choisissez un dépôt existant OU un nouveau dépôt, pas les deux.');
+    const name = text(request.name, 100) || slug(project.name), owner = text(request.owner, 39);
+    if (!NAME.test(name) || /\.git$/i.test(name)) throw new HttpError(400, 'Nom de dépôt non valide (lettres, chiffres, « . _ - », 100 caractères au plus).');
+    if (owner && !OWNER.test(owner)) throw new HttpError(400, 'Compte GitHub non valide.');
+    const folder = workspaces.target('https://github.com/x/' + name);
+    if (folder && fs.existsSync(folder)) throw new HttpError(409, 'Le dossier ' + folder + ' existe déjà : rien n’a été créé. Choisissez un autre nom de dépôt.');
+    return { name, owner, isPrivate: request.private !== false };
+  }
+  const bootstrapping = new Set();
+  async function runBootstrap(project) {
+    const b = project.bootstrap; if (!b || b.status === 'done' || bootstrapping.has(project.id)) return;
+    bootstrapping.add(project.id); Object.assign(b, { status: 'running', error: '', at: now() }); save();
+    const step = name => { b.step = name; b.at = now(); save(); };
+    try {
+      if (!githubRepo(project.context?.repository)) {
+        step('repo');
+        const info = await github.status();
+        if (!info.available) throw new Error(info.reason);
+        const owner = b.request.owner || info.account;
+        if (!owner) throw new Error('Compte GitHub inconnu : indiquez le propriétaire du nouveau dépôt.');
+        const created = await github.createRepo({ owner, name: b.request.name, isPrivate: b.request.isPrivate });
+        project.context = { ...(project.context || {}), repository: created.web }; b.created = created.web; save();
+      }
+      const repo = githubRepo(project.context.repository);
+      if (project.workspace?.status !== 'ready' || !sameRepo(project.workspace.repo, repo.web)) {
+        step('clone');
+        const cloned = await workspaces.clone(repo.web);
+        project.workspace = { repo: repo.web, path: cloned.path, status: 'ready', reused: cloned.reused, error: '', at: now() }; save();
+      }
+      step('push');
+      await bootstrap.seed({ project, dir: project.workspace.path, branch: deploy.settingsOf(project).branch, git: workspaces.git });
+      step('claudemd');
+      if (directEnabled) await prepareClaudeMd(project).catch(error => log('CLAUDE.md : ' + error.message));
+      step('register');
+      await registerNow(project);
+      Object.assign(b, { status: 'done', step: '', error: '', at: now() });
+    } catch (error) {
+      Object.assign(b, { status: 'failed', error: text(error.message, 500), at: now() });
+    } finally { bootstrapping.delete(project.id); save(); }
+  }
+  function retryBootstrap(project) {
+    const b = project.bootstrap;
+    if (!b) throw new HttpError(409, 'Ce projet n’a pas été créé avec un nouveau dépôt.');
+    if (b.status === 'running' || bootstrapping.has(project.id)) throw new HttpError(409, 'La création est déjà en cours.');
+    if (b.status === 'done') throw new HttpError(409, 'La création est déjà terminée.');
+    runBootstrap(project); return project;
+  }
+
   // ----- Agent dédié à un projet ---------------------------------------------------------
   // Sur clic de l'utilisateur uniquement : Cockpit demande à l'agent principal d'OpenClaw de créer l'agent du projet,
   // puis l'associe au projet dès qu'il apparaît dans le catalogue de la passerelle. Cockpit ne crée aucun agent lui-même.
@@ -692,7 +898,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   }
 
   let reconciling = false;
-  const timer = setInterval(() => { if (reconciling) return; reconciling = true; Promise.all([reconcile(), checkAgentRequests()]).catch(() => {}).finally(() => { reconciling = false; }); }, reconcileEvery);
+  const timer = setInterval(() => { if (reconciling) return; reconciling = true; Promise.all([reconcile(), checkAgentRequests(), deployTick()]).catch(() => {}).finally(() => { reconciling = false; }); }, reconcileEvery);
   timer.unref?.();
   // Au démarrage, aucune exécution n'est suivie en direct : toutes passent par la relecture.
   // Une exécution d'un moteur direct ne peut pas être relue : elle est marquée interrompue (session et worktree conservés).
@@ -702,11 +908,14 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     delete run.tracking; delete run.liveText; event(run, 'interrupted', 'Exécution interrompue par un redémarrage de Cockpit'); task.status = 'blocked';
   }
 
+  // Création interrompue par un redémarrage : reprenable (chaque étape sait ce qui est déjà fait).
+  for (const project of store.projects) if (project.bootstrap?.status === 'running') Object.assign(project.bootstrap, { status: 'failed', error: 'Cockpit a redémarré pendant la création du projet. « Réessayer » reprend où elle s’était arrêtée.', at: now() });
+
   function snapshot() {
     const byId = new Map(store.projects.map(p => [p.id, p]));
     // engineByTask : moteur qui traitera chaque tâche (celui de la tâche, sinon celui du projet).
-    return { projects: store.projects, tasks: store.tasks, engineByTask: Object.fromEntries(store.tasks.map(t => [t.id, engineOf(t, byId.get(t.projectId))])),
-      capabilities: { ...CAPABILITIES, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled }, directDefaults: harness.directSettings({}) }, now: now() };
+    return { projects: store.projects, tasks: store.tasks, deployInfo: Object.fromEntries(store.projects.map(p => [p.id, { missing: deploy.missingText(p), active: deployActive(p) }])), engineByTask: Object.fromEntries(store.tasks.map(t => [t.id, engineOf(t, byId.get(t.projectId))])),
+      capabilities: { ...CAPABILITIES, deploy: { ...deployer.describe(), types: deploy.TYPES, publicSuffix: deploy.PUBLIC_SUFFIX() }, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled }, directDefaults: harness.directSettings({}) }, now: now() };
   }
 
   // ----- Accès des agents (Claude, Codex, OpenClaw…) -------------------------------------
@@ -739,6 +948,12 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     return { connectionId: hits[0].connectionId, agentId: hits[0].agentId, name: hits[0].name };
   }
   const pick = (body, keys) => Object.fromEntries(keys.filter(k => k in body).map(k => [k, body[k]]));
+  // Déploiement vu par un agent : lecture seule (url, mode, dernier état). Déployer, activer l'automatique et valider un nom public restent à l'utilisateur.
+  function deployView(p) {
+    const d = deploy.settingsOf(p), st = p.deployState || {};
+    if (!d.url && !d.type && !st.slug) return null;
+    return { url: d.url, auto: d.auto, branch: d.branch, type: d.type, registered: st.registered?.status || 'none', last: st.last ? { status: st.last.status, trigger: st.last.trigger, commit: st.last.commit, at: st.last.finishedAt || st.last.createdAt } : null, ...(d.publicDomain ? { publicDomain: d.publicDomain, publicDomainStatus: st.subdomain?.status || '' } : {}) };
+  }
   function viewProject(p) {
     const tasks = store.tasks.filter(t => t.projectId === p.id), count = s => tasks.filter(t => t.status === s).length;
     return { id: p.id, key: p.key, name: p.name, status: p.status, priority: p.priority, due: p.due || '', description: p.description || '', archived: !!p.archived, context: p.context || {},
@@ -746,6 +961,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       claudeMd: p.claudeMd ? { status: p.claudeMd.status, chars: p.claudeMd.chars } : null,
       ...(p.agentRequest && !p.agent ? { agentRequest: { status: p.agentRequest.status, agentId: p.agentRequest.agentId, ...(p.agentRequest.error ? { error: p.agentRequest.error } : {}) } } : {}),
       localFolder: p.workspace ? { status: p.workspace.status, path: p.workspace.path, ...(p.workspace.error ? { error: p.workspace.error } : {}) } : null,
+      deploy: deployView(p),
+      ...(p.bootstrap ? { newRepository: { status: p.bootstrap.status, step: p.bootstrap.step, ...(p.bootstrap.error ? { error: p.bootstrap.error } : {}) } } : {}),
       tasks: { total: tasks.length, todo: count('todo'), doing: count('doing'), blocked: count('blocked'), review: count('review'), done: count('done') }, createdBy: p.createdBy || '' };
   }
   function viewTask(t) {
@@ -837,7 +1054,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         addAttachment(task.id, body.name, data, client); return viewTask(task);
       }
       default:
-        if (/launch|accept/.test(route) || method === 'DELETE') throw new HttpError(403, 'Lancer une exécution, valider un résultat ou supprimer reste réservé à l’utilisateur, dans l’interface Projets.');
+        if (/launch|accept|deploy|bootstrap/.test(route) || method === 'DELETE') throw new HttpError(403, 'Lancer une exécution, valider un résultat, déployer ou supprimer reste réservé à l’utilisateur, dans l’interface Projets.');
         throw new HttpError(404, 'Opération inconnue. Disponibles : GET state, GET agents, GET workspace?path=, GET tasks/<code>, GET tasks/<code>/attachments/<id>, POST projects, PATCH projects/<projet>, POST projects/<projet>/clone, POST tasks, PATCH tasks/<code>, POST tasks/<code>/attachments.');
     }
   }
@@ -875,6 +1092,12 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       switch (route) {
         case 'GET state': return json(res, 200, snapshot());
         case 'GET agents': return json(res, 200, { agents: await agents() });
+        case 'GET deploy-config': return json(res, 200, await deployConfig());
+        case 'GET projects/:id/deploy': return json(res, 200, await refreshDeploy(findProject(a)));
+        case 'POST projects/:id/deploy': return json(res, 202, await deployNow(a));
+        case 'POST projects/:id/deploy-register': return json(res, 200, await reregister(a));
+        case 'POST projects/:id/deploy-public': return json(res, 200, await validatePublic(a, body));
+        case 'POST projects/:id/bootstrap': return json(res, 202, retryBootstrap(findProject(a)));
         case 'POST projects': return json(res, 200, createProject(body));
         case 'PATCH projects/:id': return json(res, 200, updateProject(a, body));
         case 'POST projects/:id/clone': return json(res, 200, retryWorkspace(findProject(a)));
@@ -889,14 +1112,16 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         default: return json(res, 405, { error: 'Opération indisponible.' });
       }
     } catch (error) {
+      error = asDeployHttp(error);
       if (!(error instanceof HttpError)) log('Projets : ' + error.message);
       return json(res, error.status || 500, { error: error instanceof HttpError ? error.message : 'Une erreur est survenue.' });
     }
   }
-  const allowedRoute = (method, pathname) => /^\/api\/projects\/(state|agents)$/.test(pathname) ? method === 'GET'
+  const allowedRoute = (method, pathname) => /^\/api\/projects\/(state|agents|deploy-config)$/.test(pathname) ? method === 'GET'
+    : /^\/api\/projects\/projects\/[\w-]+\/deploy$/.test(pathname) ? ['GET', 'POST'].includes(method)
     : /^\/api\/projects\/(projects|tasks)$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/projects\/[\w-]+$/.test(pathname) ? method === 'PATCH'
-    : /^\/api\/projects\/projects\/[\w-]+\/(clone|agent-request|claude-md)$/.test(pathname) ? method === 'POST'
+    : /^\/api\/projects\/projects\/[\w-]+\/(clone|agent-request|claude-md|bootstrap|deploy-register|deploy-public)$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/tasks\/[\w-]+\/attachments$/.test(pathname) ? method === 'POST'
     : /^\/api\/projects\/tasks\/[\w-]+\/attachments\/[\w-]+$/.test(pathname) ? ['GET', 'DELETE'].includes(method)
     : /^\/api\/projects\/tasks\/[\w-]+$/.test(pathname) ? ['PATCH', 'DELETE'].includes(method)
@@ -923,7 +1148,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       return json(res, error.status || 500, { error: known ? error.message : 'Une erreur est survenue.' });
     }
   }
-  return { handle, agentHandle, allowedRoute, close, reconcile, checkAgentRequests, snapshot, brief, finalize: (tid, rid, content) => { const t = findTask(tid); finalize(t, t.runs.find(r => r.id === rid), content); } };
+  return { handle, agentHandle, allowedRoute, close, reconcile, checkAgentRequests, deployTick, snapshot, brief, finalize: (tid, rid, content) => { const t = findTask(tid); finalize(t, t.runs.find(r => r.id === rid), content); } };
 }
 
 module.exports = { createProjects, projectKey, CAPABILITIES };

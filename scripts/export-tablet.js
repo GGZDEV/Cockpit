@@ -17,7 +17,7 @@ function buildTablet({ keepRuntime = false, sourceDirectory = process.env.COCKPI
   for (const file of files) {
     const dest = path.join(target, path.relative(source, file)); fs.mkdirSync(path.dirname(dest), { recursive: true });
     let content = fs.readFileSync(file);
-    if (/\.(js|css|html|svg|json)$/.test(file)) content = Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'));
+    if (/\.(js|css|html|svg|json|txt)$/.test(file)) content = Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'));
     if (file.endsWith('.js')) content = Buffer.from(content.toString('utf8').replace(/(\bfrom\s+['"])(\.{1,2}\/[^'"\n]+\.js)(['"])/g, `$1$2?v=${version}$3`));
     if (file.endsWith('.html')) {
       let html = content.toString('utf8').replace(/((?:src|href)=["'])(?!https?:|#|data:)([^"']+\.(?:js|css|svg))(["'])/g, `$1$2?v=${version}$3`);

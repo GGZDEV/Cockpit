@@ -1,5 +1,7 @@
 # Cockpit — prototype local
 
+> **Hébergement web permanent de Projets :** voir [docs/SERVER-WEB.md](docs/SERVER-WEB.md). Ce mode sert frontend et backend sur la même origine, sans dépendance au desktop.
+
 Cockpit rassemble la maison, la veille et les agents dans une seule application. Interface en français, bibliothèque de **23 modules**, cinq espaces et trois dispositions indépendantes : bureau, tablette et compact.
 
 Dans **Paramètres → Apparence de toute l’application**, choisir **Graphite** ou **Verre**. Le thème change uniquement les couleurs, les polices et le fond : tailles, positions, navigation et mode édition restent identiques. Le profil Tablette garde sa grille sous les deux thèmes ; Bureau et Compact gardent leur colonne sous les deux thèmes. Le choix est conservé dans chaque navigateur et inclus dans les exports de disposition. Les feuilles de style des deux projets sont copiées sans modification dans `public/design/`. Le prototype ne charge plus le premier habillage pastel.

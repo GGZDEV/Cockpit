@@ -1,0 +1,33 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path');
+const { createServer } = require('../server');
+const { createDeployerClient } = require('../deployer-client.cjs');
+
+test('server mode protects the single-origin web app and advertises only server mode', async t => {
+  assert.throws(() => createServer({ serverMode: true, webPassword: '' }), /obligatoire/);
+  const projects = { allowedRoute: () => true, handle: (req, res, url, json) => json(res, 200, { ok: true }) };
+  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', projects });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const origin = 'http://127.0.0.1:' + server.address().port;
+  assert.equal((await fetch(origin)).status, 401);
+  const headers = { Authorization: 'Basic ' + Buffer.from('cockpit:secret').toString('base64') };
+  const page = await fetch(origin, { headers }); assert.equal(page.status, 200); assert.match(await page.text(), /server-config\.js/);
+  const config = await fetch(origin + '/server-config.js', { headers }); assert.equal(await config.text(), 'globalThis.COCKPIT_SERVER_MODE=true;');
+  const status = await (await fetch(origin + '/api/status', { headers })).json();
+  assert.deepEqual({ serverMode: status.serverMode, feedme: status.feedme, haSuggestedUrl: status.haSuggestedUrl }, { serverMode: true, feedme: false, haSuggestedUrl: '' });
+  const api = await fetch(origin + '/api/projects/state', { headers: { ...headers, Origin: 'https://other.example' } }); assert.equal(api.status, 403);
+});
+
+test('deployer token can be loaded from an external file without entering responses', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-token-')), file = path.join(dir, 'token');
+  fs.writeFileSync(file, 'outside-git-token\n', { mode: 0o600 });
+  const previousFile = process.env.COCKPIT_DEPLOYER_TOKEN_FILE, previousToken = process.env.COCKPIT_DEPLOYER_TOKEN;
+  delete process.env.COCKPIT_DEPLOYER_TOKEN; process.env.COCKPIT_DEPLOYER_TOKEN_FILE = file;
+  t.after(() => { if (previousFile === undefined) delete process.env.COCKPIT_DEPLOYER_TOKEN_FILE; else process.env.COCKPIT_DEPLOYER_TOKEN_FILE = previousFile; if (previousToken === undefined) delete process.env.COCKPIT_DEPLOYER_TOKEN; else process.env.COCKPIT_DEPLOYER_TOKEN = previousToken; fs.rmSync(dir, { recursive: true, force: true }); });
+  let authorization = '';
+  const client = createDeployerClient({ baseUrl: 'http://deployer.test:8080', fetchImpl: async (url, options) => { authorization = options.headers.Authorization; return new Response(JSON.stringify({ id: 'demo', repo: 'x', branch: 'main' }), { status: 200, headers: { 'Content-Type': 'application/json' } }); } });
+  assert.equal(client.configured, true); await client.getProject('demo'); assert.equal(authorization, 'Bearer outside-git-token');
+  assert.doesNotMatch(JSON.stringify(client.describe()), /outside-git-token/);
+});

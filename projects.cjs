@@ -59,7 +59,7 @@ function cleanAgent(a) {
 }
 
 function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetchImpl = fetch, reconcileEvery = 15000, log = () => {}, workspaces = createWorkspaces(),
-  directEnabled = process.env.COCKPIT_DIRECT !== '0', claudeEngine, codexEngine, deployer = createDeployerClient({ fetchImpl }), github = createGithub() } = {}) {
+  directEnabled = process.env.COCKPIT_DIRECT !== '0', openclawEnabled = process.env.COCKPIT_SERVER_MODE !== '1', claudeEngine, codexEngine, deployer = createDeployerClient({ fetchImpl }), github = createGithub() } = {}) {
   // Moteurs directs actifs par défaut ; COCKPIT_DIRECT=0 les coupe tous (retour à OpenClaw seul). Le même worktree sert aux deux moteurs.
   const claudeRun = claudeEngine || claude.createEngine({ enabled: directEnabled, workspacesRoot: workspaces.root });
   const engines = { claude: claudeRun, codex: codexEngine || codex.createEngine({ enabled: directEnabled && process.env.COCKPIT_CODEX_DIRECT !== '0', workspacesRoot: workspaces.root, worktreeRoot: claudeRun.worktreeRoot }) };
@@ -98,6 +98,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   }
 
   async function agents({ fresh = false } = {}) {
+    if (!openclawEnabled) return [];
     const overview = await feedme('agents/');
     const list = [];
     for (const connection of (overview.connections || []).filter(c => c.kind === 'openclaw')) {
@@ -315,6 +316,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if ((kind === 'reprise' || kind === 'answer') && !note) throw new HttpError(400, kind === 'answer' ? 'Écrivez votre réponse avant de relancer.' : 'Ajoutez les instructions de reprise.');
     const project = findProject(task.projectId), engine = engineOf(task, project);
     if (engine !== 'openclaw') return launchDirect(task, project, engine, { launchKey, kind, note });
+    if (!openclawEnabled) throw new HttpError(403, 'OpenClaw n’est pas activé dans le mode serveur web. Choisissez Claude Code ou Codex.');
     if (kind === 'execute') throw new HttpError(400, 'Seul un plan rédigé par Claude Code ou Codex peut être exécuté.');
     const missing = [!task.title && 'un titre', !task.instructions && 'des consignes', !task.agent && 'un agent assigné'].filter(Boolean);
     if (missing.length) throw new HttpError(400, 'Avant de lancer, ajoutez ' + missing.join(', ') + '.');
@@ -915,7 +917,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const byId = new Map(store.projects.map(p => [p.id, p]));
     // engineByTask : moteur qui traitera chaque tâche (celui de la tâche, sinon celui du projet).
     return { projects: store.projects, tasks: store.tasks, deployInfo: Object.fromEntries(store.projects.map(p => [p.id, { missing: deploy.missingText(p), active: deployActive(p) }])), engineByTask: Object.fromEntries(store.tasks.map(t => [t.id, engineOf(t, byId.get(t.projectId))])),
-      capabilities: { ...CAPABILITIES, deploy: { ...deployer.describe(), types: deploy.TYPES, publicSuffix: deploy.PUBLIC_SUFFIX() }, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled }, directDefaults: harness.directSettings({}) }, now: now() };
+      capabilities: { ...CAPABILITIES, deploy: { ...deployer.describe(), types: deploy.TYPES, publicSuffix: deploy.PUBLIC_SUFFIX() }, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled, ...(!openclawEnabled ? { openclaw: false } : {}) }, directDefaults: harness.directSettings({}) }, now: now() };
   }
 
   // ----- Accès des agents (Claude, Codex, OpenClaw…) -------------------------------------

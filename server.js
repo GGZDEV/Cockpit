@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { createProjects } = require('./projects.cjs');
+const SERVER_MODE = process.env.COCKPIT_SERVER_MODE === '1';
 const ROOT = path.join(__dirname, 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png':'image/png', '.woff2':'font/woff2' };
 const READS = new Set(['/api/articles', '/api/feeds', '/api/categories', '/api/boards', '/api/todos', '/api/calendar', '/api/system/metrics', '/api/spotify/now-playing', '/api/spotify/status', '/api/agents/', '/api/ai-usage']);
@@ -17,10 +18,13 @@ function allowed(method, pathname) {
   return method === 'GET' && READS.has(pathname) || !!ROUTES[method]?.some(pattern=>pattern.test(pathname));
 }
 
-function trusted(req, publicFile = false) {
+const splitHosts = value => String(value || '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean);
+function trusted(req, publicFile = false, { serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS) } = {}) {
   try {
     const host = new URL('http://' + req.headers.host);
-    return ['localhost', '127.0.0.1', '[::1]'].includes(host.hostname) &&
+    const hostname = host.hostname.replace(/^\[|\]$/g, '').toLowerCase();
+    const hostAllowed = ['localhost', '127.0.0.1', '::1'].includes(hostname) || (serverMode && (allowedHosts.includes('*') || allowedHosts.includes(hostname)));
+    return hostAllowed &&
       (publicFile || (!req.headers.origin || req.headers.origin === host.origin) && req.headers['sec-fetch-site'] !== 'cross-site');
   } catch { return false; }
 }
@@ -42,14 +46,30 @@ async function discoverFeedMe() {
 }
 function json(res, status, value) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
 let sharedProjects;
-const projectsService = () => sharedProjects ||= createProjects({ discover: discoverFeedMe, log: message => console.error(message) });
-function createServer({ projects } = {}) {
+const projectsService = () => sharedProjects ||= createProjects({ discover: SERVER_MODE ? async () => null : discoverFeedMe, log: message => console.error(message) });
+const secretFile = name => {
+  const file = process.env[name];
+  if (!file) return '';
+  try { return fs.readFileSync(file, 'utf8').trim(); } catch (error) { throw new Error(name + ' est illisible : ' + error.message); }
+};
+function cryptoSafe(a, b) {
+  const crypto = require('node:crypto'), left = Buffer.from(a), right = Buffer.from(b);
+  return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+function createServer({ projects, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE') } = {}) {
+  if (serverMode && !webPassword) throw new Error('COCKPIT_WEB_PASSWORD_FILE est obligatoire en mode serveur.');
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
+      if (serverMode && webPassword) {
+        const expected = 'Basic ' + Buffer.from('cockpit:' + webPassword).toString('base64');
+        const supplied = String(req.headers.authorization || '');
+        if (!cryptoSafe(supplied, expected)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Cockpit", charset="UTF-8"', 'Cache-Control': 'no-store' }); return res.end('Authentification requise.'); }
+      }
       // The extension may frame public assets; API requests must originate inside our app.
-      if (!trusted(req, !url.pathname.startsWith('/api/'))) return json(res, 403, { error: 'Accès local uniquement.' });
-      if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', feedme: !!await discoverFeedMe(), haSuggestedUrl: 'http://192.168.1.251:8123' });
+      if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
+      if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }
+      if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
       if (url.pathname === '/api/projects' || url.pathname.startsWith('/api/projects/')) {
         const service = projects || projectsService();
         if (!service.allowedRoute(req.method, url.pathname)) return json(res, 405, { error: 'Opération indisponible.' });
@@ -97,9 +117,10 @@ function createServer({ projects } = {}) {
 if (require.main === module) {
   const server = createServer();
   projectsService(); // relit l'état des exécutions dès le démarrage
-  const port = Number(process.env.PORT || 3888);
+  const port = Number(process.env.PORT || 3888), host = process.env.HOST || (SERVER_MODE ? '0.0.0.0' : '127.0.0.1');
   server.on('error', err => { console.error(err.code === 'EADDRINUSE' ? `Le port ${port} est occupé. Utilisez PORT pour en choisir un autre.` : err.message); process.exitCode = 1; });
-  server.listen(port, '127.0.0.1', () => console.log(`Cockpit prêt : http://127.0.0.1:${port}`));
+  server.listen(port, host, () => console.log(`Cockpit prêt : http://${host}:${port}`));
+  if (SERVER_MODE) return;
   const config=require('./scripts/relay-runtime').writeRuntime();
   if (config.pcOrigin) { const relay=require('./relay.cjs').createRelay({haOrigin:config.haOrigin,localOrigin:'http://127.0.0.1:'+port,allowed,projectsAllowed:(method,pathname)=>projectsService().allowedRoute(method,pathname)}); relay.on('error',error=>console.error('Relais tablette : '+error.message));relay.listen(3889,new URL(config.pcOrigin).hostname,()=>console.log('Relais tablette authentifié : '+config.pcOrigin)); }
   // Accès des agents à Projets : ce PC et Tailscale uniquement, une clé par agent.

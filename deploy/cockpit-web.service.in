@@ -1,0 +1,21 @@
+[Unit]
+Description=Cockpit web (Projets)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@@APP_DIR@@
+EnvironmentFile=@@ENV_FILE@@
+ExecStart=@@NODE@@ server.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=default.target

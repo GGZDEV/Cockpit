@@ -1,5 +1,5 @@
 // Onglet Projets : projets personnels, tableau Kanban et tâches confiées à Claude Code, Codex ou aux agents OpenClaw.
-// L'état réel (projets, tâches, exécutions) vit sur le serveur du PC : /api/projects/*.
+// L'état réel (projets, tâches, exécutions) vit sur le serveur Cockpit : /api/projects/*.
 import { esc, icon, read, write, uid, safeUrl, timeoutSignal } from './core.js';
 import { chatItems, composerMode, canClose, richText } from './task-chat.js';
 
@@ -56,7 +56,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   async function api(route, method = 'GET', body) {
     const response = await sources.feedmeFetch('/api/projects/' + route, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
     let data = {}; try { data = await response.json(); } catch { /* réponse vide */ }
-    if (!response.ok) throw new Error(data.error || (response.status === 404 ? 'Le service des projets n’est pas disponible sur ce PC. Relancez Cockpit.' : 'Service des projets indisponible.'));
+    if (!response.ok) throw new Error(data.error || (response.status === 404 ? 'Le service des projets n’est pas disponible. Relancez Cockpit.' : 'Service des projets indisponible.'));
     return data;
   }
   const projectOf = task => st.projects.find(p => p.id === task.projectId);
@@ -200,7 +200,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const tabs = [['all', 'Tout'], ['me', 'Mes tâches'], ['agents', 'Agents']].map(([id, label]) => `<button data-pj="who" data-id="${id}" aria-pressed="${st.who === id}">${label}</button>`).join('');
     const chips = [{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<button class="pj-chip" data-pj="project" data-id="${esc(p.id)}" aria-pressed="${st.project === p.id}">${p.color ? `<i style="background:${esc(p.color)}"></i>` : ''}${esc(p.name)}<span>${st.tasks.filter(t => (p.id === 'all' ? projectOf(t) && !projectOf(t).archived : t.projectId === p.id)).length}</span></button>`).join('');
     const error = st.error ? `<div class="pj-banner is-bad" role="alert">${G.alert}<span>${esc(st.error)}</span><button class="button" data-pj="reload">Réessayer</button></div>` : '';
-    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite directement sur ce PC. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
+    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
       : `<div class="pj-filters"><div class="pj-seg" role="group" aria-label="Assignation">${tabs}</div><div class="pj-chips" role="group" aria-label="Projet">${chips}</div>
         ${attention ? `<button class="pj-chip pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>${board()}`;
     return `<div class="pj-root" data-scroll="page:projects">
@@ -294,7 +294,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return `<fieldset class="pj-repomode"><legend>Dépôt GitHub</legend>
       <label class="pj-check"><input type="radio" name="repoMode" value="existing" checked> À partir d’un dépôt existant (copie locale automatique)</label>
       <label class="pj-check"><input type="radio" name="repoMode" value="new"> Projet neuf : créer le dépôt GitHub, le squelette et le premier envoi</label>
-      <div data-pj-newrepo hidden class="pj-form"><div class="pj-three"><label>Nom du dépôt<input name="newRepoName" maxlength="100" placeholder="Automatique, d’après le nom du projet"></label><label>Compte GitHub<input name="newRepoOwner" maxlength="39" placeholder="Celui de ce PC"></label>
+      <div data-pj-newrepo hidden class="pj-form"><div class="pj-three"><label>Nom du dépôt<input name="newRepoName" maxlength="100" placeholder="Automatique, d’après le nom du projet"></label><label>Compte GitHub<input name="newRepoOwner" maxlength="39" placeholder="Compte GitHub connecté"></label>
         <label class="pj-check"><input type="checkbox" name="newRepoPublic"> Dépôt public</label></div>
         <p class="pj-help" data-pj-ghstatus>Vérification de GitHub…</p></div></fieldset>`;
   }
@@ -391,15 +391,15 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         <label class="button pj-pick">${icon('plus')} Ajouter des fichiers<input type="file" name="files" multiple accept="${ACCEPT}" class="sr-only"></label></div>
       <label>Adresses utiles (une par ligne, « libellé | adresse » possible)<textarea name="links" rows="2" placeholder="https://…">${esc(linksText(task.links))}</textarea></label>
       <details class="pj-more"><summary>Plus d’options <span class="muted">· ${esc(task.id && isDirect(task) ? ENGINE[engineOf(task)] : task.agent ? 'agent : ' + task.agent.name : 'moteur du projet')}</span></summary><div class="pj-form">
-        <div class="pj-three"><label>Moteur<select name="engine"><option value="">Celui du projet</option>${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${task.engine === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <div class="pj-three"><label>Moteur<select name="engine"><option value="">Celui du projet</option>${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${task.engine === v ? 'selected' : ''}${st.capabilities.engines?.[v] === false ? ' disabled' : ''}>${l}${st.capabilities.engines?.[v] === false ? ' (indisponible sur ce serveur)' : ''}</option>`).join('')}</select></label>
           <label>Modèle<input name="model" maxlength="80" value="${esc(task.model || '')}" placeholder="Celui du projet"></label>
           <label class="pj-check"><input type="checkbox" name="planFirst" ${task.planFirst ? 'checked' : ''}> Plan d’abord (lecture seule)</label></div>
-        <p class="pj-help">Claude Code et Codex travaillent directement sur ce PC, dans un dossier à part pour cette tâche. Le plan préalable est facultatif : sans lui, le travail démarre tout de suite.</p>
-        <div class="pj-three"><label>Agent OpenClaw<select name="agent">${agentOptions(task.agent)}</select></label><label>Priorité${prioritySelect(task.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(task.due || '')}"></label></div>
-        ${agentHelp()}
+        <p class="pj-help">Claude Code et Codex travaillent sur le serveur Cockpit, dans un dossier à part pour cette tâche. Le plan préalable est facultatif : sans lui, le travail démarre tout de suite.</p>
+        <div class="pj-three">${st.capabilities.engines?.openclaw !== false ? `<label>Agent OpenClaw<select name="agent">${agentOptions(task.agent)}</select></label>` : ''}<label>Priorité${prioritySelect(task.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(task.due || '')}"></label></div>
+        ${st.capabilities.engines?.openclaw !== false ? agentHelp() : ''}
         <label>Critères de réussite<textarea name="criteria" rows="2" maxlength="4000" placeholder="Comment vérifier que c’est réussi">${esc(task.criteria || '')}</textarea></label>
         <label>Ressources de la tâche<textarea name="resources" rows="2" maxlength="12000" placeholder="Chemins, extraits utiles…">${esc(task.resources || '')}</textarea></label>
-        <label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent OpenClaw (Claude Code et Codex le lisent dans CLAUDE.md)</label></div></details>`;
+        ${st.capabilities.engines?.openclaw !== false ? `<label class="pj-check"><input type="checkbox" name="includeContext" ${task.includeContext === false ? '' : 'checked'}> Transmettre le contexte du projet à l’agent OpenClaw (Claude Code et Codex le lisent dans CLAUDE.md)</label>` : ''}</div></details>`;
   }
   function readTask(form) {
     const fd = new FormData(form), value = String(fd.get('agent') || '');
@@ -424,17 +424,17 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <label>Ressources et documents<textarea name="resources" rows="3" maxlength="12000">${esc(c.resources || '')}</textarea></label>
       <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="3">${esc(linksText(c.links))}</textarea></label>
       ${p.id ? '' : newRepoFields()}
-      <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label><label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label></div>
-      <p class="pj-help">Une adresse GitHub est clonée sur ce PC, à côté de vos autres projets : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé. Les nouvelles tâches sont confiées à l’agent du projet.</p>
-      ${p.id ? agentLine(p) + workspaceHTML(p) + bootstrapHTML(p) : ''}
-      <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'openclaw') === v ? 'selected' : ''}>${l}${v !== 'openclaw' && st.capabilities.engines && !st.capabilities.engines[v] ? ' (désactivé sur ce PC)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
+      <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label>${st.capabilities.engines?.openclaw !== false ? `<label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label>` : ''}</div>
+      <p class="pj-help">Une adresse GitHub est clonée dans l’espace de travail du serveur Cockpit : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé.</p>
+      ${p.id ? (st.capabilities.engines?.openclaw !== false ? agentLine(p) : '') + workspaceHTML(p) + bootstrapHTML(p) : ''}
+      <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'claude') === v ? 'selected' : ''}${st.capabilities.engines?.[v] === false ? ' disabled' : ''}>${l}${st.capabilities.engines?.[v] === false ? ' (indisponible sur ce serveur)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
         <label>Modèle Claude Code<input name="model" maxlength="80" value="${esc(p.direct?.model || '')}" placeholder="${esc(st.capabilities.directDefaults?.model || 'claude-sonnet-5-5')}"></label>
         <label>Secours automatique<select name="fallback"><option value="">Aucun</option>${['claude', 'codex'].map(v => `<option value="${v}" ${p.direct?.fallback === v ? 'selected' : ''}>${ENGINE[v]}</option>`).join('')}</select></label></div>
-      <p class="pj-help">Claude Code (ou Codex) reçoit chaque tâche directement, dans une seule session reprise à chaque message. OpenClaw reste possible : il garde son agent et sa conversation. Le secours ne se déclenche que si le moteur échoue avant d’avoir touché au dossier.</p>
+      <p class="pj-help">Claude Code (ou Codex) reçoit chaque tâche directement, dans une seule session reprise à chaque message. ${st.capabilities.engines?.openclaw === false ? 'Le moteur OpenClaw desktop est désactivé dans ce mode serveur.' : 'OpenClaw reste possible : il garde son agent et sa conversation.'} Le secours ne se déclenche que si le moteur échoue avant d’avoir touché au dossier.</p>
       <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
       <label>Publication<textarea name="publishing" rows="3" maxlength="4000" placeholder="Comment publier ce projet : branche et dépôt où pousser, commande de déploiement, vérification à faire…">${esc(c.publishing || '')}</textarea></label>
       <label class="pj-check"><input type="checkbox" name="autoPublish" ${c.autoPublish ? 'checked' : ''}> L’agent publie lui-même à la fin d’une tâche, en suivant cette procédure</label>
-      <p class="pj-help">Sans cette case, il prépare tout et vous demande avant de publier. La procédure doit pouvoir s’exécuter là où l’agent travaille (le serveur OpenClaw pour un agent OpenClaw). Seul vous pouvez cocher cette case : les agents ne le peuvent pas.</p>
+      <p class="pj-help">Sans cette case, le moteur prépare tout et vous demande avant de publier. La procédure doit pouvoir s’exécuter sur le serveur où le moteur travaille. Seul vous pouvez cocher cette case.</p>
       ${deployFields(p)}${p.id ? deployHTML(p) : ''}
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);

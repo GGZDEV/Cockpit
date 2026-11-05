@@ -2,6 +2,7 @@
 // Client du service de déploiement (CT 113 « deployer », API HTTP JSON sur le réseau local ; contrat : docs/PROJETS-DEPLOIEMENT.md).
 // Le jeton vient uniquement de la configuration du serveur Cockpit (COCKPIT_DEPLOYER_TOKEN) : jamais de l'interface, jamais écrit
 // dans un journal, un message d'erreur ou une réponse. Chaque erreur est une DeployerError au message français, sans secret.
+const fs = require('node:fs');
 const { redact } = require('./direct-harness.cjs');
 
 const DEFAULT_URL = 'http://192.168.1.236:8080';
@@ -18,7 +19,13 @@ const HTTP = { not_configured: 503, unreachable: 502, timeout: 504, unauthorized
 const statusOf = value => (value in STATUS && value !== 'unknown') ? value : 'unknown';
 const line = (value, max = 300) => String(value ?? '').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, ' ').slice(0, max);
 
-function createDeployerClient({ baseUrl = process.env.COCKPIT_DEPLOYER_URL || DEFAULT_URL, token = process.env.COCKPIT_DEPLOYER_TOKEN || '', fetchImpl = fetch, timeoutMs = 10000, maxBytes = 1024 * 1024 } = {}) {
+function tokenFromEnvironment() {
+  if (process.env.COCKPIT_DEPLOYER_TOKEN) return process.env.COCKPIT_DEPLOYER_TOKEN;
+  const file = process.env.COCKPIT_DEPLOYER_TOKEN_FILE;
+  if (!file) return '';
+  try { return fs.readFileSync(file, 'utf8').trim(); } catch { return ''; }
+}
+function createDeployerClient({ baseUrl = process.env.COCKPIT_DEPLOYER_URL || DEFAULT_URL, token = tokenFromEnvironment(), fetchImpl = fetch, timeoutMs = 10000, maxBytes = 1024 * 1024 } = {}) {
   token = String(token || '').trim();
   let base = null, problem = '';
   try {
@@ -26,7 +33,7 @@ function createDeployerClient({ baseUrl = process.env.COCKPIT_DEPLOYER_URL || DE
     if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password) throw new Error('adresse');
     base = u.origin;
   } catch { problem = 'COCKPIT_DEPLOYER_URL n’est pas une adresse http(s) valide.'; }
-  if (!problem && !token) problem = 'Le jeton du service de déploiement n’est pas configuré sur ce PC (variable COCKPIT_DEPLOYER_TOKEN).';
+  if (!problem && !token) problem = 'Le jeton du service de déploiement n’est pas configuré (COCKPIT_DEPLOYER_TOKEN_FILE ou COCKPIT_DEPLOYER_TOKEN).';
   const configured = !problem;
   const clean = value => redact(token ? String(value).split(token).join('***') : String(value));
 

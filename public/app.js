@@ -19,13 +19,15 @@ const $app = document.querySelector('#app'), modal = document.querySelector('#mo
 const sources = new Sources();
 const serverMode = globalThis.COCKPIT_SERVER_MODE === true;
 window.MetaBoardFeedMeFetch=(route,options)=>sources.feedmeFetch(String(route).replace(/^\/api\//,''),options); sources.roomPreferences=read('mb.rooms.v1',null);
-const pages = serverMode ? { projects: ['Projets', 'Vos projets et les tâches confiées aux moteurs.', 'kanban'] } : { overview: ['Vue d’ensemble', 'Votre monde, en un coup d’œil.', 'grid'], home: ['Pièces', 'Les bonnes informations. Les bons gestes.', 'home'], news: ['Votre veille', 'De quoi nourrir votre curiosité.', 'rss'], agents: ['Vos agents', 'Un espace pour penser et faire ensemble.', 'chat'], projects: ['Projets', 'Vos projets personnels et les tâches confiées aux agents.', 'kanban'], system: ['Les coulisses', 'Un œil sur les machines qui font tourner le reste.', 'server'] };
+const pages = serverMode
+  ? { overview: ['Vue d’ensemble', 'Votre monde, en un coup d’œil.', 'grid'], home: ['Pièces', 'Les bonnes informations. Les bons gestes.', 'home'], news: ['Votre veille', 'De quoi nourrir votre curiosité.', 'rss'], agents: ['Vos agents', 'Un espace pour penser et faire ensemble.', 'chat'], projects: ['Projets', 'Vos projets personnels et les tâches confiées aux agents.', 'kanban'] }
+  : { overview: ['Vue d’ensemble', 'Votre monde, en un coup d’œil.', 'grid'], home: ['Pièces', 'Les bonnes informations. Les bons gestes.', 'home'], news: ['Votre veille', 'De quoi nourrir votre curiosité.', 'rss'], agents: ['Vos agents', 'Un espace pour penser et faire ensemble.', 'chat'], projects: ['Projets', 'Vos projets personnels et les tâches confiées aux agents.', 'kanban'], system: ['Les coulisses', 'Un œil sur les machines qui font tourner le reste.', 'server'] };
 const profiles = { desktop: ['Bureau', 'monitor'], tablet: ['Tablette', 'tablet'], phone: ['Téléphone', 'phone'], compact: ['Compact', 'panel'] };
 const params = new URLSearchParams(location.search);
 let profile = profiles[params.get('surface')] ? params.get('surface') : read('mb.profile', defaultProfile({ phone: isPhoneScreen(), servedByHA: HD.Auth?.servedByHA() }));
 if (!profiles[profile]) profile = 'desktop';
 let selectedRoomId = read('mb.room', read('hd.room',null));
-let page = serverMode ? 'projects' : read('mb.page', 'overview'); if (!pages[page]) page = serverMode ? 'projects' : 'overview';
+let page = read('mb.page', 'overview'); if (!pages[page]) page = 'overview';
 let layouts = cleanLayouts(read('mb.layouts.native.v1', {})), editing = false, query = '', dialogType = '', detailId, libraryCategory = 'Tous';
 let todos = read('mb.todos.v1', []);
 if (!Array.isArray(todos)) todos = [];
@@ -427,7 +429,7 @@ modal.addEventListener('click', event => { if (event.target === modal) { const r
 modal.addEventListener('close', () => { dialogType = ''; lastFocus?.isConnected && lastFocus.focus(); });
 sources.addEventListener('change', () => { render(); if (modal.open && dialogType === 'detail' && !modal.contains(document.activeElement.closest?.('input,textarea,select'))) { const w = current().find(w => w.id === detailId); if (w) modal.querySelector('.detail-content').innerHTML = widgetHTML(w, true); } });
 homeEditor = attachHomeEditor({ root: $app, isEditing: () => editing, isHome: () => usesGrid(profile), maxHeight: () => maxHeight(profile), getWidgets: current, getHeaderItems: () => homeDisplay.header, persist, render, toast });
-render(); window.MB_BOOT?.ready(); if (!serverMode && !sources.demo) sources.refresh(); if (page === 'projects') projectsUI.enter();
+render(); window.MB_BOOT?.ready(); if (!sources.demo) sources.refresh(); if (page === 'projects') projectsUI.enter();
 if (window.parent !== window && params.get('surface') === 'compact') window.parent.postMessage({ type: 'metaboard:ready' }, '*');
 // Un téléphone resté sur une autre disposition : on indique une fois où choisir « Téléphone ».
 if (isPhoneScreen() && profile !== 'phone' && !params.get('surface') && !read('mb.phone.hint', false)) { write('mb.phone.hint', true); setTimeout(() => toast('Disposition Téléphone disponible : Paramètres › Affichage sur cet appareil.'), 1500); }

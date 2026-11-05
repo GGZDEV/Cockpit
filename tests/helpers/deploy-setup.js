@@ -65,7 +65,15 @@ async function setup(t, { deployer: deployerOptions, client = {}, github: github
   const SETTINGS = { url: 'https://site.ggz.ovh', type: 'ha-static', config: { src_dir: 'dist', ha_subdir: 'maison/site' } };
   const create = async (name, extra = {}, deployment = SETTINGS) => {
     const r = await ui('projects', 'POST', { name, context: { repository: 'https://github.com/ggzdev/' + name.toLowerCase().replace(/\W+/g, '-') }, ...(deployment ? { deployment } : {}), ...extra });
-    await settle(); return r;
+    // La réponse HTTP précède l'inscription asynchrone : attendre son résultat,
+    // pas une durée dépendant de la charge de la machine.
+    if (r.status === 200 && (r.body.deployment?.url || r.body.deployment?.type)) {
+      await until(async () => (await get(r.body.id))?.deployState?.registered);
+    }
+    if (r.status === 200 && r.body.context?.repository) {
+      await until(async () => ['ready', 'failed'].includes((await get(r.body.id))?.workspace?.status));
+    }
+    return r;
   };
   return { ui, state, get, create, service, github, workspaces, dir, logs, deployer, SETTINGS,
     restart: () => { projects.close(); projects = make(); return projects; }, projects: () => projects };

@@ -44,7 +44,9 @@ test('backward compatible: a project saved before this feature loads unchanged a
 
 test('creating a configured project registers it with the service (PUT with the contract body), the token stays out of every response', async t => {
   const s = await setup(t);
+  s.service.state.delayMs = 80; // Chaque appel dépasse l'ancienne attente fixe de 40 ms.
   const created = (await s.create('Site Vitrine', {}, { ...s.SETTINGS, auto: true, buildCmd: 'npm ci && npm run build', testCmd: 'npm test' })).body;
+  s.service.state.delayMs = 0;
   assert.equal(puts(s).length, 1);
   const put = puts(s)[0];
   assert.equal(put.route, '/projects/site-vitrine'); assert.equal(put.auth, 'Bearer ' + TOKEN);

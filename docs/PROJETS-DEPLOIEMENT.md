@@ -86,7 +86,7 @@ déclenche donc un déploiement qu'une fois son commit arrivé sur la branche de
 
 ## Retour arrière de cette fonctionnalité
 
-- Revenir à la version précédente : `git checkout main` (la branche `feature/projets-deploiement` n'est pas fusionnée tant que l'utilisateur ne l'a pas décidé).
+- Avant fusion : revenir à la branche de production avec `git checkout main`.
 - Après fusion : `git revert` des commits de la branche. Les champs ajoutés (`deployment`, `deployState`, `bootstrap`) sont simplement ignorés par l'ancienne version ; aucun
   fichier de données n'est transformé.
 - Côté service : les projets enregistrés restent connus du service ; `DELETE /projects/<id>` (non utilisé par Cockpit) les retire sans toucher aux fichiers déployés.

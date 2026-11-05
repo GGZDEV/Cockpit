@@ -270,14 +270,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const d = deployOf(p), last = p.deployState?.last; if (!d.url && !last) return '';
     return `<div class="pj-repo">${last ? deployPill(last) : '<span class="pj-ws">Pas déployé</span>'}${d.url ? `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(d.url.replace(/^https:\/\//, ''))}</a>` : ''}</div>`;
   }
-  const typeFields = (type, config = {}) => {
-    const t = st.capabilities.deploy?.types?.[type];
-    return t ? `<div class="pj-two">${t.fields.map(f => `<label>${esc(f.label)}<input name="cfg_${esc(f.key)}" maxlength="300" value="${esc(config[f.key] ?? f.def ?? '')}" ${f.help ? `placeholder="${esc(f.help)}"` : ''} autocomplete="off"></label>`).join('')}</div>` : '<p class="pj-help">Choisissez un type pour voir ses réglages.</p>';
-  };
   function deployFields(p) {
     const d = deployOf(p);
     return `<details class="pj-more" data-key="deploy-fields" ${d.url || !p.id ? 'open' : ''}><summary>Déploiement <span class="muted">· ${d.url ? esc(d.url.replace(/^https:\/\//, '')) : 'non configuré'}</span></summary><div class="pj-form">
-      <p class="pj-help">Le service Deployer gère seul la construction, les tests, la mise en ligne, le contrôle de santé et le retour arrière.</p>
+      <p class="pj-help">Cockpit centralise le déploiement dans Deployer. Vous ne renseignez plus les détails techniques ici.</p>
       <label>URL de déploiement<input type="url" name="deployUrl" maxlength="300" value="${esc(d.url)}" placeholder="https://mon-site.ggz.ovh" autocomplete="off"></label>
       <label class="pj-check"><input type="checkbox" name="deployAuto" ${d.auto ? 'checked' : ''}> Déploiement automatique</label>
       <p class="pj-help">Sans cette case, utilisez le bouton « Déployer ». Avec elle, Deployer publie chaque nouveau commit de la branche de production.</p>

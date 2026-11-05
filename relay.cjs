@@ -44,7 +44,7 @@ function createRelay({haOrigin,localOrigin,allowed,projectsAllowed=()=>false,aut
       const response=await fetch(localOrigin+url.pathname+url.search,{method:req.method,headers:req.headers['content-type']?{'Content-Type':req.headers['content-type']}:{},...(['POST','PATCH','DELETE'].includes(req.method)?{body:req,duplex:'half'}:{}),signal:abort.signal,redirect:'error'});
       res.writeHead(response.status,{...cors,'Content-Type':response.headers.get('content-type') || 'application/json'});res.flushHeaders();
       if (!response.body) return res.end();const stream=Readable.fromWeb(response.body);stream.on('error',()=>res.destroy());stream.pipe(res);
-    } catch {if (!res.headersSent) reply(502,'Service du PC indisponible.');else res.end();}
+    } catch {if (!res.headersSent) reply(502,'Service indisponible.');else res.end();}
   });
 }
 module.exports={createRelay,haAdministrator};

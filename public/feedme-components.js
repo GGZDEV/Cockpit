@@ -6,7 +6,7 @@ const overlays=new Set();
 export const feedmeOverlayOpen=id=>overlays.has(id);
 export function feedmeComponent(c) {
   const type=types[c.widget.type];
-  if (!type || c.sources.status.feedme !== 'connected') return '';
+  if (!type || (['agents','quotas'].includes(c.widget.type) ? c.sources.status.agents : c.sources.status.feedme) !== 'connected') return '';
   if (c.widget.type === 'spotify' && c.sources.status.ha === 'connected') return '';
   if (c.widget.type === 'calendar' && (c.widget.entity || c.widget.entities?.length)) return '';
   const params=new URLSearchParams({v:String(window.MB_ASSET_VERSION || 'local'),widget:type,id:c.widget.id,theme:selectedTheme(),revision:String(read('mb.feedme.revision',0)),title:c.widget.title || ''});

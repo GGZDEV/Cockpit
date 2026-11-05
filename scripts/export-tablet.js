@@ -3,7 +3,8 @@ const fs = require('node:fs'), path = require('node:path'), crypto = require('no
 const project = path.resolve(__dirname, '..'), source = path.join(project, 'public');
 function walk(dir) { return fs.readdirSync(dir, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(path.join(dir, e.name)) : [path.join(dir, e.name)]).sort(); }
 // keepRuntime : depuis le serveur OpenClaw, garder l'adresse du relais du PC enregistrée dans public/runtime.json.
-function buildTablet({ keepRuntime = false } = {}) {
+function buildTablet({ keepRuntime = false, sourceDirectory = process.env.COCKPIT_PUBLIC_SOURCE || source } = {}) {
+  const source = path.resolve(sourceDirectory);
   if (!keepRuntime) require('./relay-runtime').writeRuntime();
   const files = walk(source), hash = crypto.createHash('sha256');
   for (const file of files) { hash.update(path.relative(source, file).replaceAll('\\', '/')); hash.update(fs.readFileSync(file)); }
@@ -16,7 +17,7 @@ function buildTablet({ keepRuntime = false } = {}) {
   for (const file of files) {
     const dest = path.join(target, path.relative(source, file)); fs.mkdirSync(path.dirname(dest), { recursive: true });
     let content = fs.readFileSync(file);
-    if (/\.(js|css|html|svg|json)$/.test(file)) content = Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'));
+    if (/\.(js|css|html|svg|json|txt)$/.test(file)) content = Buffer.from(content.toString('utf8').replace(/\r\n/g, '\n'));
     if (file.endsWith('.js')) content = Buffer.from(content.toString('utf8').replace(/(\bfrom\s+['"])(\.{1,2}\/[^'"\n]+\.js)(['"])/g, `$1$2?v=${version}$3`));
     if (file.endsWith('.html')) {
       let html = content.toString('utf8').replace(/((?:src|href)=["'])(?!https?:|#|data:)([^"']+\.(?:js|css|svg))(["'])/g, `$1$2?v=${version}$3`);

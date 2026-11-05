@@ -2,19 +2,20 @@ import { read, write, timeoutSignal } from './core.js';
 export class Sources extends EventTarget {
   constructor() {
     super(); this.demo = false; this.data = { states: [] }; write('mb.demo',false);
-    this.status = { feedme: 'offline', ha: 'offline' }; this.errors = {}; this.history = []; this.metricHistory = {}; this.loading = false; this.generation = 0;
+    this.status = { agents: 'offline', feedme: 'offline', ha: 'offline' }; this.errors = {}; this.history = []; this.metricHistory = {}; this.loading = false; this.generation = 0;
   }
   emit() { this.revision = (this.revision || 0) + 1; this.dispatchEvent(new Event('change')); }
   async feedmeFetch(route,options={}) {
     let base='',headers={...options.headers};
-    if (HD.Auth?.servedByHA()) {
+    if (!this.runtime) { const response=await fetch(new URL('runtime.json?v='+(window.MB_ASSET_VERSION || Date.now()),location.href),{cache:'no-store'});if (!response.ok) throw Error('Configuration des services indisponible.');this.runtime=await response.json(); }
+    const agentRoute=/^(agents(?:\/|$)|ai-usage(?:[/?]|$)|__agents_status$)/.test(route);
+    const remote=agentRoute && this.runtime.agentsOrigin || (HD.Auth?.servedByHA() ? this.runtime.pcOrigin : null);
+    if (remote) {
       if (!this.ha || this.status.ha !== 'connected') throw Error('Connectez votre session Home Assistant.');
-      if (!this.runtime) { const response=await fetch(new URL('runtime.json?v='+(window.MB_ASSET_VERSION || Date.now()),location.href),{cache:'no-store'});if (!response.ok) throw Error('Adresse du service PC indisponible.');this.runtime=await response.json(); }
-      if (!this.runtime.pcOrigin) throw Error('Le relais PC n’est pas configuré.');
-      const endpoint=new URL(this.runtime.pcOrigin); if (endpoint.protocol !== 'http:' && endpoint.protocol !== 'https:') throw Error('Adresse du relais invalide.');
+      const endpoint=new URL(remote); if (!['http:', 'https:'].includes(endpoint.protocol) || endpoint.username || endpoint.password || endpoint.pathname !== '/' || endpoint.search || endpoint.hash) throw Error('Adresse du service invalide.');
       base=endpoint.origin;headers.Authorization='Bearer '+await this.ha.getToken();
-    }
-    return fetch(base+(route==='__status' ? '/api/status' : route.startsWith('/api/projects/') ? route : '/api/feedme/'+route),{...options,headers,signal:options.signal || timeoutSignal(22000)});
+    } else if (HD.Auth?.servedByHA()) throw Error('Le service demandé n’est pas configuré.');
+    return fetch(base+(['__status','__agents_status'].includes(route) ? '/api/status' : route.startsWith('/api/projects/') ? route : '/api/feedme/'+route),{...options,headers,signal:options.signal || timeoutSignal(22000)});
   }
   async api(route, options = {}) {
     const r = await this.feedmeFetch(route,{...options,headers:{'Content-Type':'application/json',...options.headers}});
@@ -22,16 +23,20 @@ export class Sources extends EventTarget {
   }
   async refresh() {
     if (this.loading) return;
-    if (HD.Auth?.servedByHA() && (!this.ha || this.status.ha !== 'connected')) { this.status.feedme='offline';this.errors.feedme='Connectez votre session Home Assistant pour joindre le PC.';this.emit();return; }
+    if (HD.Auth?.servedByHA() && (!this.ha || this.status.ha !== 'connected')) { this.status.feedme='offline';this.errors.feedme='Connectez votre session Home Assistant pour joindre les services.';this.emit();return; }
     const generation = this.generation; this.loading = true; this.emit();
+    const agentRefresh=Promise.all([['agents','agents/'],['quotas','ai-usage']].map(async ([key,route])=>{
+          try { const value=await this.api(route);if(generation!==this.generation)return;this.data[key]=value;delete this.errors[key];if(key==='agents')this.status.agents='connected';this.emit(); }
+          catch(e) { if(generation===this.generation){this.errors[key]=e.message;if(key==='agents')this.status.agents='offline';this.emit();} }
+        }));
     try {
       const statusResponse=await this.feedmeFetch('__status');const status=await statusResponse.json();if (!statusResponse.ok) throw Error(status.error || 'Service PC indisponible.');
       if (generation !== this.generation) return;
       this.suggestedHA = status.haSuggestedUrl; this.status.feedme = status.feedme ? 'connected' : 'offline';
-      if (!status.feedme) { this.errors.feedme = 'Ouvrez Cockpit sur ce PC pour retrouver ses données.'; return; }
-      delete this.errors.feedme; this.emit();
-      const endpoints = { articles: 'articles', metrics: 'system/metrics', spotify: 'spotify/now-playing', spotifyStatus: 'spotify/status', calendar: 'calendar', todos: 'todos', boards: 'boards', agents: 'agents/', quotas: 'ai-usage' };
-      await Promise.all(Object.entries(endpoints).map(async ([key, route]) => {
+      if (!status.feedme) this.errors.feedme = 'Le service PC est indisponible.';
+      if (status.feedme) delete this.errors.feedme; this.emit();
+      const endpoints = { articles: 'articles', metrics: 'system/metrics', spotify: 'spotify/now-playing', spotifyStatus: 'spotify/status', calendar: 'calendar', todos: 'todos', boards: 'boards' };
+      if (status.feedme) await Promise.all(Object.entries(endpoints).map(async ([key, route]) => {
         try { const value = await this.api(route); if (generation !== this.generation) return; this.data[key] = value; delete this.errors[key]; }
         catch (e) { if (generation === this.generation) this.errors[key] = e.message; }
       }));
@@ -41,9 +46,14 @@ export class Sources extends EventTarget {
       if (Number.isFinite(cpu)) this.history = [...this.history, cpu].slice(-30);
       this.updatedAt = Date.now();
     } catch (e) { if (generation === this.generation) {this.status.feedme='offline';this.errors.feedme = e.message || 'Le service local est indisponible.';} }
-    finally { if (generation === this.generation) { this.loading = false; this.emit(); } }
+    finally {
+      if (generation === this.generation) {
+        await agentRefresh;
+        if(generation===this.generation){this.loading=false;this.emit();}
+      }
+    }
   }
-  disconnectHA() { this.generation++;this.loading=false;this.ha?.close(); this.ha = null; this.forecasts = {}; this.calendarCache={}; this.todoCache={}; this.registries = null; this.originalLayout = null; this.status.ha = 'offline'; }
+  disconnectHA() { this.generation++;this.loading=false;this.ha?.close(); this.ha = null; this.forecasts = {}; this.calendarCache={}; this.todoCache={}; this.registries = null; this.originalLayout = null; this.status.ha = 'offline'; this.status.agents='offline'; delete this.data.agents; delete this.data.quotas; }
   async connectHA(url, token) {
     if (this.demo) throw new Error('Passez en données réelles avant de connecter Home Assistant.');
     let parsed; try { parsed = new URL(url); } catch { throw new Error('Adresse Home Assistant invalide.'); }

@@ -183,3 +183,7 @@ npm test
 ```
 
 Les tests contrôlent le service statique, les tentatives de lecture hors du dossier public, les requêtes venant d’une autre origine et la liste des opérations Cockpit autorisées. Les contrôles syntaxiques et les essais visuels couvrent également les modules, la bibliothèque, les interactions simulées et les trois profils. L’intégration HA réelle nécessite votre connexion ; aucune commande sur la maison n’a été effectuée lors de cette création.
+
+## Service agents autonome
+
+Les agents et quotas peuvent utiliser un service permanent via `agentsOrigin`, indépendamment du PC. Installation, authentification, association et activation : [guide serveur](docs/agents-server.md). Le service doit être installé avant d’activer cette adresse ; sans elle, la connexion locale existante est conservée.

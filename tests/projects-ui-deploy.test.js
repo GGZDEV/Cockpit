@@ -92,11 +92,13 @@ test('public name: the validation button names the domain, asks for confirmation
   html = view.ui.html(); assert.match(html, /En ligne publiquement/); assert.doesNotMatch(html, /Valider la mise en ligne publique/);
 });
 
-test('project form: deployment fields (URL, automatic, branch, type with its own settings), editing shows the status block; new project offers an existing or a new repository', async t => {
+test('project form is simplified: Deployer only needs URL, automatic mode and branch; technical fields are hidden', async t => {
   const s = await setup(t); const p = (await s.create('Theta', {}, { ...s.SETTINGS, auto: true })).body; const view = loadUI(s.ui);
   await view.page(); await view.click('edit-project', p.id); const edit = view.shown();
   assert.match(edit, /name="deployUrl" maxlength="300" value="https:\/\/site\.ggz\.ovh"/); assert.match(edit, /name="deployAuto" checked/); assert.match(edit, /name="deployBranch"[^>]*value="main"/);
-  assert.match(edit, /<option value="ha-static" selected>Site statique dans Home Assistant<\/option>/); assert.match(edit, /name="cfg_ha_subdir"[^>]*value="maison\/site"/); assert.match(edit, /name="cfg_src_dir"[^>]*value="dist"/);
+  assert.doesNotMatch(edit, /name="deployType"|name="cfg_|name="deployBuild"|name="deployTest"|name="deployDomain"|name="deployUpstream"/);
+  assert.doesNotMatch(edit, /Préfixe des tâches|name="priority"|name="due"|name="objective"|name="resources"|name="environment"|name="publishing"|name="autoPublish"/);
+  assert.match(edit, /Modèle Claude Code<select name="model">/);
   assert.match(edit, /class="pj-deploy"/); assert.doesNotMatch(edit, /name="repoMode"/); assert.ok(!edit.includes(TOKEN));
   await view.click('new-project'); const fresh = view.shown();
   assert.match(fresh, /name="repoMode" value="existing" checked/); assert.match(fresh, /name="repoMode" value="new"/); assert.match(fresh, /data-pj-ghstatus/); assert.match(fresh, /name="deployUrl"/); assert.doesNotMatch(fresh, /class="pj-deploy"/);
@@ -104,15 +106,15 @@ test('project form: deployment fields (URL, automatic, branch, type with its own
 
 test('project form submit: an existing repository with deployment settings, and a NEW repository (created, pushed, registered)', async t => {
   const s = await setup(t); const view = loadUI(s.ui); await view.page();
-  const common = [['key', ''], ['description', 'Site'], ['status', 'prep'], ['priority', '0'], ['due', ''], ['color', '#3dd68c'], ['engine', 'claude'], ['model', ''], ['fallback', ''], ['agent', ''],
-    ['deployUrl', 'https://iota.ggz.ovh'], ['deployBranch', 'main'], ['deployType', 'ha-static'], ['cfg_src_dir', 'dist'], ['cfg_ha_subdir', 'maison/iota'], ['deployBuild', ''], ['deployTest', ''], ['deployDomain', ''], ['deployUpstream', '']];
+  const common = [['description', 'Site'], ['status', 'prep'], ['color', '#3dd68c'], ['engine', 'claude'], ['model', 'claude-sonnet-5-5'], ['fallback', ''], ['agent', ''],
+    ['instructions', 'Rester simple.'], ['links', ''], ['deployUrl', 'https://iota.ggz.ovh'], ['deployBranch', 'main']];
   await view.submit('project', [['name', 'Iota'], ['repository', 'https://github.com/ggzdev/iota'], ['repoMode', 'existing'], ...common, ['deployAuto', 'on']]);
   const iota = (await s.state()).projects.find(p => p.name === 'Iota');
-  assert.equal(iota.context.repository, 'https://github.com/ggzdev/iota'); assert.equal(iota.deployment.auto, true); assert.equal(iota.deployment.url, 'https://iota.ggz.ovh'); assert.deepEqual(iota.deployment.config, { src_dir: 'dist', ha_subdir: 'maison/iota' });
+  assert.equal(iota.context.repository, 'https://github.com/ggzdev/iota'); assert.equal(iota.context.instructions, 'Rester simple.'); assert.equal(iota.deployment.auto, true); assert.equal(iota.deployment.url, 'https://iota.ggz.ovh'); assert.deepEqual(iota.deployment.config, {});
   assert.equal(iota.bootstrap, undefined);
   await view.submit('project', [['name', 'Kappa Neuf'], ['repository', ''], ['repoMode', 'new'], ['newRepoName', ''], ['newRepoOwner', ''], ...common]);
   const kappa = await until(async () => { const p = (await s.state()).projects.find(x => x.name === 'Kappa Neuf'); return p?.bootstrap?.status === 'done' && p; });
-  assert.deepEqual(s.github.created, [{ owner: 'ggzdev', name: 'kappa-neuf', isPrivate: true }]); assert.equal(kappa.deployState.registered.status, 'ok');
+  assert.deepEqual(s.github.created, [{ owner: 'ggzdev', name: 'kappa-neuf', isPrivate: true }]); assert.equal(kappa.deployState.registered.status, 'pending');
   assert.match(view.toasts.join('|'), /Projet créé\. Le dépôt GitHub/);
   // Erreur de validation : message du serveur affiché, rien n'est créé.
   await view.submit('project', [['name', 'Lambda'], ['repository', 'https://github.com/ggzdev/lambda'], ...common.filter(([k]) => k !== 'deployUrl'), ['deployUrl', 'http://pas-https.example.com']]);

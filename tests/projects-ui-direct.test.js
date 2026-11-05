@@ -34,7 +34,7 @@ test('Projects tab: engine labels, task form and project form show the direct en
   // Fiche du projet : moteur (Claude Code choisi, recommandé), modèle (valeur par défaut en indication), secours.
   await click('edit-project', p.id);
   assert.match(shown(), /<option value="claude" selected>Claude Code · recommandé<\/option>/); assert.match(shown(), /<option value="openclaw" >OpenClaw<\/option>/);
-  assert.match(shown(), /name="model"[^>]*placeholder="claude-sonnet-5-5"/); assert.match(shown(), /Secours automatique<select name="fallback"><option value="">Aucun<\/option>/);
+  assert.match(shown(), /Modèle Claude Code<select name="model">/); assert.match(shown(), /claude-sonnet-5-5[^>]* selected>Sonnet 5.5/); assert.match(shown(), /claude-opus-5-5[^>]*>Opus 5.5/); assert.match(shown(), /claude-haiku-5-5[^>]*>Haiku 5.5/); assert.match(shown(), /Secours automatique<select name="fallback"><option value="">Aucun<\/option>/);
   // Tâche : moteur, modèle, plan d'abord ; le plan coché est restitué.
   await click('new-task'); assert.match(shown(), /Moteur<select name="engine"><option value="">Celui du projet<\/option>/); assert.match(shown(), /Plan d’abord \(lecture seule\)/); assert.doesNotMatch(shown(), /name="planFirst" checked/);
   await click('open-task', task.id); assert.match(shown(), /name="planFirst" checked/); assert.match(shown(), /Claude Code reçoit les consignes de la tâche et commence par un plan en lecture seule ; les consignes du projet sont dans le CLAUDE\.md/);

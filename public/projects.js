@@ -275,19 +275,13 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return t ? `<div class="pj-two">${t.fields.map(f => `<label>${esc(f.label)}<input name="cfg_${esc(f.key)}" maxlength="300" value="${esc(config[f.key] ?? f.def ?? '')}" ${f.help ? `placeholder="${esc(f.help)}"` : ''} autocomplete="off"></label>`).join('')}</div>` : '<p class="pj-help">Choisissez un type pour voir ses réglages.</p>';
   };
   function deployFields(p) {
-    const d = deployOf(p), types = st.capabilities.deploy?.types || {}, suffix = st.capabilities.deploy?.publicSuffix || '.ggz.ovh';
-    return `<details class="pj-more" data-key="deploy-fields" ${d.url || d.type || !p.id ? 'open' : ''}><summary>Déploiement <span class="muted">· ${d.url ? esc(d.url.replace(/^https:\/\//, '')) : 'non configuré'}</span></summary><div class="pj-form">
+    const d = deployOf(p);
+    return `<details class="pj-more" data-key="deploy-fields" ${d.url || !p.id ? 'open' : ''}><summary>Déploiement <span class="muted">· ${d.url ? esc(d.url.replace(/^https:\/\//, '')) : 'non configuré'}</span></summary><div class="pj-form">
+      <p class="pj-help">Le service Deployer gère seul la construction, les tests, la mise en ligne, le contrôle de santé et le retour arrière.</p>
       <label>URL de déploiement<input type="url" name="deployUrl" maxlength="300" value="${esc(d.url)}" placeholder="https://mon-site.ggz.ovh" autocomplete="off"></label>
       <label class="pj-check"><input type="checkbox" name="deployAuto" ${d.auto ? 'checked' : ''}> Déploiement automatique</label>
-      <p class="pj-help">Sans cette case, vous déployez avec le bouton « Déployer ». Avec elle, le service de déploiement déploie seul dès qu’un nouveau commit arrive sur la branche de production (le bouton reste utilisable pour redéployer).</p>
-      <div class="pj-two"><label>Branche de production<input name="deployBranch" maxlength="100" value="${esc(d.branch)}"></label>
-        <label>Type de déploiement<select name="deployType"><option value="">À choisir</option>${Object.entries(types).map(([v, t]) => `<option value="${esc(v)}" ${d.type === v ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}</select></label></div>
-      <div data-pj-typefields>${typeFields(d.type, d.config)}</div>
-      <details class="pj-more" data-key="deploy-advanced"><summary>Options avancées <span class="muted">· construction, tests, nom public</span></summary><div class="pj-form">
-        <div class="pj-two"><label>Commande de construction (facultatif)<input name="deployBuild" maxlength="300" value="${esc(d.buildCmd)}" placeholder="npm ci && npm run build"></label><label>Commande de tests (facultatif)<input name="deployTest" maxlength="300" value="${esc(d.testCmd)}" placeholder="npm test"></label></div>
-        <p class="pj-help">Ces commandes sont exécutées par le service de déploiement, dans sa copie du dépôt, avant la mise en ligne.</p>
-        <div class="pj-two"><label>Nom public (facultatif)<input name="deployDomain" maxlength="100" value="${esc(d.publicDomain)}" placeholder="mon-site${esc(suffix)}"></label><label>Adresse interne du site<input name="deployUpstream" maxlength="120" value="${esc(d.publicUpstream)}" placeholder="http://192.168.1.194:7000"></label></div>
-        <p class="pj-help">Un nom public n’est jamais mis en ligne sans votre accord : après l’enregistrement, un bouton « Valider la mise en ligne publique » apparaît dans le projet.</p></div></details>
+      <p class="pj-help">Sans cette case, utilisez le bouton « Déployer ». Avec elle, Deployer publie chaque nouveau commit de la branche de production.</p>
+      <label>Branche de production<input name="deployBranch" maxlength="100" value="${esc(d.branch || 'main')}"></label>
     </div></details>`;
   }
   function newRepoFields() {
@@ -414,27 +408,21 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (!p.id) showGithubStatus();
     const c = p.context || {};
     showModal(p.id ? 'Modifier le projet' : 'Nouveau projet', 'Le contexte est transmis aux agents lorsqu’une tâche le demande. Les secrets n’ont rien à faire ici.', `<form class="pj-form" data-pj-form="project" data-id="${esc(p.id || '')}">
-      <div class="pj-two"><label>Nom<input name="name" required maxlength="120" value="${esc(p.name || '')}"></label><label>Préfixe des tâches<input name="key" maxlength="6" value="${esc(p.key || '')}" placeholder="Automatique"></label></div>
+      <label>Nom<input name="name" required maxlength="120" value="${esc(p.name || '')}"></label>
       <label>Courte description<input name="description" maxlength="600" value="${esc(p.description || '')}"></label>
-      <div class="pj-three"><label>Statut<select name="status">${Object.entries(PROJECT_STATUS).map(([v, l]) => `<option value="${v}" ${(p.status || 'prep') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label><label>Priorité${prioritySelect(p.priority || 0)}</label><label>Échéance<input type="date" name="due" value="${esc(p.due || '')}"></label></div>
+      <label>Statut<select name="status">${Object.entries(PROJECT_STATUS).map(([v, l]) => `<option value="${v}" ${(p.status || 'prep') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
       <fieldset class="pj-colors"><legend>Couleur</legend>${PALETTE.map((col, i) => `<label><input type="radio" name="color" value="${col}" ${(p.color || PALETTE[st.projects.length % PALETTE.length]) === col ? 'checked' : ''}><span style="background:${col}" aria-label="Couleur ${i + 1}"></span></label>`).join('')}</fieldset>
       <h3>Contexte pour les agents</h3>
-      <label>Objectif<textarea name="objective" rows="2" maxlength="4000">${esc(c.objective || '')}</textarea></label>
       <label>Instructions générales<textarea name="instructions" rows="4" maxlength="12000" placeholder="Conventions, ton, outils à utiliser ou à éviter…">${esc(c.instructions || '')}</textarea></label>
-      <label>Ressources et documents<textarea name="resources" rows="3" maxlength="12000">${esc(c.resources || '')}</textarea></label>
       <label>Liens (un par ligne, « libellé | adresse » possible)<textarea name="links" rows="3">${esc(linksText(c.links))}</textarea></label>
       ${p.id ? '' : newRepoFields()}
       <div class="pj-two"><label>Dépôt GitHub<input name="repository" maxlength="600" value="${esc(c.repository || '')}" placeholder="https://github.com/compte/depot"></label>${st.capabilities.engines?.openclaw !== false ? `<label>Agent du projet<select name="agent">${agentOptions(p.agent)}</select></label>` : ''}</div>
       <p class="pj-help">Une adresse GitHub est clonée dans l’espace de travail du serveur Cockpit : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé.</p>
       ${p.id ? (st.capabilities.engines?.openclaw !== false ? agentLine(p) : '') + workspaceHTML(p) + bootstrapHTML(p) : ''}
       <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'claude') === v ? 'selected' : ''}${st.capabilities.engines?.[v] === false ? ' disabled' : ''}>${l}${st.capabilities.engines?.[v] === false ? ' (indisponible sur ce serveur)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
-        <label>Modèle Claude Code<input name="model" maxlength="80" value="${esc(p.direct?.model || '')}" placeholder="${esc(st.capabilities.directDefaults?.model || 'claude-sonnet-5-5')}"></label>
+        <label>Modèle Claude Code<select name="model">${[['claude-sonnet-5-5','Sonnet 5.5 · recommandé'],['claude-opus-5-5','Opus 5.5'],['claude-haiku-5-5','Haiku 5.5']].map(([v,l]) => `<option value="${v}" ${(p.direct?.model || st.capabilities.directDefaults?.model || 'claude-sonnet-5-5') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Secours automatique<select name="fallback"><option value="">Aucun</option>${['claude', 'codex'].map(v => `<option value="${v}" ${p.direct?.fallback === v ? 'selected' : ''}>${ENGINE[v]}</option>`).join('')}</select></label></div>
       <p class="pj-help">Claude Code (ou Codex) reçoit chaque tâche directement, dans une seule session reprise à chaque message. ${st.capabilities.engines?.openclaw === false ? 'Le moteur OpenClaw desktop est désactivé dans ce mode serveur.' : 'OpenClaw reste possible : il garde son agent et sa conversation.'} Le secours ne se déclenche que si le moteur échoue avant d’avoir touché au dossier.</p>
-      <label>Environnement de travail<input name="environment" maxlength="2000" value="${esc(c.environment || '')}" placeholder="Serveur, dossier, outil…"></label>
-      <label>Publication<textarea name="publishing" rows="3" maxlength="4000" placeholder="Comment publier ce projet : branche et dépôt où pousser, commande de déploiement, vérification à faire…">${esc(c.publishing || '')}</textarea></label>
-      <label class="pj-check"><input type="checkbox" name="autoPublish" ${c.autoPublish ? 'checked' : ''}> L’agent publie lui-même à la fin d’une tâche, en suivant cette procédure</label>
-      <p class="pj-help">Sans cette case, le moteur prépare tout et vous demande avant de publier. La procédure doit pouvoir s’exécuter sur le serveur où le moteur travaille. Seul vous pouvez cocher cette case.</p>
       ${deployFields(p)}${p.id ? deployHTML(p) : ''}
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
@@ -688,12 +676,11 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         refreshAttachments(saved); toast('Tâche enregistrée. Rien n’a été lancé.'); render(); updatePanel();
       } else if (kind === 'project') {
         const agentValue = String(fd.get('agent') || ''), [agentConnection, agentId] = agentValue.split('|');
-        const body = { name: fd.get('name'), key: fd.get('key'), description: fd.get('description'), status: fd.get('status'), priority: Number(fd.get('priority')), due: fd.get('due') || '', color: fd.get('color'),
+        const body = { name: fd.get('name'), description: fd.get('description'), status: fd.get('status'), color: fd.get('color'),
           agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
           engine: fd.get('engine'), direct: { model: String(fd.get('model') || '').trim(), fallback: fd.get('fallback') || '' },
-          context: { objective: fd.get('objective'), instructions: fd.get('instructions'), resources: fd.get('resources'), links: parseLinks(fd.get('links')), repository: fd.get('repository'), environment: fd.get('environment'), publishing: fd.get('publishing'), autoPublish: fd.has('autoPublish') },
-          deployment: { url: String(fd.get('deployUrl') || '').trim(), auto: fd.has('deployAuto'), branch: String(fd.get('deployBranch') || '').trim(), type: fd.get('deployType') || '', config: Object.fromEntries([...fd.entries()].filter(([k]) => k.startsWith('cfg_')).map(([k, v]) => [k.slice(4), v])),
-            buildCmd: fd.get('deployBuild') || '', testCmd: fd.get('deployTest') || '', publicDomain: String(fd.get('deployDomain') || '').trim(), publicUpstream: String(fd.get('deployUpstream') || '').trim() } };
+          context: { instructions: fd.get('instructions'), links: parseLinks(fd.get('links')), repository: fd.get('repository') },
+          deployment: { url: String(fd.get('deployUrl') || '').trim(), auto: fd.has('deployAuto'), branch: String(fd.get('deployBranch') || '').trim() } };
         if (!form.dataset.id && fd.get('repoMode') === 'new') { delete body.context.repository; body.newRepository = { name: String(fd.get('newRepoName') || '').trim(), owner: String(fd.get('newRepoOwner') || '').trim(), private: !fd.has('newRepoPublic') }; }
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
         if (body.newRepository) toast('Projet créé. Le dépôt GitHub, la copie locale et le premier envoi se préparent : suivez l’avancement dans le projet.');

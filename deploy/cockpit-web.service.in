@@ -1,5 +1,5 @@
 [Unit]
-Description=Cockpit web (Projets)
+Description=Cockpit web
 Wants=network-online.target
 After=network-online.target
 

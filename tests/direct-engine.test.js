@@ -47,14 +47,15 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   const a = call.args;
   assert.equal(a[0], '-p'); assert.equal(arg(a, '--output-format'), 'stream-json'); assert.ok(a.includes('--verbose'));
   assert.ok(a.includes('--strict-mcp-config') && a.includes('--disable-slash-commands') && a.includes('--exclude-dynamic-system-prompt-sections'));
-  assert.equal(arg(a, '--tools'), 'Read,Glob,Grep,Edit,Write,Bash'); assert.equal(arg(a, '--permission-mode'), 'acceptEdits');
+  assert.equal(arg(a, '--tools'), 'default', 'same tools as Claude Code on the desktop'); assert.equal(arg(a, '--permission-mode'), 'acceptEdits');
   assert.equal(arg(a, '--model'), 'claude-sonnet-5-5', 'Sonnet 5.5 by default');
   assert.ok(!a.includes('--append-system-prompt') && !a.includes('--system-prompt'), 'no custom system prompt: project rules live in CLAUDE.md');
   assert.ok(!a.includes('--bare') && !a.includes('--dangerously-skip-permissions'), 'OAuth kept, permissions kept');
   assert.deepEqual(JSON.parse(arg(a, '--settings')), { autoMemoryEnabled: false, disableAllHooks: true, includeGitInstructions: false, enabledPlugins: {} });
   assert.match(arg(a, '--session-id'), UUID); assert.equal(arg(a, '--session-id'), a.at(-1), 'session is the last argument');
   const allowed = a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--disallowedTools')), denied = a.slice(a.indexOf('--disallowedTools') + 1, a.indexOf('--max-budget-usd'));
-  assert.ok(allowed.includes('Bash(git commit:*)') && allowed.includes('Bash(npm test:*)'));
+  assert.ok(allowed.includes('Bash') && allowed.includes('WebFetch'), 'any command (node, python…) like Claude Code; denials below still win');
+  assert.ok(a.slice(a.indexOf('--add-dir') + 1).includes(require('node:os').tmpdir()), 'temporary folder usable for throwaway scripts');
   for (const d of ['Bash(git push:*)', 'Bash(gh:*)', 'Bash(curl:*)', 'Bash(ssh:*)', 'Bash(npm publish:*)']) assert.ok(denied.includes(d), d);
   assert.equal(arg(a, '--max-budget-usd'), '5');
   assert.ok(!a.some(x => x.includes('Ajoute feature.txt')), 'the request goes through stdin, never in argv');
@@ -130,7 +131,7 @@ test('plan first is an option of the task (off by default): read-only plan, rema
   // Exécution : même session, mode normal, sans réécrire les consignes.
   await launch(task.id, { kind: 'execute', note: 'Vas-y' }); done = await lastDone(task.id);
   const exec = calls()[3];
-  assert.equal(arg(exec.args, '--resume'), arg(planCall.args, '--session-id')); assert.equal(arg(exec.args, '--permission-mode'), 'acceptEdits'); assert.equal(arg(exec.args, '--tools'), 'Read,Glob,Grep,Edit,Write,Bash');
+  assert.equal(arg(exec.args, '--resume'), arg(planCall.args, '--session-id')); assert.equal(arg(exec.args, '--permission-mode'), 'acceptEdits'); assert.equal(arg(exec.args, '--tools'), 'default');
   assert.equal(exec.input, 'Suite (AL-2) :\nVas-y\n\nLe plan est accepté : exécute-le (ma remarque éventuelle ci-dessus prévaut).');
   assert.equal(done.runs[2].outcome, 'result'); assert.equal(done.direct.planPending, false); assert.equal(done.direct.workStarted, true);
   assert.ok(!('plan' in done) && !('claude' in done), 'no plan record, approval or receipt chain');
@@ -228,13 +229,17 @@ test('old Claude Code versions: optional flags unknown to the installed binary a
   assert.ok(a.includes('--strict-mcp-config') && a.includes('--tools') && a.includes('--model'));
 });
 
-test('buildArgs: lists are always followed by an option, session id last, web tools only on request', () => {
-  const a = claude.buildArgs({ mode: 'work', sessionId: 'S', fresh: false, settings: { web: true, allowedBash: ['git status', 'npm test'] }, addDirs: ['/tmp/att'] });
+test('buildArgs: lists are always followed by an option, session id last, web tools in work mode only', () => {
+  const a = claude.buildArgs({ mode: 'work', sessionId: 'S', fresh: false, settings: { allowedBash: ['git status', 'npm test'] }, addDirs: ['/tmp/att'] });
   assert.equal(a.at(-2), '--resume'); assert.equal(a.at(-1), 'S');
-  assert.equal(arg(a, '--tools'), 'Read,Glob,Grep,Edit,Write,Bash,WebSearch,WebFetch');
+  assert.equal(arg(a, '--tools'), 'default');
   assert.deepEqual(a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--allowedTools') + 3), ['Bash(git status:*)', 'Bash(npm test:*)']);
-  assert.ok(a[a.indexOf('--add-dir') + 2].startsWith('--'));
-  assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: { web: true } }).includes('WebSearch'));
+  assert.ok(a[a.indexOf('--add-dir') + 3].startsWith('--'));
+  assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {} }).includes('WebSearch'));
+  // Un projet qui a encore l'ancienne liste restreinte passe au nouveau défaut (toutes les commandes).
+  const legacy = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git rev-parse', 'git branch', 'git ls-files', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'node --test', 'node --check'];
+  const b = claude.buildArgs({ mode: 'work', sessionId: 'S', fresh: true, settings: { allowedBash: legacy } });
+  assert.deepEqual(b.slice(b.indexOf('--allowedTools') + 1, b.indexOf('--disallowedTools')), ['Bash', 'WebFetch', 'WebSearch']);
 });
 
 test('repository and worktree safety: ready copy under the projects folder, no symlink, one worktree per task, foreign folders refused', async t => {

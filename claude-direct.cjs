@@ -3,7 +3,7 @@
 // environnement de Claude. Profil volontairement léger : peu d'outils, ni compétences, ni serveurs MCP, ni mémoire automatique,
 // ni hooks, ni instructions Git intégrées ; les consignes du projet viennent du seul CLAUDE.md du dossier de travail.
 // Le reste (dépôt, worktree, lancement sans shell, délai) est partagé avec Codex dans direct-harness.cjs.
-const path = require('node:path');
+const path = require('node:path'), os = require('node:os');
 const { execFile } = require('node:child_process');
 const h = require('./direct-harness.cjs');
 
@@ -29,21 +29,23 @@ function probeFlags(command, prefixArgs = [], { execPath = process.execPath, exe
 // une clé API Anthropic est retirée pour que l'abonnement OAuth reste utilisé.
 const childEnv = (base = process.env) => h.childEnv(base, { keep: ['CLAUDE_CODE_OAUTH_TOKEN'], drop: ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'] });
 
-const rule = entry => /^[A-Za-z]+\(/.test(entry) ? entry : 'Bash(' + entry.replace(/(:\*|\s\*)$/, '') + ':*)';
+const rule = entry => entry === '*' ? 'Bash' : /^[A-Za-z]+\(/.test(entry) ? entry : 'Bash(' + entry.replace(/(:\*|\s\*)$/, '') + ':*)';
 // Arguments de `claude -p`. mode « plan » : lecture seule (option par tâche) ; mode « work » : le travail normal.
 // Les listes variables (--allowedTools, --add-dir…) sont toujours suivies d'une autre option ; la session est en dernier.
 // budgetUsd : plafond de cette exécution. flags : options reconnues par le binaire (null = toutes).
 function buildArgs({ mode = 'work', sessionId, fresh, settings, model, addDirs = [], budgetUsd, flags = null }) {
   const s = h.directSettings(settings);
   const has = flag => !OPTIONAL_FLAGS.includes(flag) || !flags || flags.has(flag);
-  const tools = mode === 'plan' ? ['Read', 'Glob', 'Grep'] : ['Read', 'Glob', 'Grep', 'Edit', 'Write', 'Bash'];
-  if (s.web && mode !== 'plan') tools.push('WebSearch', 'WebFetch');
+  // Travail : les mêmes outils que Claude Code sur le poste (web, sous-agents, liste de tâches…) ; plan : lecture seule.
+  const tools = mode === 'plan' ? ['Read', 'Glob', 'Grep'] : ['default'];
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--disable-slash-commands'];
   if (has('--settings')) args.push('--settings', LEAN_SETTINGS);
   args.push('--tools', tools.join(','), '--permission-mode', mode === 'plan' ? 'plan' : 'acceptEdits');
-  if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule));
+  if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule), 'WebFetch', 'WebSearch');
   args.push('--disallowedTools', ...DENY_BASH.map(rule));
-  if (addDirs.length) args.push('--add-dir', ...addDirs);
+  // Dossier temporaire du système : scripts jetables (décoder une pièce jointe, essais) sans salir le worktree.
+  const dirs = mode === 'plan' ? addDirs : [...addDirs, os.tmpdir()];
+  if (dirs.length) args.push('--add-dir', ...dirs);
   if (has('--max-budget-usd')) args.push('--max-budget-usd', String(budgetUsd ?? s.maxBudgetUsd));
   if (has('--exclude-dynamic-system-prompt-sections')) args.push('--exclude-dynamic-system-prompt-sections');
   args.push('--model', h.directSettings({ model: model || s.model }).model);

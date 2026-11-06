@@ -13,8 +13,11 @@ const EFFORTS = ['', 'low', 'medium', 'high', 'xhigh', 'max'];
 const CODEX_EFFORTS = ['', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 // Modèle par défaut de Claude Code : réglable par projet et par tâche.
 const DEFAULT_MODEL = 'claude-sonnet-5-5';
-// Commandes que Claude peut lancer sans demander (préfixes) ; toute autre commande hors lecture seule est refusée automatiquement.
-const DEFAULT_BASH = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git rev-parse', 'git branch', 'git ls-files', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'node --test', 'node --check'];
+// Commandes que Claude peut lancer sans demander (préfixes). « * » : toutes, comme Claude Code sur le poste de l'utilisateur ;
+// les interdits (pousser, publier, se connecter ailleurs) restent appliqués par-dessus dans chaque moteur.
+const DEFAULT_BASH = ['*'];
+// Ancienne liste par défaut (préfixes git/npm/node seulement) : un projet qui l'a encore enregistrée passe au nouveau défaut.
+const LEGACY_BASH = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git rev-parse', 'git branch', 'git ls-files', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'node --test', 'node --check'];
 const DEFAULTS = Object.freeze({ model: DEFAULT_MODEL, effort: '', maxBudgetUsd: 5, taskBudgetUsd: 20, timeoutMin: 30, maxRuns: 10, web: false, allowedBash: DEFAULT_BASH,
   fallback: '', codexModel: '', codexEffort: '' });
 const MARKER = /^\s*\**\s*STATUT\s*:\s*(TERMIN[ÉE]E?|BLOQU[ÉE]E?|[ÉE]CHEC)\s*\**\s*$/gim;
@@ -33,7 +36,7 @@ function directSettings(input = {}, previous = {}) {
     model: modelName(v.model) || DEFAULT_MODEL, effort: EFFORTS.includes(v.effort) ? v.effort : '', web: v.web === true,
     maxBudgetUsd: num(v.maxBudgetUsd, 0.1, 100, DEFAULTS.maxBudgetUsd), taskBudgetUsd: num(v.taskBudgetUsd, 0.1, 500, DEFAULTS.taskBudgetUsd),
     timeoutMin: Math.round(num(v.timeoutMin, 1, 180, DEFAULTS.timeoutMin)), maxRuns: Math.round(num(v.maxRuns, 1, 30, DEFAULTS.maxRuns)),
-    allowedBash: lines(v.allowedBash, 40, 200),
+    allowedBash: (b => b.length && b.join('\n') !== LEGACY_BASH.join('\n') ? b : DEFAULT_BASH)(lines(v.allowedBash, 40, 200)),
     fallback: ENGINES.includes(v.fallback) ? v.fallback : '',
     codexModel: modelName(v.codexModel), codexEffort: CODEX_EFFORTS.includes(v.codexEffort) ? v.codexEffort : '',
   };

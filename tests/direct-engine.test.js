@@ -289,9 +289,11 @@ test('closing a task publishes its branch: merged into main and pushed to GitHub
   const p = await project('alpha'), task = await create(p.id);
   await launch(task.id); const done = await lastDone(task.id);
   assert.ok(done.direct.branch);
+  fs.appendFileSync(path.join(done.direct.cwd, 'README.md'), 'réécrit par les tests\n'); // non committé : laissé de côté, sans bloquer
   const closed = await ui('tasks/' + task.id + '/accept', 'POST', {});
   assert.equal(closed.status, 200, JSON.stringify(closed.body)); assert.equal(closed.body.status, 'done');
-  assert.equal(closed.body.published.branch, 'main');
+  assert.equal(closed.body.published.branch, 'main'); assert.deepEqual(closed.body.published.leftOut, ['README.md']);
+  assert.doesNotMatch(git(origin, 'show', 'main:README.md'), /réécrit/);
   assert.equal(git(origin, 'rev-parse', 'main'), closed.body.published.commit, 'pushed to the remote');
   assert.match(git(origin, 'log', '-1', '--format=%s', 'main'), /^AL-1 · /);
   assert.equal(git(origin, 'show', 'main:feature.txt').length > 0, true);

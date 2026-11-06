@@ -748,7 +748,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
           const before = t?.published?.commit; el.disabled = true;
           const saved = await api('tasks/' + idv + '/accept', 'POST', {}); upsert(saved);
           const pushed = saved.published?.commit && saved.published.commit !== before;
-          toast(pushed ? `Tâche close et envoyée sur GitHub (${saved.published.branch} · ${saved.published.commit.slice(0, 7)}).${dp.auto ? ' Déploiement automatique d’ici une minute.' : dp.url ? ' Utilisez « Déployer » pour publier.' : ''}` : 'Tâche close.');
+          toast(pushed ? `Tâche close et envoyée sur GitHub (${saved.published.branch} · ${saved.published.commit.slice(0, 7)}).${dp.auto ? ' Déploiement automatique d’ici une minute.' : dp.url ? ' Utilisez « Déployer » pour publier.' : ''}${saved.published.leftOut?.length ? ` Non committé, laissé de côté : ${saved.published.leftOut.join(', ')}.` : ''}` : 'Tâche close.');
           render(); updatePanel(); break;
         }
         case 'reopen': await move(idv, 'todo'); break;

@@ -268,8 +268,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const pending = Number(await git('rev-list', '--count', prod + '..' + branch)) > 0;
     // Rien à fusionner : déjà publié, sauf si une fusion précédente n'a pas pu être poussée sur GitHub.
     if (!pending && await git('merge-base', '--is-ancestor', branch, 'refs/remotes/origin/' + prod).then(() => true, () => false)) return null;
-    if (cwd && (await workspaces.git(['-C', cwd, 'status', '--porcelain', '--untracked-files=no']).then(String, () => '')).trim())
-      fail(`Des modifications de la tâche ne sont pas committées (dossier ${cwd}) : demandez à l’agent de les committer, puis recommencez.`);
+    // Ce qui n'est pas committé dans le worktree ne part pas (souvent un fichier réécrit par les tests) : signalé, sans bloquer.
+    const leftOut = cwd ? (await workspaces.git(['-C', cwd, 'status', '--porcelain', '--untracked-files=no']).then(String, () => '')).split('\n').map(l => l.slice(3).trim()).filter(Boolean).slice(0, 20) : [];
     if (await git('rev-parse', '--abbrev-ref', 'HEAD') !== prod) fail(`La copie locale ${dir} n’est pas sur la branche ${prod}.`);
     if (await git('status', '--porcelain', '--untracked-files=no')) fail(`La copie locale ${dir} contient des modifications non committées : rien n’a été publié.`);
     try { await git('fetch', '-q', 'origin', prod); await git('merge', '-q', '--ff-only', 'origin/' + prod); }
@@ -286,7 +286,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     try { await git('push', '-q', 'origin', prod); }
     catch (error) { throw new HttpError(502, `La tâche est fusionnée dans ${prod} en local, mais l’envoi sur GitHub a échoué (${text(String(error.message || ''), 200)}). La tâche reste ouverte : recommencez une fois l’accès rétabli.`); }
     log(`Tâche ${task.code} publiée sur GitHub (${prod} · ${commit.slice(0, 7)})`);
-    return { at: now(), branch: prod, commit };
+    return { at: now(), branch: prod, commit, ...(leftOut.length ? { leftOut } : {}) };
   }
 
   // ----- Lancement explicite ----------------------------------------------------------------

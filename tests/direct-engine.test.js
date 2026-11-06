@@ -49,7 +49,8 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   assert.ok(a.includes('--strict-mcp-config') && a.includes('--disable-slash-commands') && a.includes('--exclude-dynamic-system-prompt-sections'));
   assert.equal(arg(a, '--tools'), 'default', 'same tools as Claude Code on the desktop'); assert.equal(arg(a, '--permission-mode'), 'acceptEdits');
   assert.equal(arg(a, '--model'), 'claude-sonnet-5-5', 'Sonnet 5.5 by default');
-  assert.ok(!a.includes('--append-system-prompt') && !a.includes('--system-prompt'), 'no custom system prompt: project rules live in CLAUDE.md');
+  assert.equal(arg(a, '--append-system-prompt'), claude.CAVEMAN, 'only the caveman reply style is appended: project rules live in CLAUDE.md');
+  assert.ok(!a.includes('--system-prompt'), 'default system prompt kept');
   assert.ok(!a.includes('--bare') && !a.includes('--dangerously-skip-permissions'), 'OAuth kept, permissions kept');
   assert.deepEqual(JSON.parse(arg(a, '--settings')), { autoMemoryEnabled: false, disableAllHooks: true, includeGitInstructions: false, enabledPlugins: {} });
   assert.match(arg(a, '--session-id'), UUID); assert.equal(arg(a, '--session-id'), a.at(-1), 'session is the last argument');
@@ -236,6 +237,10 @@ test('buildArgs: lists are always followed by an option, session id last, web to
   assert.deepEqual(a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--allowedTools') + 3), ['Bash(git status:*)', 'Bash(npm test:*)']);
   assert.ok(a[a.indexOf('--add-dir') + 3].startsWith('--'));
   assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {} }).includes('WebSearch'));
+  // Style caveman ajouté au prompt système de chaque appel, travail comme plan, session neuve comme reprise.
+  assert.equal(arg(a, '--append-system-prompt'), claude.CAVEMAN);
+  assert.match(claude.CAVEMAN, /Payload verbatim/);
+  assert.equal(arg(claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {}, flags: new Set() }), '--append-system-prompt'), claude.CAVEMAN);
   // Un projet qui a encore l'ancienne liste restreinte passe au nouveau défaut (toutes les commandes).
   const legacy = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git rev-parse', 'git branch', 'git ls-files', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'node --test', 'node --check'];
   const b = claude.buildArgs({ mode: 'work', sessionId: 'S', fresh: true, settings: { allowedBash: legacy } });

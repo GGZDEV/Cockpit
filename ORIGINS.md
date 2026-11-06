@@ -75,3 +75,7 @@ Réglages visuels : `public/module-settings.js` et `public/module-settings.css` 
 ## Reprise complète des contrôleurs — 30 octobre 2026
 
 Les composants FeedMe sont copiés sous `public/integrations/feedme/`, avec adaptation du chargement pour une instance par module et du transport vers la passerelle MetaBoard. `public/vendor/home-morph.js` reprend le rendu incrémental original. Les réglages et actions HA supplémentaires sont branchés dans `module-settings.js`, `ha-actions.js`, `proxmox.js`, `data.js` et `account-sync.js`. Le lanceur réutilise le backend FeedMe existant sans modifier ses sources. Le relais `relay.cjs` permet la connexion depuis l’interface tablette avec une session administrateur HA valide. L’état courant et les limites remplacent les constats historiques ci-dessus : [docs/PARITY.md](docs/PARITY.md).
+
+## Style de réponse caveman — 6 novembre 2026
+
+`claude-caveman.md` reprend `skills/caveman/SKILL.md` de [caveman](https://github.com/juliusbrussee/caveman) v4.0.1 (commit `4bf8898`, Apache-2.0, © Julius Brussee). Modifications : en-tête YAML et section « Persistence » (commandes `/caveman`, suivi par hooks) retirés, remplacés par « toujours actif » ; mention de `/caveman-compress` retirée. `claude-direct.cjs` passe ce texte à chaque appel `claude -p` via `--append-system-prompt`.

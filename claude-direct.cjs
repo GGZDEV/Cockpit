@@ -3,7 +3,7 @@
 // environnement de Claude. Profil volontairement léger : peu d'outils, ni compétences, ni serveurs MCP, ni mémoire automatique,
 // ni hooks, ni instructions Git intégrées ; les consignes du projet viennent du seul CLAUDE.md du dossier de travail.
 // Le reste (dépôt, worktree, lancement sans shell, délai) est partagé avec Codex dans direct-harness.cjs.
-const path = require('node:path'), os = require('node:os');
+const path = require('node:path'), os = require('node:os'), fs = require('node:fs');
 const { execFile } = require('node:child_process');
 const h = require('./direct-harness.cjs');
 
@@ -13,6 +13,10 @@ const DENY_BASH = ['git push', 'git remote', 'gh', 'npm publish', 'npm run deplo
 // Réglages passés en ligne de commande (--settings) : rien de ce qui alourdit le contexte sans servir une tâche de code.
 // Clés documentées : https://code.claude.com/docs/en/settings-reference (includeGitInstructions, autoMemoryEnabled, disableAllHooks, enabledPlugins).
 const LEAN_SETTINGS = JSON.stringify({ autoMemoryEnabled: false, disableAllHooks: true, includeGitInstructions: false, enabledPlugins: {} });
+
+// Style de réponse « caveman » (https://github.com/juliusbrussee/caveman, Apache-2.0) ajouté au prompt système de chaque appel :
+// réponses brèves, code et erreurs intacts. Les extensions et commandes slash étant coupées, la règle est passée en texte.
+const CAVEMAN = fs.readFileSync(path.join(__dirname, 'claude-caveman.md'), 'utf8').trim();
 
 // Options facultatives : retirées si la version de Claude Code installée ne les connaît pas (lu dans `claude --help`, aucun appel d'API).
 const OPTIONAL_FLAGS = ['--exclude-dynamic-system-prompt-sections', '--effort', '--max-budget-usd', '--settings'];
@@ -48,7 +52,7 @@ function buildArgs({ mode = 'work', sessionId, fresh, settings, model, addDirs =
   if (dirs.length) args.push('--add-dir', ...dirs);
   if (has('--max-budget-usd')) args.push('--max-budget-usd', String(budgetUsd ?? s.maxBudgetUsd));
   if (has('--exclude-dynamic-system-prompt-sections')) args.push('--exclude-dynamic-system-prompt-sections');
-  args.push('--model', h.directSettings({ model: model || s.model }).model);
+  args.push('--append-system-prompt', CAVEMAN, '--model', h.directSettings({ model: model || s.model }).model);
   if (s.effort && has('--effort')) args.push('--effort', s.effort);
   args.push(fresh ? '--session-id' : '--resume', sessionId);
   return args;
@@ -126,4 +130,4 @@ function createEngine({ command = process.env.COCKPIT_CLAUDE_BIN || 'claude', pr
   return { ...harness, buildArgs, flags: () => probed ||= probeFlags(command, prefixArgs, { execPath: options.execPath, env: options.baseEnv }) };
 }
 
-module.exports = { createEngine, buildArgs, createCollector, probeFlags, childEnv, DENY_BASH, LEAN_SETTINGS, OPTIONAL_FLAGS };
+module.exports = { createEngine, buildArgs, createCollector, probeFlags, childEnv, DENY_BASH, LEAN_SETTINGS, CAVEMAN, OPTIONAL_FLAGS };

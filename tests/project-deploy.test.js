@@ -256,3 +256,26 @@ test('no type in the form: the recipe already set in the service for the same re
   assert.equal(p.deployState.registered.status, 'ok'); assert.equal(p.deployment.type, 'custom'); assert.equal(p.deployment.config.deploy_cmd, 'ssh app@h deploy "$DEPLOY_COMMIT"');
   const put = puts(s).at(-1).body; assert.equal(put.type, 'custom'); assert.equal(put.health.expect_status, 401); assert.equal(put.auto, true);
 });
+
+test('a closed and published task moves to « Déployé » after a successful deployment; a failed one leaves it in Terminé with the error', async t => {
+  const s = await setup(t);
+  const p = (await s.create('Delta')).body;
+  const task = (await s.ui('tasks', 'POST', { projectId: p.id, title: 'Changer le titre' })).body;
+  const slugOf = async () => (await s.get(p.id)).deployState.slug;
+  const slug = await slugOf();
+  // Tâche close et publiée (commit f00ba12) : état écrit comme après « Clore la tâche ».
+  s.projects().close();
+  const file = path.join(s.dir, 'data', 'projects.json'), data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  Object.assign(data.tasks.find(x => x.id === task.id), { status: 'done', published: { at: '2026-11-06T20:00:00Z', branch: 'main', commit: 'f00ba12' } });
+  fs.writeFileSync(file, JSON.stringify(data)); s.restart();
+  const view = async () => (await s.state()).tasks.find(x => x.id === task.id);
+  s.service.autoDeploy(slug, { status: 'failed', status_label: 'échoué', step: 'test', message: 'Tests en échec' });
+  await s.ui('projects/' + p.id + '/deploy');
+  let v = await view(); assert.equal(v.status, 'done'); assert.match(v.deployError.message, /Tests en échec/);
+  s.service.autoDeploy(slug);
+  await s.ui('projects/' + p.id + '/deploy');
+  v = await view(); assert.equal(v.status, 'deployed'); assert.ok(!v.deployError); assert.equal(v.deployment.commit, 'f00ba12');
+  assert.equal((await s.ui('tasks/' + task.id, 'PATCH', { status: 'deployed' })).status, 200, 'unchanged status is accepted');
+  const other = (await s.ui('tasks', 'POST', { projectId: p.id, title: 'Autre' })).body;
+  assert.equal((await s.ui('tasks/' + other.id, 'PATCH', { status: 'deployed' })).status, 400, 'only Cockpit fills « Déployé »');
+});

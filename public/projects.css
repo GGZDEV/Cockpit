@@ -393,3 +393,6 @@ dialog.pj-drawer>.dialog-body{flex:1 0 auto;display:flex;flex-direction:column}
   .pj-chat-thread .pj-msg.is-ask .pj-bubble,.pj-chat-thread .pj-msg.is-bad .pj-bubble{margin-left:0}
 }
 @media(max-width:550px){.pj-root.is-chat .pj-steps{display:none}.pj-chat-composer .pj-chatbox textarea{font-size:16px}}
+
+/* Déploiement échoué : la tâche reste en Terminé, bordée de rouge (passe devant les thèmes chargés après). */
+.pj-card.is-deploy-failed,.pj-side-item.is-deploy-failed{box-shadow:inset 0 0 0 2px #ff5a5a!important;border-color:#ff5a5a!important}

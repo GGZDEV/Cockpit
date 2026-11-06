@@ -37,6 +37,8 @@ du service est dans `/etc/deployer/api-token` sur le CT 113 ; ne le copiez pas d
   branche de production de la copie locale puis la pousse sur GitHub. Seuls les commits partent : une modification non committée du worktree
   (souvent un fichier réécrit par les tests) est laissée de côté et signalée. Refusé sans rien toucher si la copie locale a des modifications
   non committées, si `main` a divergé de GitHub ou en cas de conflit. Le déploiement suit ensuite : automatique, ou bouton « Déployer ».
+- **Colonne « Déployé »** : une tâche close et publiée y passe seule dès qu'un déploiement réussi contient son commit. Si ce déploiement
+  échoue (ou revient en arrière), elle reste en « Terminé », bordée de rouge, avec le message du service ; un déploiement réussi suivant la range.
 - **Bloc « Déploiement » du projet** (tableau et fiche) : lien vers l'URL, mode, dernier déploiement (**en attente / en cours / réussi / échoué / revenu en arrière**),
   commit, étape, message, **journal court** (40 lignes), boutons **Déployer** (devient **Redéployer** en mode automatique) et **Actualiser**.
   Désactivé avec la raison écrite à côté si l'URL, le dépôt ou le type manquent, si le service n'a pas de jeton, ou si un déploiement est en cours.

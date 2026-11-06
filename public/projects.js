@@ -9,6 +9,7 @@ const COLUMNS = [
   { id: 'blocked', label: 'Bloqué', color: '#ff6b6b', ring: 'solid' },
   { id: 'review', label: 'À valider', color: 'var(--accent)', ring: 'solid' },
   { id: 'done', label: 'Terminé', color: '#4c9dff', ring: 'fill' },
+  { id: 'deployed', label: 'Déployé', color: '#34c77b', ring: 'fill' },
 ];
 const PROJECT_STATUS = { prep: 'À préparer', active: 'Actif', paused: 'En pause', done: 'Terminé' };
 const PRIORITY = { 0: ['Sans priorité', 0, '#85858a'], 1: ['Priorité basse', 1, '#9a9a9f'], 2: ['Priorité moyenne', 2, '#f5c542'], 3: ['Priorité haute', 3, '#ff9f43'], 4: ['Urgent', 3, '#ff5a5a'] };
@@ -61,10 +62,14 @@ const CHAT_GROUPS = [
   { id: 'review', label: 'À valider', color: 'var(--accent)', has: t => t.status === 'review' },
   { id: 'todo', label: 'Brouillons', color: 'var(--pj-muted)', has: t => t.status === 'todo' && !openRun(t) },
   { id: 'done', label: 'Terminés', color: '#4c9dff', has: t => t.status === 'done' },
+  { id: 'deployed', label: 'Déployés', color: '#34c77b', has: t => t.status === 'deployed' },
 ];
-const TASK_PILL = { todo: ['Brouillon', 'is-draft'], doing: ['En cours', 'is-run'], blocked: ['Bloqué', 'is-block'], review: ['À valider', 'is-review'], done: ['Terminé', 'is-done'] };
-const STEPS = ['Brouillon', 'En cours', 'À valider', 'Terminé'];
-const STEP_OF = { todo: 0, doing: 1, blocked: 1, review: 2, done: 3 };
+const TASK_PILL = { todo: ['Brouillon', 'is-draft'], doing: ['En cours', 'is-run'], blocked: ['Bloqué', 'is-block'], review: ['À valider', 'is-review'], done: ['Terminé', 'is-done'], deployed: ['Déployé', 'is-done'] };
+const STEPS = ['Brouillon', 'En cours', 'À valider', 'Terminé', 'Déployé'];
+const STEP_OF = { todo: 0, doing: 1, blocked: 1, review: 2, done: 3, deployed: 4 };
+// Close : Terminé ou Déployé. Déploiement échoué : la tâche reste en Terminé, bordée de rouge.
+const isClosed = t => t.status === 'done' || t.status === 'deployed';
+const deployFailed = t => t.status === 'done' && !!t.deployError;
 
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
@@ -126,7 +131,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function runBadge(task) {
     const run = lastRun(task); if (!run) return '';
     if (OPEN.includes(run.status)) return `<span class="pj-tag ${run.status === 'started' ? 'is-live' : 'is-wait'}"><i></i>${run.status === 'started' ? 'Agent au travail' : 'En attente de démarrage'}</span>`;
-    if (task.status === 'done') return '';
+    if (isClosed(task)) return '';
     if (run.status === 'failed') return '<span class="pj-tag is-bad"><i></i>Échec</span>';
     if (run.status === 'interrupted') return '<span class="pj-tag is-bad"><i></i>Interrompue</span>';
     if (run.outcome === 'question' && task.status === 'blocked') return '<span class="pj-tag is-ask"><i></i>Question de l’agent</span>';
@@ -150,8 +155,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return `<span class="pj-av" aria-hidden="true">${esc(name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 1).toUpperCase() || 'A')}</span><span class="pj-who">${esc(name)}</span>`;
   }
   function card(task) {
-    const p = projectOf(task), done = task.status === 'done';
-    return `<article class="pj-card ${needsMe(task) && !done ? 'needs-me' : ''} ${done ? 'is-done' : ''}" draggable="true" data-pj-task="${esc(task.id)}">
+    const p = projectOf(task), done = isClosed(task);
+    return `<article class="pj-card ${needsMe(task) && !done ? 'needs-me' : ''} ${done ? 'is-done' : ''} ${deployFailed(task) ? 'is-deploy-failed' : ''}" ${deployFailed(task) ? `title="Déploiement échoué : ${esc(task.deployError.message)}"` : ''} draggable="true" data-pj-task="${esc(task.id)}">
       <button class="pj-card-open" data-pj="open-task" data-id="${esc(task.id)}" aria-label="Ouvrir ${esc(task.code)} ${esc(task.title)}"></button>
       <div class="pj-card-top">${prioBars(task.priority)}<span class="pj-code">${esc(task.code)}</span><span class="pj-grow"></span><span class="pj-proj"><i style="background:${esc(p?.color || '#888')}"></i>${esc(p?.name || '')}</span></div>
       <h3>${esc(task.title)}</h3>
@@ -188,7 +193,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     }).join('')}</div></div>`;
   }
   function projectCard(p) {
-    const tasks = st.tasks.filter(t => t.projectId === p.id), done = tasks.filter(t => t.status === 'done').length;
+    const tasks = st.tasks.filter(t => t.projectId === p.id), done = tasks.filter(isClosed).length;
     const pct = tasks.length ? Math.round(done / tasks.length * 100) : 0;
     const count = s => tasks.filter(t => t.status === s).length;
     return `<article class="pj-pcard ${p.archived ? 'is-archived' : ''}" style="--pc:${esc(p.color || '#3dd68c')}">
@@ -221,10 +226,12 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     render();
     if (nearEnd) { const el = thread(); if (el) el.scrollTop = el.scrollHeight; }
   }
-  const dotKind = t => { const run = lastRun(t); return openRun(t) ? 'run' : t.status === 'done' ? 'done' : t.status === 'review' ? 'review' : t.status === 'blocked' || ['failed', 'interrupted'].includes(run?.status) ? 'block' : t.status === 'doing' ? 'run' : 'draft'; };
+  const dotKind = t => { const run = lastRun(t); return openRun(t) ? 'run' : deployFailed(t) ? 'block' : isClosed(t) ? 'done' : t.status === 'review' ? 'review' : t.status === 'blocked' || ['failed', 'interrupted'].includes(run?.status) ? 'block' : t.status === 'doing' ? 'run' : 'draft'; };
   function taskMeta(task) {
     const run = lastRun(task), who = assignee(task)?.name || 'Manuelle';
     if (openRun(task)) return openRun(task).status === 'started' ? who + ' travaille…' : 'En attente de démarrage';
+    if (task.status === 'deployed') return 'Déployé';
+    if (deployFailed(task)) return 'Déploiement échoué';
     if (task.status === 'done') return 'Validé';
     if (['failed', 'interrupted'].includes(run?.status)) return (run.status === 'failed' ? 'Échec' : 'Interrompue') + ' · à relancer';
     if (task.status === 'blocked') return run?.outcome === 'question' ? 'Bloqué · une question pour vous' : 'Bloqué';
@@ -234,14 +241,14 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function chatSide() {
     const list = st.tasks.filter(matches).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
     const visible = visibleProjects(), current = visible.find(p => p.id === st.project);
-    const item = t => `<button type="button" class="pj-side-item ${st.chat === t.id ? 'is-active' : ''}" data-pj="open-task" data-id="${esc(t.id)}" ${st.chat === t.id ? 'aria-current="page"' : ''}>
+    const item = t => `<button type="button" class="pj-side-item ${st.chat === t.id ? 'is-active' : ''} ${deployFailed(t) ? 'is-deploy-failed' : ''}" ${deployFailed(t) ? `title="Déploiement échoué : ${esc(t.deployError.message)}"` : ''} data-pj="open-task" data-id="${esc(t.id)}" ${st.chat === t.id ? 'aria-current="page"' : ''}>
       <span class="pj-dot d-${dotKind(t)}" aria-hidden="true"></span><span class="pj-side-text"><span class="pj-side-title">${esc(t.title)}</span><span class="pj-side-meta">${esc(t.code)} · ${esc(taskMeta(t))}</span></span></button>`;
     const groups = CHAT_GROUPS.map(g => {
-      const items = list.filter(g.has), shown = g.id === 'done' && !st.allDone ? items.slice(0, 5) : items;
+      const items = list.filter(g.has), shown = ['done', 'deployed'].includes(g.id) && !st.allDone ? items.slice(0, 5) : items;
       return items.length ? `<section class="pj-side-group" aria-label="${g.label}"><h2 style="--gc:${g.color}">${g.label}<span>${items.length}</span></h2>${shown.map(item).join('')}
         ${shown.length < items.length ? '<button type="button" class="pj-side-more" data-pj="all-done">Voir toutes les tâches terminées</button>' : ''}</section>` : '';
     }).join('');
-    const attention = st.tasks.filter(t => projectOf(t) && !projectOf(t).archived && needsMe(t) && t.status !== 'done').length;
+    const attention = st.tasks.filter(t => projectOf(t) && !projectOf(t).archived && needsMe(t) && !isClosed(t)).length;
     return `<nav class="pj-side" aria-label="Tâches">
       <button type="button" class="pj-side-new ${st.chat ? '' : 'is-active'}" data-pj="chat-new" ${visible.length ? '' : 'disabled'}>${icon('plus')} Nouvelle tâche</button>
       <label class="pj-side-search">${icon('search')}<span class="sr-only">Rechercher une tâche</span><input type="search" id="pj-search" placeholder="Rechercher…" value="${esc(st.search)}" autocomplete="off"></label>
@@ -641,10 +648,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${inline ? G.up : G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button>
       ${m.alt ? `<button class="button pj-send" type="submit" name="alt" value="${esc(m.alt.kind)}">${m.alt.label}</button>` : ''}</form>
       ${foot(`${m.quick ? `<button class="pj-chip" type="button" data-pj="quick-continue" data-id="${esc(task.id)}">${G.launch} Oui, continue</button>` : ''}
-        ${busy && direct && openRun(task) && !inline ? `<button class="button" type="button" data-pj="stop-run" data-id="${esc(task.id)}">Arrêter</button>` : ''}<span class="pj-help">${busy ? (direct ? `${agent} travaille : la session et le dossier sont conservés si vous l’arrêtez.` : esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')) : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
+        ${busy && direct && openRun(task) && !inline ? `<button class="button" type="button" data-pj="stop-run" data-id="${esc(task.id)}">Arrêter</button>` : ''}<span class="pj-help">${busy ? (direct ? `${agent} travaille : la session et le dossier sont conservés si vous l’arrêtez.` : esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')) : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${isClosed(task) ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
   }
   function closeHTML(task) {
-    if (task.status === 'done') return `<span class="pj-closed">${icon('check')} Tâche close</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
+    if (isClosed(task)) return `${deployFailed(task) ? `<span class="pj-help is-bad">Déploiement échoué : ${esc(task.deployError.message)}</span>` : ''}<span class="pj-closed">${icon('check')} ${task.status === 'deployed' ? 'Tâche déployée' : 'Tâche close'}</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
     const run = lastRun(task), pendingResult = run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted;
     return `<button class="button pj-close" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}
       title="${!canClose(task) ? 'Attendez la réponse de l’agent' : pendingResult ? 'Accepter le résultat de l’agent et passer la tâche en Terminé' : 'Passer la tâche en Terminé'}">${icon('check')} Clore la tâche</button>`;

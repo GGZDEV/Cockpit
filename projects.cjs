@@ -152,7 +152,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if ('engine' in body) { if (ENGINES.includes(body.engine)) out.engine = body.engine; else delete out.engine; }
     if ('model' in body) out.model = /^(?!-)[\w.:\[\]-]{1,80}$/.test(body.model || '') ? body.model : '';
     if ('planFirst' in body) out.planFirst = body.planFirst === true;
-    if ('status' in body) { if (!TASK_STATUS.includes(body.status)) throw new HttpError(400, 'Colonne inconnue.'); out.status = body.status; }
+    // « Déployé » n'est posé que par Cockpit, après un déploiement réussi qui contient le travail de la tâche.
+    if ('status' in body && body.status !== task.status) { if (body.status === 'deployed') throw new HttpError(400, 'La colonne « Déployé » se remplit seule après un déploiement réussi.'); if (!TASK_STATUS.includes(body.status)) throw new HttpError(400, 'Colonne inconnue.'); out.status = body.status; }
     if ('order' in body && Number.isFinite(Number(body.order))) out.order = Number(body.order);
     return out;
   }
@@ -254,8 +255,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const published = await publishTask(task);
     const run = task.runs.at(-1);
     if (run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted) run.accepted = now();
-    Object.assign(task, { status: 'done', acceptedAt: now(), question: '', updatedAt: now() });
-    if (published) task.published = published;
+    Object.assign(task, { status: task.status === 'deployed' && !published ? 'deployed' : 'done', acceptedAt: now(), question: '', updatedAt: now() });
+    if (published) { task.published = published; delete task.deployError; delete task.deployCheck; }
     save(); return task;
   }
   async function publishTask(task) {
@@ -376,7 +377,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       run.basis = basis(task, project);
       task.question = '';
       // Continuer une tâche terminée la remet en jeu : son prochain résultat sera de nouveau à valider.
-      if (task.status === 'done') { task.status = 'todo'; delete task.acceptedAt; task.movedAt = now(); }
+      if (['done', 'deployed'].includes(task.status)) { task.status = 'todo'; delete task.acceptedAt; task.movedAt = now(); }
       save();
       follow(task, run);
       return { task, run };
@@ -529,7 +530,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       task.direct = d; task.engine ||= name; // le moteur d'une tâche engagée ne change plus avec le projet
       const { run, attachmentIds } = prepareRun({ task, project, s, name, kind, mode, note, fresh, handoff, launchKey, budgetUsd });
       task.question = '';
-      if (task.status === 'done') { task.status = 'todo'; delete task.acceptedAt; task.movedAt = now(); }
+      if (['done', 'deployed'].includes(task.status)) { task.status = 'todo'; delete task.acceptedAt; task.movedAt = now(); }
       save();
       followDirect(task, run, s, attachmentIds).catch(error => { log(label + ' : ' + error.message); for (const r of directRuns(task)) if (OPEN_RUN.includes(r.status)) fail(task, r, 'failed', 'Erreur interne de Cockpit : ' + text(error.message, 300)); });
       return { task, run };
@@ -719,6 +720,21 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     next.catch(() => {}).finally(() => { if (registrations.get(project.id) === next) registrations.delete(project.id); });
     return next;
   }
+  // Tâches closes et publiées : « Déployé » quand un déploiement réussi contient leur commit ; sinon l'erreur reste visible sur la tâche (Terminé).
+  // Un même déploiement n'est examiné qu'une fois par tâche.
+  async function syncDeployed(project, last) {
+    if (!['succeeded', 'failed', 'rolled_back'].includes(last.status) || !last.commit) return;
+    const dir = project.workspace?.status === 'ready' ? project.workspace.path : '';
+    const contains = async commit => commit === last.commit || (!!dir && !!workspaces.git && await workspaces.git(['-C', dir, 'merge-base', '--is-ancestor', commit, last.commit]).then(() => true, () => false));
+    let changed = false;
+    for (const task of store.tasks.filter(t => t.projectId === project.id && t.status === 'done' && t.published?.commit && t.deployCheck !== last.id)) {
+      if (!(await contains(task.published.commit))) continue;
+      task.deployCheck = last.id; changed = true;
+      if (last.status === 'succeeded') { Object.assign(task, { status: 'deployed', deployedAt: last.finishedAt || now(), movedAt: now(), deployment: { id: last.id, commit: last.commit } }); delete task.deployError; }
+      else task.deployError = { id: last.id, at: last.finishedAt || now(), message: text(last.message || (last.status === 'rolled_back' ? 'Déploiement annulé : retour à la version précédente.' : 'Le déploiement a échoué.'), 300) };
+    }
+    if (changed) save();
+  }
   // Relit l'état côté service (dernier déploiement, journal court, nom public). Une panne du service est notée sans effacer l'état connu.
   async function refreshDeploy(project) {
     const state = deployState(project);
@@ -727,7 +743,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       const remote = await deployer.getProject(state.slug);
       if (!remote) state.registered = { status: 'failed', retry: false, at: now(), error: 'Le service de déploiement ne connaît plus ce projet : utilisez « Réenregistrer ».' };
       else {
-        if (remote.latest) state.last = remote.latest;
+        if (remote.latest) { state.last = remote.latest; await syncDeployed(project, remote.latest); }
         if (deploy.settingsOf(project).publicDomain) { const sub = await deployer.getSubdomain(state.slug); if (sub) state.subdomain = { name: sub.name, status: sub.status, detail: sub.detail }; }
         state.error = '';
       }
@@ -1011,7 +1027,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       localFolder: p.workspace ? { status: p.workspace.status, path: p.workspace.path, ...(p.workspace.error ? { error: p.workspace.error } : {}) } : null,
       deploy: deployView(p),
       ...(p.bootstrap ? { newRepository: { status: p.bootstrap.status, step: p.bootstrap.step, ...(p.bootstrap.error ? { error: p.bootstrap.error } : {}) } } : {}),
-      tasks: { total: tasks.length, todo: count('todo'), doing: count('doing'), blocked: count('blocked'), review: count('review'), done: count('done') }, createdBy: p.createdBy || '' };
+      tasks: { total: tasks.length, todo: count('todo'), doing: count('doing'), blocked: count('blocked'), review: count('review'), done: count('done'), deployed: count('deployed') }, createdBy: p.createdBy || '' };
   }
   function viewTask(t) {
     const run = t.runs.at(-1), p = store.projects.find(x => x.id === t.projectId);

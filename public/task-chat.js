@@ -32,7 +32,9 @@ export function chatItems(task) {
   });
   const waiting = runs.length ? between(runs.at(-1).createdAt, null) : [];
   if (waiting.length) items.push({ role: 'user', type: 'files', waiting: true, at: waiting[0].at, text: '', attachments: waiting });
-  if (task.status === 'done' && !task.runs?.at(-1)?.accepted) items.push({ role: 'system', type: 'closed', at: task.acceptedAt || task.movedAt || task.updatedAt, text: 'Tâche close' });
+  if (['done', 'deployed'].includes(task.status) && !task.runs?.at(-1)?.accepted) items.push({ role: 'system', type: 'closed', at: task.acceptedAt || task.movedAt || task.updatedAt, text: 'Tâche close' });
+  if (task.status === 'deployed') items.push({ role: 'system', type: 'closed', at: task.deployedAt, text: 'Déployée en ligne' });
+  else if (task.status === 'done' && task.deployError) items.push({ role: 'system', type: 'closed', at: task.deployError.at, text: 'Déploiement échoué : ' + task.deployError.message });
   return items;
 }
 
@@ -40,7 +42,7 @@ export function chatItems(task) {
 // kind = type de lancement envoyé au serveur ; needsText = message obligatoire.
 // direct : la tâche est traitée par Claude Code ou Codex (aucun agent OpenClaw à choisir) ; alt : seconde action proposée.
 export function composerMode(task, { busy = false, direct = false } = {}) {
-  const runs = task.runs || [], last = runs.at(-1), done = task.status === 'done';
+  const runs = task.runs || [], last = runs.at(-1), done = ['done', 'deployed'].includes(task.status);
   if (!task.agent && !direct) return { mode: 'manual' };
   if (busy || runs.some(r => OPEN.includes(r.status))) return { mode: 'busy' };
   if (!runs.length) return task.instructions

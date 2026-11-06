@@ -16,7 +16,7 @@ function token() {
   catch { throw Error('Clé introuvable pour « ' + CLIENT + ' » : démarrez Cockpit une fois sur ce PC (elle est créée dans data/agent-access.json).'); }
 }
 
-const STATUS_TASK = 'todo (À faire), doing (En cours, tâches manuelles seulement), blocked (Bloqué), review (À valider), done (Terminé). Les libellés français sont acceptés.';
+const STATUS_TASK = 'todo (À faire), doing (En cours, tâches manuelles seulement), blocked (Bloqué), review (À valider), done (Terminé) ; deployed (Déployé) est posé par Cockpit seul après un déploiement réussi. Les libellés français sont acceptés.';
 const PRIORITY = { description: '0 aucune, 1 basse, 2 moyenne, 3 haute, 4 urgent (ou le mot).', type: ['integer', 'string'] };
 const DATE = { type: 'string', description: 'Échéance AAAA-MM-JJ, ou chaîne vide pour l’effacer.' };
 const LINKS = { type: 'array', description: 'Liens http(s).', items: { anyOf: [{ type: 'string' }, { type: 'object', properties: { url: { type: 'string' }, label: { type: 'string' } }, required: ['url'] }] } };

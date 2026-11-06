@@ -32,6 +32,8 @@
 
 /* Modules : cartes de verre aux grands rayons, quel que soit le type. */
 [data-theme="home"][data-design="home"] .mods{gap:16px}
+/* L'ombre portée des cartes déborde sous la grille : marge de défilement élargie pour qu'elle ne soit plus coupée net sous les modules. */
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .mods{padding:2px 16px 64px;margin:-2px -16px -64px}
 [data-theme="home"][data-design="home"] .mod.card,[data-theme="home"][data-design="home"] .add-tile,[data-theme="home"][data-design="home"] .dashboard-empty{border-radius:28px;background:rgba(36,36,42,.40);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-shadow)}
 [data-theme="home"][data-design="home"] .mod.card.hov:hover{background:rgba(44,44,50,.46)}
 [data-theme="home"][data-design="home"] .mod-head h2{font-size:16px;letter-spacing:-.01em}

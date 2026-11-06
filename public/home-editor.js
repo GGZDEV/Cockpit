@@ -99,7 +99,9 @@ export function attachHomeEditor({ root: $app, isEditing, isHome, maxHeight = ()
   function autoScroll() {
     const g = gesture;
     if (!g || g.kind !== 'move') return;
-    const box = g.sc ? g.sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    const r = g.sc ? g.sc.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
+    // The grid's scroll area runs past the screen bottom (room for the cards' shadow).
+    const box = { top: r.top, bottom: Math.min(r.bottom, window.innerHeight) };
     const edge = 60;
     let step = 0;
     if (g.y < box.top + edge) step = -Math.ceil((box.top + edge - g.y) / 5);

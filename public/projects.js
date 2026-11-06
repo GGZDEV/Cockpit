@@ -586,7 +586,16 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'quick-cancel': st.quickAdd = null; render(); break;
         case 'open-task': await openPanel(idv); break;
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
-        case 'close-task': { el.disabled = true; upsert(await api('tasks/' + idv + '/accept', 'POST', {})); toast('Tâche close.'); render(); updatePanel(); break; }
+        // Une tâche avec une branche de travail est fusionnée dans la branche de production et poussée sur GitHub par Cockpit (sans agent).
+        case 'close-task': {
+          const t = st.tasks.find(x => x.id === idv), p = t && st.projects.find(x => x.id === t.projectId), dp = p ? deployOf(p) : { branch: 'main' };
+          if (t?.direct?.branch && !confirm(`Clore « ${t.title} » ?\n\nSon travail (branche ${t.direct.branch}) sera fusionné dans ${dp.branch} et envoyé sur GitHub.${dp.auto ? `\nLe déploiement automatique publiera ensuite ${dp.url}.` : ''}`)) break;
+          const before = t?.published?.commit; el.disabled = true;
+          const saved = await api('tasks/' + idv + '/accept', 'POST', {}); upsert(saved);
+          const pushed = saved.published?.commit && saved.published.commit !== before;
+          toast(pushed ? `Tâche close et envoyée sur GitHub (${saved.published.branch} · ${saved.published.commit.slice(0, 7)}).${dp.auto ? ' Déploiement automatique d’ici une minute.' : dp.url ? ' Utilisez « Déployer » pour publier.' : ''}` : 'Tâche close.');
+          render(); updatePanel(); break;
+        }
         case 'reopen': await move(idv, 'todo'); break;
         case 'stop-run': { el.disabled = true; upsert(await api('tasks/' + idv + '/stop', 'POST', {})); toast('Arrêt demandé : la session et le dossier de travail sont conservés.'); updatePanel(); break; }
         case 'regen-claude-md': { const saved = await api('projects/' + idv + '/claude-md', 'POST', {}); const i = st.projects.findIndex(x => x.id === saved.id); if (i >= 0) st.projects[i] = saved; toast('CLAUDE.md régénéré.'); render(); break; }

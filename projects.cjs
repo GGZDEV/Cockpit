@@ -246,12 +246,47 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   const attachmentLines = task => (task.attachments || []).map(a => `- ${a.name} (${a.type.split(';')[0]}, ${Math.max(1, Math.round(a.size / 1024))} Ko) — sur le PC : ${files.localPath(task.id, a)} — via l’accès agents Cockpit : GET tasks/${task.code}/attachments/${a.id}`);
   // « Clore la tâche » : accepte le dernier résultat s'il attend une validation, puis passe la tâche en Terminé.
   // Une tâche sans résultat (manuelle, question restée ouverte…) peut aussi être close.
-  function accept(tid) {
+  // Si la tâche a des commits dans sa branche, ils sont d'abord fusionnés dans la branche de production de la copie locale puis poussés sur GitHub
+  // (un programme, sans agent). Le déploiement suit ensuite les réglages du projet : automatique, ou bouton « Déployer ».
+  async function accept(tid) {
     const task = findTask(tid);
     if (openRun(task)) throw new HttpError(409, 'Une exécution est en cours : attendez son résultat.');
+    const published = await publishTask(task);
     const run = task.runs.at(-1);
     if (run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted) run.accepted = now();
-    Object.assign(task, { status: 'done', acceptedAt: now(), question: '', updatedAt: now() }); save(); return task;
+    Object.assign(task, { status: 'done', acceptedAt: now(), question: '', updatedAt: now() });
+    if (published) task.published = published;
+    save(); return task;
+  }
+  async function publishTask(task) {
+    const project = store.projects.find(p => p.id === task.projectId), branch = task.direct?.branch, cwd = task.direct?.cwd;
+    const dir = project?.workspace?.status === 'ready' ? project.workspace.path : '', prod = deploy.settingsOf(project).branch;
+    if (!branch || !dir || !workspaces.git) return null;
+    const git = (...args) => workspaces.git(['-C', dir, ...args]).then(out => String(out).trim());
+    const fail = message => { throw new HttpError(409, message + ' La tâche reste ouverte.'); };
+    if (!(await git('rev-parse', '--verify', '--quiet', 'refs/heads/' + branch).then(() => true, () => false))) return null;
+    const pending = Number(await git('rev-list', '--count', prod + '..' + branch)) > 0;
+    // Rien à fusionner : déjà publié, sauf si une fusion précédente n'a pas pu être poussée sur GitHub.
+    if (!pending && await git('merge-base', '--is-ancestor', branch, 'refs/remotes/origin/' + prod).then(() => true, () => false)) return null;
+    if (cwd && (await workspaces.git(['-C', cwd, 'status', '--porcelain', '--untracked-files=no']).then(String, () => '')).trim())
+      fail(`Des modifications de la tâche ne sont pas committées (dossier ${cwd}) : demandez à l’agent de les committer, puis recommencez.`);
+    if (await git('rev-parse', '--abbrev-ref', 'HEAD') !== prod) fail(`La copie locale ${dir} n’est pas sur la branche ${prod}.`);
+    if (await git('status', '--porcelain', '--untracked-files=no')) fail(`La copie locale ${dir} contient des modifications non committées : rien n’a été publié.`);
+    try { await git('fetch', '-q', 'origin', prod); await git('merge', '-q', '--ff-only', 'origin/' + prod); }
+    catch { fail(`La branche ${prod} de la copie locale et celle de GitHub ont divergé : rien n’a été publié.`); }
+    // Identité Git du commit de fusion : celle de la copie locale, sinon « Cockpit ».
+    const who = (await git('config', 'user.email').catch(() => '')) ? [] : ['-c', 'user.name=Cockpit', '-c', 'user.email=cockpit@localhost'];
+    if (pending) try { await workspaces.git(['-C', dir, ...who, 'merge', '-q', '--no-ff', '-m', `${task.code} · ${task.title}`.slice(0, 200), branch]); }
+    catch (error) {
+      const conflict = await git('diff', '--name-only', '--diff-filter=U').catch(() => '');
+      await git('merge', '--abort').catch(() => {});
+      fail(conflict ? `La branche de la tâche entre en conflit avec ${prod} : rien n’a été publié. Demandez à l’agent de récupérer ${prod} dans sa branche.` : `La fusion dans ${prod} a échoué (${text(String(error.message || ''), 200)}) : rien n’a été publié.`);
+    }
+    const commit = await git('rev-parse', 'HEAD');
+    try { await git('push', '-q', 'origin', prod); }
+    catch (error) { throw new HttpError(502, `La tâche est fusionnée dans ${prod} en local, mais l’envoi sur GitHub a échoué (${text(String(error.message || ''), 200)}). La tâche reste ouverte : recommencez une fois l’accès rétabli.`); }
+    log(`Tâche ${task.code} publiée sur GitHub (${prod} · ${commit.slice(0, 7)})`);
+    return { at: now(), branch: prod, commit };
   }
 
   // ----- Lancement explicite ----------------------------------------------------------------
@@ -650,6 +685,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const d = deploy.settingsOf(project), state = deployState(project);
     if (project.archived) return state.registered;
     if (!d.url && !d.type && !state.slug) { if (!Object.keys(state).length) delete project.deployState; return null; } // projet sans déploiement : rien à faire
+    if (!d.type && deployer.configured && githubRepo(project.context?.repository)) await adoptRemoteRecipe(project);
     const lacking = deploy.missing(project);
     if (lacking.length) { state.registered = { status: 'pending', at: now(), error: 'À compléter : ' + lacking.join(', ') + '.' }; save(); return state.registered; }
     if (!deployer.configured) { state.registered = { status: 'failed', retry: false, at: now(), error: deployer.reason }; save(); return state.registered; }
@@ -665,6 +701,15 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       state.registered = { status: 'failed', retry: ['unreachable', 'timeout'].includes(error.code), at: now(), error: text(error.message, 400) };
     }
     save(); return state.registered;
+  }
+  // Le type n'est plus demandé : si le service connaît déjà ce projet (même dépôt), sa recette est reprise. Une panne du service laisse le projet « à compléter ».
+  async function adoptRemoteRecipe(project) {
+    try {
+      const remote = await deployer.getProject(await claimSlug(project));
+      if (!remote || !deploy.sameRepoName(remote.repo, githubRepo(project.context.repository).web)) return;
+      const adopted = deploy.adoptRecipe(project.deployment, remote.recipe);
+      if (adopted) { project.deployment = adopted; log('Recette de déploiement reprise du service : ' + project.key + ' (' + adopted.type + ')'); save(); }
+    } catch (error) { if (!(error instanceof DeployerError) && !(error instanceof deploy.InputError)) throw error; }
   }
   // Une seule inscription à la fois par projet (créer puis modifier vite ne produit pas deux PUT concurrents).
   const registrations = new Map();
@@ -744,6 +789,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     for (const project of store.projects) {
       const state = project.deployState; if (project.archived || !state?.registered) continue;
       if (state.registered.status === 'failed' && state.registered.retry && Date.now() - Date.parse(state.registered.at) > 60000) { await queueRegistration(project).catch(() => {}); continue; }
+      if (state.registered.status === 'pending' && !deploy.settingsOf(project).type && ticks % 4 === 1) { await queueRegistration(project).catch(() => {}); continue; } // recette préparée entre-temps dans le service
       if (state.registered.status === 'ok' && (deployActive(project) || (deploy.settingsOf(project).auto && ticks % 4 === 0))) await refreshDeploy(project).catch(() => {});
     }
   }
@@ -1110,7 +1156,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         case 'PATCH tasks/:id': return json(res, 200, updateTask(a, body));
         case 'DELETE tasks/:id': deleteTask(a); return json(res, 200, { ok: true });
         case 'POST tasks/:id/launch': { const result = await launch(a, body); return json(res, result.repeated ? 200 : 202, result); }
-        case 'POST tasks/:id/accept': return json(res, 200, accept(a));
+        case 'POST tasks/:id/accept': return json(res, 200, await accept(a));
         default: return json(res, 405, { error: 'Opération indisponible.' });
       }
     } catch (error) {

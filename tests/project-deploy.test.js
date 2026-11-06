@@ -23,7 +23,7 @@ test('settings are validated: https only, no credentials, branch, type, paths, p
   assert.match(await bad({ publicDomain: 'evil.example.com' }), /\.ggz\.ovh/); await bad({ publicDomain: '.ggz.ovh' }); await bad({ publicUpstream: 'http://192.168.1.5:80/admin' }); await bad({ publicUpstream: 'ftp://h' });
   const ok = await s.ui('projects/' + p.id, 'PATCH', { deployment: { url: 'https://Site.ggz.ovh/', auto: 'oui', branch: 'prod', type: 'systemd-ct', config: { host: '192.168.1.194', user: 'deploy', dest_dir: '/opt/app', service: 'mon-service', src_dir: '.', evil: 'x' }, publicDomain: 'Mon-Site.ggz.ovh', publicUpstream: 'http://192.168.1.194:7000' } });
   assert.equal(ok.status, 200);
-  assert.deepEqual(ok.body.deployment, { url: 'https://site.ggz.ovh', auto: false, branch: 'prod', type: 'systemd-ct', config: { host: '192.168.1.194', user: 'deploy', dest_dir: '/opt/app', service: 'mon-service', src_dir: '.' }, buildCmd: '', testCmd: '', publicDomain: 'mon-site.ggz.ovh', publicUpstream: 'http://192.168.1.194:7000' });
+  assert.deepEqual(ok.body.deployment, { url: 'https://site.ggz.ovh', auto: false, branch: 'prod', type: 'systemd-ct', config: { host: '192.168.1.194', user: 'deploy', dest_dir: '/opt/app', service: 'mon-service', src_dir: '.' }, health: null, buildCmd: '', testCmd: '', publicDomain: 'mon-site.ggz.ovh', publicUpstream: 'http://192.168.1.194:7000' });
 });
 
 test('backward compatible: a project saved before this feature loads unchanged and gets defaults without any migration', async t => {
@@ -64,7 +64,7 @@ test('an incomplete configuration waits instead of failing: nothing is sent unti
   const s = await setup(t);
   const a = (await s.create('Beta', {}, { url: 'https://beta.ggz.ovh' })).body;
   assert.equal(puts(s).length, 0);
-  const r = (await s.get(a.id)).deployState.registered; assert.equal(r.status, 'pending'); assert.match(r.error, /le type de déploiement/);
+  const r = (await s.get(a.id)).deployState.registered; assert.equal(r.status, 'pending'); assert.match(r.error, /recette de déploiement/);
   await s.ui('projects/' + a.id, 'PATCH', { deployment: { type: 'ha-static', config: { ha_subdir: 'x/y' } } }); await settle();
   assert.match((await s.get(a.id)).deployState.registered.error, /dossier à publier/); assert.equal(puts(s).length, 0);
   await s.ui('projects/' + a.id, 'PATCH', { deployment: { config: { src_dir: 'dist' } } }); await settle();
@@ -245,4 +245,14 @@ test('deploy-config reports the service and GitHub capabilities without any secr
   assert.equal(r.service.configured, true); assert.equal(r.service.reachable, true); assert.equal(r.github.available, false); assert.match(r.github.reason, /GitHub CLI/); assert.equal(r.publicSuffix, '.ggz.ovh');
   s.service.state.down = true; assert.equal((await s.ui('deploy-config')).body.service.reachable, false);
   assert.ok(!(await s.ui('deploy-config')).raw.includes(TOKEN));
+});
+
+test('no type in the form: the recipe already set in the service for the same repository is adopted, health check included', async t => {
+  const s = await setup(t);
+  s.service.state.projects.set('gamma', { id: 'gamma', repo: 'ggzdev/gamma', branch: 'main', type: 'custom', auto: false, public_url: 'https://gamma.ggz.ovh',
+    deploy: { deploy_cmd: 'ssh app@h deploy "$DEPLOY_COMMIT"', rollback_cmd: 'ssh app@h deploy "$DEPLOY_COMMIT"' }, health: { url: 'https://gamma.ggz.ovh/', expect_status: 401, timeout_s: 15, retries: 5, retry_delay_s: 3 } });
+  const g = (await s.create('Gamma', {}, { url: 'https://gamma.ggz.ovh', auto: true })).body; await settle();
+  const p = await s.get(g.id);
+  assert.equal(p.deployState.registered.status, 'ok'); assert.equal(p.deployment.type, 'custom'); assert.equal(p.deployment.config.deploy_cmd, 'ssh app@h deploy "$DEPLOY_COMMIT"');
+  const put = puts(s).at(-1).body; assert.equal(put.type, 'custom'); assert.equal(put.health.expect_status, 401); assert.equal(put.auto, true);
 });

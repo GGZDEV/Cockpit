@@ -39,7 +39,8 @@ async function setup(t, { engine: engineOptions = {}, codexEnabled = false, code
   fs.mkdirSync(path.dirname(log), { recursive: true }); fs.mkdirSync(path.dirname(codexLog), { recursive: true });
   for (const name of ['alpha', 'beta']) repo(path.join(root, name), repos[name]);
   const feed = await fakeFeedMe();
-  const workspaces = { root, target: url => path.join(root, url.split('/').pop()), clone: async url => ({ path: path.join(root, url.split('/').pop()), reused: true }) };
+  const gitAsync = args => new Promise((resolve, reject) => require('node:child_process').execFile('git', args, { encoding: 'utf8' }, (error, out) => error ? reject(error) : resolve(out)));
+  const workspaces = { root, git: gitAsync, target: url => path.join(root, url.split('/').pop()), clone: async url => ({ path: path.join(root, url.split('/').pop()), reused: true }) };
   // NODE_TEST_CONTEXT ferait d'un « node --test » imbriqué un sous-test du lanceur courant.
   const baseEnv = { ...process.env, NODE_TEST_CONTEXT: undefined, FAKE_CLAUDE_LOG: log, FAKE_CODEX_LOG: codexLog, GH_TOKEN: 'ghp_abcdefghijklmnopqrstuvwxyz', ANTHROPIC_API_KEY: 'sk-ant-should-not-pass',
     CLAUDE_CODE_OAUTH_TOKEN: 'oauth-keep', OPENAI_API_KEY: 'sk-openai-should-not-pass-0123456789', CODEX_API_KEY: 'codex-should-not-pass', CODEX_HOME: path.join(dir, 'ailleurs') };

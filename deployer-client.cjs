@@ -78,7 +78,11 @@ function createDeployerClient({ baseUrl = process.env.COCKPIT_DEPLOYER_URL || DE
     return { id: line(d.id, 80), status: statusOf(d.status), trigger: ['auto', 'manual', 'rollback'].includes(d.trigger) ? d.trigger : '', commit: line(d.commit, 40), previousCommit: line(d.previous_commit, 40),
       createdAt: line(d.created_at, 40), startedAt: line(d.started_at, 40), finishedAt: line(d.finished_at, 40), step: line(d.step, 20), message: line(clean(d.message ?? ''), 300), log };
   }
-  const project = p => ({ id: line(p.id, 40), repo: line(p.repo, 200), branch: line(p.branch, 100), deploying: p.deploying === true, subdomainStatus: line(p.subdomain_status, 30), latest: deployment(p.latest_deployment) });
+  // Recette déjà réglée dans le service (type, réglages, contrôle de santé) : Cockpit la reprend telle quelle au lieu de la redemander.
+  const plain = o => o && typeof o === 'object' && !Array.isArray(o) ? o : {};
+  const recipe = p => ({ type: line(p.type, 30), deploy: Object.fromEntries(Object.entries(plain(p.deploy)).filter(([, v]) => typeof v === 'string').map(([k, v]) => [line(k, 40), line(v, 2000)])),
+    health: plain(p.health), buildCmd: line(p.build_cmd, 300), testCmd: line(p.test_cmd, 300) });
+  const project = p => ({ id: line(p.id, 40), repo: line(p.repo, 200), branch: line(p.branch, 100), deploying: p.deploying === true, subdomainStatus: line(p.subdomain_status, 30), latest: deployment(p.latest_deployment), recipe: recipe(p) });
 
   return {
     configured, reason: problem, host: base ? new URL(base).host : '',

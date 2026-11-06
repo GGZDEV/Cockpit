@@ -29,7 +29,7 @@ const BRANCH = /^[A-Za-z0-9][A-Za-z0-9._\/-]{0,99}$/;
 const PUBLIC_SUFFIX = () => String(process.env.COCKPIT_PUBLIC_DOMAIN_SUFFIX || '.ggz.ovh').toLowerCase();
 const DOMAIN = /^(?=.{4,100}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}$/;
 
-const DEFAULTS = Object.freeze({ url: '', auto: false, branch: 'main', type: '', config: {}, buildCmd: '', testCmd: '', publicDomain: '', publicUpstream: '' });
+const DEFAULTS = Object.freeze({ url: '', auto: false, branch: 'main', type: '', config: {}, health: null, buildCmd: '', testCmd: '', publicDomain: '', publicUpstream: '' });
 const settingsOf = project => ({ ...DEFAULTS, ...(project?.deployment || {}), config: { ...(project?.deployment?.config || {}) } });
 const stateOf = project => project?.deployState || {};
 
@@ -97,12 +97,28 @@ function cleanSettings(body, previous) {
   return out;
 }
 
+// Reprend la recette déjà réglée dans le service (le formulaire ne demande plus le type) ; null si le service n'en a pas d'utilisable.
+function adoptRecipe(previous, recipe) {
+  if (!recipe || !TYPES[recipe.type]) return null;
+  const out = settingsOf({ deployment: previous });
+  out.type = recipe.type;
+  out.config = cleanConfig(recipe.type, recipe.deploy, {});
+  const h = recipe.health || {}, health = {};
+  if (Number.isInteger(h.expect_status) && h.expect_status >= 100 && h.expect_status < 600) health.expect_status = h.expect_status;
+  if (typeof h.expect_contains === 'string' && h.expect_contains) health.expect_contains = h.expect_contains.slice(0, 200);
+  for (const k of ['timeout_s', 'retries', 'retry_delay_s']) if (Number.isInteger(h[k]) && h[k] > 0 && h[k] <= 600) health[k] = h[k];
+  out.health = Object.keys(health).length ? health : null;
+  if (!out.buildCmd && recipe.buildCmd) out.buildCmd = cleanCommand(recipe.buildCmd, 'Commande de construction');
+  if (!out.testCmd && recipe.testCmd) out.testCmd = cleanCommand(recipe.testCmd, 'Commande de tests');
+  return out;
+}
+
 // Ce qui manque pour pouvoir déployer (messages affichés tels quels).
 function missing(project) {
   const d = settingsOf(project), list = [];
   if (!githubRepo(project?.context?.repository)) list.push('le dépôt GitHub du projet');
   if (!d.url) list.push('l’URL de déploiement');
-  if (!d.type) list.push('le type de déploiement');
+  if (!d.type) list.push('la recette de déploiement de ce projet (à préparer une seule fois dans Deployer)');
   else for (const f of TYPES[d.type].fields) if (f.required && !d.config[f.key]) list.push(f.label.charAt(0).toLowerCase() + f.label.slice(1));
   if (d.publicDomain && !d.publicUpstream) list.push('l’adresse interne du site (pour le nom public)');
   return list;
@@ -113,9 +129,9 @@ const missingText = project => { const m = missing(project); return m.length ? '
 function payload(project) {
   const d = settingsOf(project), repo = githubRepo(project.context?.repository);
   return { repo: repo.owner + '/' + repo.name, branch: d.branch, type: d.type, public_url: d.url, auto: d.auto === true, deploy: d.config,
-    ...(d.buildCmd ? { build_cmd: d.buildCmd } : {}), ...(d.testCmd ? { test_cmd: d.testCmd } : {}),
+    ...(d.buildCmd ? { build_cmd: d.buildCmd } : {}), ...(d.testCmd ? { test_cmd: d.testCmd } : {}), ...(d.health ? { health: d.health } : {}),
     ...(d.publicDomain ? { subdomain: { name: d.publicDomain, upstream: d.publicUpstream } } : {}) };
 }
 const sameRepoName = (a, b) => { const norm = v => String(v || '').trim().toLowerCase().replace(/^https:\/\/github\.com\//, '').replace(/\.git$|\/$/g, ''); return norm(a) === norm(b); };
 
-module.exports = { TYPES, DEFAULTS, InputError, settingsOf, stateOf, cleanSettings, cleanUrl, missing, missingText, payload, sameRepoName, PUBLIC_SUFFIX };
+module.exports = { TYPES, DEFAULTS, InputError, settingsOf, stateOf, cleanSettings, cleanUrl, adoptRecipe, missing, missingText, payload, sameRepoName, PUBLIC_SUFFIX };

@@ -30,9 +30,12 @@ du service est dans `/etc/deployer/api-token` sur le CT 113 ; ne le copiez pas d
 
 ## Ce que l'utilisateur voit
 
-- **Formulaire de projet → « Déploiement »** : URL de déploiement (`https://…` obligatoire), case « Déploiement automatique » (décochée par défaut),
-  branche de production (`main`), type de déploiement et ses réglages (Home Assistant statique, site statique SSH, service systemd, cas particulier),
-  options avancées (commandes de construction et de tests, nom public + adresse interne).
+- **Formulaire de projet → « Déploiement »** : URL de déploiement (`https://…` obligatoire), case « Déploiement automatique » (décochée par défaut)
+  et branche de production (`main`). Le type et ses réglages ne sont plus demandés : la recette est préparée une seule fois dans le service
+  (même dépôt GitHub) et Cockpit la reprend telle quelle, contrôle de santé compris. Sans recette, le projet reste « à compléter ».
+- **« Clore la tâche »** : si la branche de la tâche (`cockpit/<code>-…`) a des commits, Cockpit (un programme, sans agent) la fusionne dans la
+  branche de production de la copie locale puis la pousse sur GitHub. Refusé sans rien toucher si la copie locale ou le worktree ont des
+  modifications non committées, si `main` a divergé de GitHub ou en cas de conflit. Le déploiement suit ensuite : automatique, ou bouton « Déployer ».
 - **Bloc « Déploiement » du projet** (tableau et fiche) : lien vers l'URL, mode, dernier déploiement (**en attente / en cours / réussi / échoué / revenu en arrière**),
   commit, étape, message, **journal court** (40 lignes), boutons **Déployer** (devient **Redéployer** en mode automatique) et **Actualiser**.
   Désactivé avec la raison écrite à côté si l'URL, le dépôt ou le type manquent, si le service n'a pas de jeton, ou si un déploiement est en cours.

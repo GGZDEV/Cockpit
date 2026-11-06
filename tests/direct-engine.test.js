@@ -275,3 +275,37 @@ test('engine children do not inherit Cockpit server settings', () => {
   assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, 'login');
   assert.equal(Object.keys(env).some(k => k.startsWith('COCKPIT_')), false);
 });
+
+test('closing a task publishes its branch: merged into main and pushed to GitHub by Cockpit, no agent', async t => {
+  const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
+  const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git');
+  require('node:child_process').execFileSync('git', ['clone', '-q', '--bare', local, origin]);
+  git(local, 'remote', 'add', 'origin', origin); git(local, 'fetch', '-q', 'origin');
+  const p = await project('alpha'), task = await create(p.id);
+  await launch(task.id); const done = await lastDone(task.id);
+  assert.ok(done.direct.branch);
+  const closed = await ui('tasks/' + task.id + '/accept', 'POST', {});
+  assert.equal(closed.status, 200, JSON.stringify(closed.body)); assert.equal(closed.body.status, 'done');
+  assert.equal(closed.body.published.branch, 'main');
+  assert.equal(git(origin, 'rev-parse', 'main'), closed.body.published.commit, 'pushed to the remote');
+  assert.match(git(origin, 'log', '-1', '--format=%s', 'main'), /^AL-1 · /);
+  assert.equal(git(origin, 'show', 'main:feature.txt').length > 0, true);
+  // Rouverte puis close à nouveau sans nouveau travail : rien n'est refait.
+  await ui('tasks/' + task.id, 'PATCH', { status: 'todo' });
+  const again = await ui('tasks/' + task.id + '/accept', 'POST', {});
+  assert.equal(again.status, 200); assert.equal(again.body.published.commit, closed.body.published.commit);
+});
+
+test('closing refuses to publish over uncommitted changes in the local copy, and leaves the task open', async t => {
+  const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
+  const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git');
+  require('node:child_process').execFileSync('git', ['clone', '-q', '--bare', local, origin]);
+  git(local, 'remote', 'add', 'origin', origin);
+  const p = await project('alpha'), task = await create(p.id);
+  await launch(task.id); await lastDone(task.id);
+  fs.appendFileSync(path.join(local, 'README.md'), 'modif locale\n');
+  const r = await ui('tasks/' + task.id + '/accept', 'POST', {});
+  assert.equal(r.status, 409); assert.match(r.body.error, /non committées/);
+  assert.notEqual((await ui('state')).body.tasks.find(x => x.id === task.id).status, 'done');
+  assert.equal(git(origin, 'log', '--format=%s', 'main'), 'init');
+});

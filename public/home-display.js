@@ -3,15 +3,23 @@ import { modules } from './modules.js';
 
 const key = 'mb.home.display.v1';
 export const headerTypes = { 'h-date': 'Date', 'h-clock': 'Heure', 'h-temps': 'Températures int. / ext.', 'h-lights': 'Lampes allumées', 'h-fullscreen': 'Bouton plein écran' };
-const defaults = () => ({ accent: '#F5C542', bg: { preset: 'chaud' }, header: [['h-date','left'],['h-clock','center'],['h-temps','right'],['h-fullscreen','right']].map(([type, zone]) => ({ id: 'header-' + type, type, zone, options: {} })) });
+// Fond « Halos » : une couleur de base et trois halos (haut gauche, droite, bas), chacun réglable.
+export const haloDefaults = { base: '#050507', h1: '#0A84FF', h2: '#FF9F0A', h3: '#30D158' };
+export const haloParts = [['base','Fond'],['h1','Halo haut gauche'],['h2','Halo droite'],['h3','Halo bas']];
+const defaults = () => ({ look: 2, accent: '#0A84FF', bg: { preset: 'halo' }, header: [['h-clock','center'],['h-date','center'],['h-temps','right'],['h-fullscreen','right']].map(([type, zone]) => ({ id: 'header-' + type, type, zone, options: {} })) });
 export const color = value => /^#[0-9a-f]{6}$/i.test(value || '') ? value : '';
+const rgba = (hex, a) => `rgba(${[1,3,5].map(i => parseInt(hex.slice(i, i + 2), 16)).join(',')},${a})`;
+export const haloCSS = (h = {}) => { const c = k => color(h[k]) || haloDefaults[k]; return `radial-gradient(900px 640px at 12% 8%,${rgba(c('h1'),.34)},transparent 62%),radial-gradient(760px 560px at 88% 26%,${rgba(c('h2'),.2)},transparent 60%),radial-gradient(1000px 700px at 48% 108%,${rgba(c('h3'),.18)},transparent 62%) ${c('base')} fixed`; };
 export function sanitizeDisplay(data) {
   const base = defaults(); if (!data || typeof data !== 'object') return base;
-  base.accent = color(data.accent) || base.accent;
+  // Réglages antérieurs à la refonte : l’accent et le fond par défaut d’alors passent aux nouveaux.
+  const old = data.look !== 2;
+  base.accent = old && /^#f5c542$/i.test(data.accent || '') ? base.accent : color(data.accent) || base.accent;
   if (data.bg && typeof data.bg === 'object') base.bg = {
-    preset: String(data.bg.preset || 'chaud'), color: color(data.bg.color),
+    preset: String(old && (data.bg.preset || 'chaud') === 'chaud' && !data.bg.color && !data.bg.image ? 'halo' : data.bg.preset || 'halo'), color: color(data.bg.color),
     image: /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i.test(data.bg.image || '') && data.bg.image.length < 1500000 ? data.bg.image : '',
-    dim: Math.max(0, Math.min(.8, Number(data.bg.dim) || 0))
+    dim: Math.max(0, Math.min(.8, Number(data.bg.dim) || 0)),
+    halo: Object.fromEntries(haloParts.map(([k]) => [k, color(data.bg.halo?.[k]) || haloDefaults[k]]))
   };
   if (Array.isArray(data.header)) base.header = data.header.filter(m => m && /^[\w-]{1,80}$/.test(m.id) && (Object.prototype.hasOwnProperty.call(headerTypes,m.type) || Object.prototype.hasOwnProperty.call(modules,m.type))).slice(0, 20).map(m => ({
     ...m, width: Number.isInteger(m.width) && m.width >= 1 && m.width <= 4 ? m.width : undefined, height: Number.isInteger(m.height) && m.height >= 1 && m.height <= 4 ? m.height : 2, title: String(m.title || '').slice(0, 80), zone: ['left','center','right'].includes(m.zone) ? m.zone : 'right',
@@ -26,12 +34,14 @@ export const spanWidth = m => Number.isInteger(m.width) && m.width >= 1 && m.wid
 export function addHeader(type) { if (!headerTypes[type] || homeDisplay.header.length >= 20) return; homeDisplay.header.push({ id: uid(), type, zone: 'right', options: {} }); saveDisplay(); }
 export const fonts = [['','Standard',''],['outfit','Moderne',"'Outfit',sans-serif"],['unbounded','Affirmée',"'Unbounded',sans-serif"],['syne','Design',"'Syne',sans-serif"],['fraunces','Élégante',"'Fraunces',Georgia,serif"],['dmserif','Magazine',"'DM Serif Display',Georgia,serif",400],['cormorant','Raffinée',"'Cormorant Garamond',Georgia,serif"],['comfortaa','Douce',"'Comfortaa',sans-serif"],['orbitron','Futuriste',"'Orbitron',sans-serif"],['righteous','Rétro',"'Righteous',sans-serif",400],['dancing','Manuscrite',"'Dancing Script',cursive"]];
 const grad = (a,b,c) => `linear-gradient(160deg,${a} 0%,${b} 48%,${c} 100%) fixed`;
-export const backgrounds = [['chaud','Chaud','#3d3946 linear-gradient(160deg,#7d6553 0%,#5e5049 38%,#4a4351 72%,#3d3946 100%) no-repeat fixed'],['nuit','Nuit',grad('#2F4A7A','#1B2740','#10141F')],['ocean','Océan',grad('#2E7C8A','#1A4A57','#0E242C')],['foret','Forêt',grad('#4F6B4A','#2E4234','#1A231D')],['aurore','Aurore',grad('#8A5A8F','#4E3866','#241B33')],['ardoise','Ardoise',grad('#5B6270','#3A3F48','#22252B')],['noir','Noir','#000000']];
+export const backgrounds = [['halo','Halos',haloCSS()],['chaud','Chaud','#3d3946 linear-gradient(160deg,#7d6553 0%,#5e5049 38%,#4a4351 72%,#3d3946 100%) no-repeat fixed'],['nuit','Nuit',grad('#2F4A7A','#1B2740','#10141F')],['ocean','Océan',grad('#2E7C8A','#1A4A57','#0E242C')],['foret','Forêt',grad('#4F6B4A','#2E4234','#1A231D')],['aurore','Aurore',grad('#8A5A8F','#4E3866','#241B33')],['ardoise','Ardoise',grad('#5B6270','#3A3F48','#22252B')],['noir','Noir','#000000']];
 export function applyDisplay(home) {
-  if (!home) { document.body.style.removeProperty('background'); document.body.style.removeProperty('--accent'); return; }
+  if (!home) { document.body.style.removeProperty('background'); for (const p of ['--accent','--accent-soft','--accent-glow']) document.body.style.removeProperty(p); return; }
   const b = homeDisplay.bg;
-  document.body.style.background = b.image ? `#000 linear-gradient(rgba(0,0,0,${b.dim}),rgba(0,0,0,${b.dim})),url("${b.image}") center / cover no-repeat fixed` : color(b.color) || (backgrounds.find(p => p[0] === b.preset) || backgrounds[0])[2];
+  document.body.style.background = b.image ? `#000 linear-gradient(rgba(0,0,0,${b.dim}),rgba(0,0,0,${b.dim})),url("${b.image}") center / cover no-repeat fixed` : color(b.color) || (b.preset === 'halo' || !backgrounds.some(p => p[0] === b.preset) ? haloCSS(b.halo) : backgrounds.find(p => p[0] === b.preset)[2]);
   document.body.style.setProperty('--accent', homeDisplay.accent);
+  document.body.style.setProperty('--accent-soft', rgba(homeDisplay.accent, .22));
+  document.body.style.setProperty('--accent-glow', rgba(homeDisplay.accent, .45));
 }
 export const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
 export const fullscreenSupported = () => !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);

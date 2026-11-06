@@ -56,6 +56,7 @@ function childEnv(base = process.env, { keep = [], drop = [], set = {} } = {}) {
   for (const [k, v] of Object.entries(base)) {
     if (v === undefined) continue;
     if (keep.includes(k)) { env[k] = v; continue; }
+    if (k.startsWith('COCKPIT_')) continue; // Réglages du serveur privés ; ne pas contaminer les tests du projet.
     if (drop.includes(k) || /TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|_KEY$|CREDENTIAL|COOKIE/i.test(k)) continue;
     env[k] = v;
   }

@@ -267,3 +267,11 @@ test('directSettings, redact, verdict and fallback decision', () => {
   assert.equal(harness.fallbackDecision({ result: {}, activity: 0, errorText: '429', before: clean, after: { head: 'a', status: '?? x' } }).ok, false);
   assert.equal(harness.fallbackDecision({ result: { timedOut: true }, errorText: '429', before: clean, after: clean }).ok, false);
 });
+
+
+test('engine children do not inherit Cockpit server settings', () => {
+  const env = harness.childEnv({ PATH: '/bin', COCKPIT_SERVER_MODE: '1', COCKPIT_DIRECT: '1', COCKPIT_WEB_PASSWORD_FILE: '/private/password', CLAUDE_CODE_OAUTH_TOKEN: 'login' }, { keep: ['CLAUDE_CODE_OAUTH_TOKEN'] });
+  assert.equal(env.PATH, '/bin');
+  assert.equal(env.CLAUDE_CODE_OAUTH_TOKEN, 'login');
+  assert.equal(Object.keys(env).some(k => k.startsWith('COCKPIT_')), false);
+});

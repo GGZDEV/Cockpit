@@ -37,7 +37,7 @@ test('board: a configured project shows its link, mode, last deployment and an e
 test('board: with automatic deployment on, the button reads Redéployer and the mode is explained', async t => {
   const s = await setup(t); const p = (await s.create('Beta', {}, { ...s.SETTINGS, auto: true })).body;
   const view = loadUI(s.ui); await view.page(); const html = await open(view, p.id);
-  assert.match(html, /Automatique/); assert.match(html, /Redéployer/); assert.match(html, /dès qu’un nouveau commit arrive sur la branche « main »/); assert.doesNotMatch(html, /data-pj="deploy"[^>]*disabled/);
+  assert.match(html, /Automatique/); assert.match(html, /Redéployer/); assert.doesNotMatch(html, /dès qu’un nouveau commit arrive/); assert.doesNotMatch(html, /data-pj="deploy"[^>]*disabled/);
 });
 
 test('board: Déployer is disabled with a clear message when the URL or the repository is missing, or the service has no token', async t => {
@@ -60,8 +60,9 @@ test('board: all five statuses are shown in French, the short journal is escaped
   for (const [status, label] of Object.entries(labels)) {
     s.service.set('zeta', { status, message: 'Message ' + status, log_tail: 'ligne 1\n<script>alert(1)</script>', step: 'build' });
     await s.ui('projects/' + p.id + '/deploy'); await view.click('reload'); const html = view.ui.html();
-    assert.match(html, new RegExp('pj-ws s-[a-z]+">' + label + '</span>'), status); assert.match(html, new RegExp('Message ' + status)); assert.match(html, /a1b2c3d/);
-    assert.doesNotMatch(html, /<script>alert/); assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/); assert.match(html, /Journal court \(2 lignes\)/);
+    assert.match(html, new RegExp('pj-ws s-[a-z]+">' + label + '</span>'), status); assert.match(html, /a1b2c3d/); assert.doesNotMatch(html, /<script>alert/);
+    if (status === 'succeeded') assert.doesNotMatch(html, /Message succeeded|Journal court/, 'a successful deployment needs no message nor journal');
+    else { assert.match(html, new RegExp('Message ' + status)); assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/); assert.match(html, /Journal court \(2 lignes\)/); }
     if (['pending', 'running'].includes(status)) assert.match(html, /data-pj="deploy"[^>]*disabled/, 'no second launch while one is active');
     else assert.doesNotMatch(html, /data-pj="deploy"[^>]*disabled/);
   }

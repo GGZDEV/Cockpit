@@ -149,12 +149,6 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const t = today(), state = done ? '' : due < t ? 'is-late' : due === t ? 'is-today' : '';
     return `<span class="pj-due ${state}">${icon('calendar')}${due === t ? 'Aujourd’hui' : fmtDay(due)}</span>`;
   }
-  function avatar(task) {
-    const who = assignee(task);
-    if (!who) return `<span class="pj-av is-me" aria-hidden="true">M</span><span class="pj-who">Manuelle</span>`;
-    const name = who.name || who.agentId;
-    return `<span class="pj-av" aria-hidden="true">${esc(name.replace(/[^\p{L}\p{N}]/gu, '').slice(0, 1).toUpperCase() || 'A')}</span><span class="pj-who">${esc(name)}</span>`;
-  }
   function card(task) {
     const p = projectOf(task), done = isClosed(task);
     return `<article class="pj-card ${needsMe(task) && !done ? 'needs-me' : ''} ${done ? 'is-done' : ''} ${deployFailed(task) ? 'is-deploy-failed' : ''}" ${deployFailed(task) ? `title="Déploiement échoué : ${esc(task.deployError.message)}"` : ''} draggable="true" data-pj-task="${esc(task.id)}">
@@ -162,7 +156,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <div class="pj-card-top">${prioBars(task.priority)}<span class="pj-code">${esc(task.code)}</span><span class="pj-grow"></span><span class="pj-proj"><i style="background:${esc(p?.color || '#888')}"></i>${esc(p?.name || '')}</span></div>
       <h3>${esc(task.title)}</h3>
       ${runBadge(task) ? `<div class="pj-tags">${runBadge(task)}</div>` : ''}
-      <div class="pj-card-foot">${avatar(task)}<span class="pj-grow"></span>${dueChip(task.due, done)}</div>
+      <div class="pj-card-foot"><span class="pj-who">${fmtTime(task.updatedAt || task.createdAt)}</span><span class="pj-grow"></span>${dueChip(task.due, done)}</div>
     </article>`;
   }
   function quickAdd(colId) {
@@ -179,8 +173,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const list = st.tasks.filter(matches).sort((a, b) => (b.priority - a.priority) || (a.order - b.order));
     const project = st.project !== 'all' && st.projects.find(p => p.id === st.project);
     const context = project ? `<section class="pj-context" aria-label="Contexte du projet">
-        <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : '<p class="muted">Aucun objectif renseigné : ajoutez le contexte que les agents recevront.</p>'}
-        ${agentLine(project)}
+        <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : ''}
+        ${project.agent || project.agentRequest ? agentLine(project) : ''}
         ${workspaceHTML(project)}${bootstrapHTML(project)}${deployHTML(project)}</div>
         <button class="button" data-pj="edit-project" data-id="${esc(project.id)}">${icon('edit')} Projet et contexte</button></section>` : '';
     return `${context}<div class="pj-board-scroll"><div class="pj-board">${COLUMNS.map(col => {
@@ -399,7 +393,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const link = d.url ? `<a href="${esc(safeUrl(d.url))}" target="_blank" rel="noopener noreferrer">${icon('link')} ${esc(d.url.replace(/^https:\/\//, ''))}</a>` : '<span class="muted">Aucune URL de déploiement</span>';
     const busy = deployActive(p) || bootstrapBusy(p);
     const why = bootstrapBusy(p) ? 'La création du projet est en cours.' : info.missing || (service.configured === false ? service.reason : '') || (busy ? 'Un déploiement est en cours.' : '');
-    const line = last ? `<div class="pj-repo">${deployPill(last)}<span class="pj-help">Dernier déploiement${last.trigger ? ' (' + TRIGGER[last.trigger] + ')' : ''} · ${fmtTime(last.finishedAt || last.startedAt || last.createdAt)}${last.commit ? ' · ' + esc(String(last.commit).slice(0, 7)) : ''}${last.step && busy ? ' · étape : ' + esc(last.step) : ''}</span></div>${last.message ? `<p class="pj-help">${esc(last.message)}</p>` : ''}${last.log?.length ? `<details class="pj-more" data-key="deploy-log-${esc(p.id)}"><summary>Journal court (${last.log.length} ligne${last.log.length > 1 ? 's' : ''})</summary><pre class="pj-deploy-log">${esc(last.log.join('\n'))}</pre></details>` : ''}`
+    const ok = last?.status === 'succeeded';
+    const line = last ? `<div class="pj-repo">${deployPill(last)}<span class="pj-help">Dernier déploiement${last.trigger ? ' (' + TRIGGER[last.trigger] + ')' : ''} · ${fmtTime(last.finishedAt || last.startedAt || last.createdAt)}${last.commit ? ' · ' + esc(String(last.commit).slice(0, 7)) : ''}${last.step && busy ? ' · étape : ' + esc(last.step) : ''}</span></div>${last.message && !ok ? `<p class="pj-help">${esc(last.message)}</p>` : ''}${last.log?.length && !ok ? `<details class="pj-more" data-key="deploy-log-${esc(p.id)}"><summary>Journal court (${last.log.length} ligne${last.log.length > 1 ? 's' : ''})</summary><pre class="pj-deploy-log">${esc(last.log.join('\n'))}</pre></details>` : ''}`
       : s.registered?.status === 'ok' ? '<p class="pj-help">Enregistré auprès du service de déploiement. Jamais déployé.</p>' : '';
     const reg = s.registered, problem = reg?.status === 'failed' ? `<div class="pj-repo"><span class="pj-ws s-failed">Non enregistré auprès du service</span><span class="pj-help is-bad">${esc(reg.error || '')}</span><button class="button" type="button" data-pj="deploy-register" data-id="${esc(p.id)}">${icon('refresh')} Réenregistrer</button></div>`
       : reg?.status === 'pending' && d.url ? `<p class="pj-help">${esc(reg.error || '')}</p>` : '';
@@ -412,7 +407,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       : sub?.status === 'approved' ? `<div class="pj-repo"><span class="pj-ws s-cloning">Mise en ligne publique validée, en cours</span><code>${esc(d.publicDomain)}</code></div>`
       : `<p class="pj-help">Nom public ${esc(d.publicDomain)} : demande de validation pas encore enregistrée.</p>`;
     return `<div class="pj-deploy" data-pj-deploy="${esc(p.id)}"><div class="pj-repo"><b>Déploiement</b><span class="pj-ws ${d.auto ? 's-ready' : ''}">${d.auto ? 'Automatique' : 'Manuel'}</span>${link}</div>
-      ${d.auto ? `<p class="pj-help">Le service déploie tout seul dès qu’un nouveau commit arrive sur la branche « ${esc(d.branch)} » de GitHub (vérification chaque minute).</p>` : ''}${line}${problem}${poll}${pub}
+      ${line}${problem}${poll}${pub}
       <div class="pj-repo"><button class="button ${d.auto ? '' : 'primary'}" type="button" data-pj="deploy" data-id="${esc(p.id)}" ${why ? 'disabled' : ''} title="${esc(why || (d.auto ? 'Redéployer maintenant, sans attendre le service' : 'Déployer maintenant'))}">${G.launch} ${d.auto ? 'Redéployer' : 'Déployer'}</button>
         ${s.registered?.status === 'ok' ? `<button class="button" type="button" data-pj="deploy-refresh" data-id="${esc(p.id)}">${icon('refresh')} Actualiser</button>` : ''}
         ${why ? `<span class="pj-help ${info.missing ? 'is-warn' : ''}">${esc(why)}</span>` : ''}</div></div>`;

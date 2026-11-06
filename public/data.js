@@ -36,7 +36,10 @@ export class Sources extends EventTarget {
       if (!status.feedme) this.errors.feedme = 'Le service PC est indisponible.';
       if (status.feedme) delete this.errors.feedme; this.emit();
       const endpoints = { articles: 'articles', metrics: 'system/metrics', spotify: 'spotify/now-playing', spotifyStatus: 'spotify/status', calendar: 'calendar', todos: 'todos', boards: 'boards' };
-      if (status.feedme) await Promise.all(Object.entries(endpoints).map(async ([key, route]) => {
+      // La veille est servie par Cockpit lui-même ; le reste dépend encore du service PC.
+      const routes = Object.entries(status.feedme ? endpoints : status.rss ? { articles: 'articles', feeds: 'feeds' } : {});
+      if (status.feedme && status.rss) routes.push(['feeds', 'feeds']);
+      await Promise.all(routes.map(async ([key, route]) => {
         try { const value = await this.api(route); if (generation !== this.generation) return; this.data[key] = value; delete this.errors[key]; }
         catch (e) { if (generation === this.generation) this.errors[key] = e.message; }
       }));

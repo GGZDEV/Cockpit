@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { Readable } = require('node:stream');
 const { createProjects } = require('./projects.cjs');
+const { createRss } = require('./rss.cjs');
 const SERVER_MODE = process.env.COCKPIT_SERVER_MODE === '1';
 const ROOT = path.join(__dirname, 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png':'image/png', '.woff2':'font/woff2' };
@@ -49,6 +50,8 @@ async function discoverFeedMe() {
 }
 function json(res, status, value) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
 let sharedProjects;
+let sharedRss;
+const rssService = () => sharedRss ||= createRss({ log: message => console.error(message) });
 const projectsService = () => sharedProjects ||= createProjects({ discover: SERVER_MODE ? async () => null : discoverFeedMe, log: message => console.error(message) });
 const secretFile = name => {
   const file = process.env[name];
@@ -59,7 +62,7 @@ function cryptoSafe(a, b) {
   const crypto = require('node:crypto'), left = Buffer.from(a), right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
-function createServer({ projects, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE') } = {}) {
+function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE') } = {}) {
   if (serverMode && !webPassword) throw new Error('COCKPIT_WEB_PASSWORD_FILE est obligatoire en mode serveur.');
   return http.createServer(async (req, res) => {
     try {
@@ -72,7 +75,7 @@ function createServer({ projects, serverMode = SERVER_MODE, allowedHosts = split
       // The extension may frame public assets; API requests must originate inside our app.
       if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
       if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }
-      if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
+      if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, rss: true, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
       if (url.pathname === '/api/projects' || url.pathname.startsWith('/api/projects/')) {
         const service = projects || projectsService();
         if (!service.allowedRoute(req.method, url.pathname)) return json(res, 405, { error: 'Opération indisponible.' });
@@ -81,6 +84,9 @@ function createServer({ projects, serverMode = SERVER_MODE, allowedHosts = split
       if (url.pathname.startsWith('/api/feedme/')) {
         const targetPath = '/api/' + url.pathname.slice('/api/feedme/'.length);
         if (!allowed(req.method, targetPath)) return json(res, 405, { error: 'Cette opération ne fait pas partie du prototype.' });
+        // La veille est servie par Cockpit lui-même : elle ne dépend plus de l'application PC.
+        const feeds = rss || rssService();
+        if (feeds.handles(req.method, targetPath)) return feeds.handle(req, res, targetPath, json);
         const origin = await discoverFeedMe();
         if (!origin) return json(res, 503, { error: 'Ouvrez Cockpit sur ce PC pour accéder à ses données.' });
         const abort = new AbortController();

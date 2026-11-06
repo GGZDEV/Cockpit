@@ -30,6 +30,7 @@ test('Projects tab: engine labels, task form and project form show the direct en
   let page = ui.html();
   assert.match(page, /Claude Code/, 'the card names the engine instead of « Manuelle »'); assert.doesNotMatch(page, /Manuelle/); assert.match(page, new RegExp(task.code));
   await click('open-project', p.id); page = ui.html();
+  assert.match(page, /pj-card-foot"><span class="pj-who">\d+ \S+ \d+:\d+<\/span>/, 'the board card shows its date, not the engine'); assert.doesNotMatch(page, /pj-av/);
   assert.match(page, /CLAUDE\.md généré par Cockpit · \d+ car\./); assert.match(page, /Régénérer/);
   // Fiche du projet : moteur (Claude Code choisi, recommandé), modèle (valeur par défaut en indication), secours.
   await click('edit-project', p.id);

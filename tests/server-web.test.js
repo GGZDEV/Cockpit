@@ -31,3 +31,21 @@ test('deployer token can be loaded from an external file without entering respon
   assert.equal(client.configured, true); await client.getProject('demo'); assert.equal(authorization, 'Bearer outside-git-token');
   assert.doesNotMatch(JSON.stringify(client.describe()), /outside-git-token/);
 });
+
+test('HTTPS proxy accepts same-origin writes but refuses foreign origins and hosts', async t => {
+  const projects = { allowedRoute: () => true, handle: (req, res, url, json) => json(res, 200, { ok: true }) };
+  const server = createServer({ serverMode: true, allowedHosts: ['cockpit.ggz.ovh'], webPassword: 'secret', projects });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
+  const url = 'http://127.0.0.1:' + server.address().port + '/api/projects/projects';
+  const headers = { Authorization: 'Basic ' + Buffer.from('cockpit:secret').toString('base64'), Host: 'cockpit.ggz.ovh', Origin: 'https://cockpit.ggz.ovh', 'X-Forwarded-Proto': 'https', 'Sec-Fetch-Site': 'same-origin' };
+  const request = overrides => new Promise((resolve, reject) => {
+    const req = require('node:http').request(url, { method: 'POST', headers: { ...headers, ...overrides } }, res => { res.resume(); res.on('end', () => resolve({ status: res.statusCode })); });
+    req.on('error', reject); req.end('{}');
+  });
+  assert.equal((await request({})).status, 200);
+  assert.equal((await request({ Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await request({ Host: 'evil.example', Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await request({ 'Sec-Fetch-Site': 'cross-site' })).status, 403);
+  assert.equal((await request({ 'X-Forwarded-Proto': 'http' })).status, 403);
+});

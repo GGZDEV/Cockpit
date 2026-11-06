@@ -24,8 +24,11 @@ function trusted(req, publicFile = false, { serverMode = SERVER_MODE, allowedHos
     const host = new URL('http://' + req.headers.host);
     const hostname = host.hostname.replace(/^\[|\]$/g, '').toLowerCase();
     const hostAllowed = ['localhost', '127.0.0.1', '::1'].includes(hostname) || (serverMode && (allowedHosts.includes('*') || allowedHosts.includes(hostname)));
+    // TLS terminates at the reverse proxy; retain the exact Host/Origin match.
+    const protocol = serverMode && req.headers['x-forwarded-proto'] === 'https' ? 'https:' : 'http:';
+    const expectedOrigin = new URL(protocol + '//' + req.headers.host).origin;
     return hostAllowed &&
-      (publicFile || (!req.headers.origin || req.headers.origin === host.origin) && req.headers['sec-fetch-site'] !== 'cross-site');
+      (publicFile || (!req.headers.origin || req.headers.origin === expectedOrigin) && req.headers['sec-fetch-site'] !== 'cross-site');
   } catch { return false; }
 }
 let cachedOrigin = null, discoveredAt = 0, discovery;

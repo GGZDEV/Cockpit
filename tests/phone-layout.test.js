@@ -11,7 +11,7 @@ test('the settings offer a Téléphone layout next to Bureau, Tablette and Compa
   assert.match(app, /const profiles = \{ desktop: \['Bureau', 'monitor'\], tablet: \['Tablette', 'tablet'\], phone: \['Téléphone', 'phone'\], compact: \['Compact', 'panel'\] \};/);
   assert.match(app, /<select data-layout-profile[^`]*Object\.entries\(profiles\)/, 'le menu Disposition liste tous les profils');
   assert.match(app, /defaultProfile\(\{ phone: isPhoneScreen\(\)/, 'un téléphone ouvre la disposition Téléphone par défaut');
-  assert.ok(app.indexOf('<h3>Affichage sur cet appareil</h3>') > app.indexOf('<h3>Onglets visibles par écran</h3>'), 'la Disposition est insérée en dernier, donc affichée en tête des réglages');
+  assert.match(app, /settings-grid"><div class="settings-col">\$\{device\}/, 'la carte « Sur cet appareil » et sa Disposition ouvrent les réglages');
   assert.match(read('core.js'), /\n  phone: '<rect/);
 });
 

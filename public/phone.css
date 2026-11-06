@@ -45,9 +45,14 @@ body[data-profile="phone"] .native-home-panel .edit-hint{margin:0 0 12px;font-si
 body[data-profile="phone"] .room-tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px 12px;padding:0 14px;scrollbar-width:none}
 body[data-profile="phone"] .room-tabs::-webkit-scrollbar{display:none}
 
-/* Modules : une seule colonne ; la hauteur choisie est gardée, la liste des pièces s'allonge pour toutes les montrer. */
+/* Modules : une seule colonne ; la hauteur choisie est un minimum : un module s'allonge plutôt que de couper son contenu
+   (champ d'ajout, bouton Connexions). Les conversations, qui défilent à l'intérieur, la gardent tant qu'elles ont du contenu ;
+   le flux garde sa recherche et ses filtres, et sa liste d'articles défile sur la hauteur choisie.
+   La liste des pièces s'allonge pour toutes les montrer. */
 body[data-profile="phone"] .mods{display:flex;flex-direction:column;gap:12px;height:auto;overflow:visible;padding:0}
-body[data-profile="phone"] .mods>.mod{flex:none;width:auto;min-width:0;box-sizing:border-box;min-height:calc(var(--h,2)*88px);height:calc(var(--h,2)*88px);padding:16px!important;border-radius:22px}
+body[data-profile="phone"] .mods>.mod{flex:none;width:auto;min-width:0;box-sizing:border-box;min-height:calc(var(--h,2)*88px);height:auto;padding:16px!important;border-radius:22px}
+body[data-profile="phone"] .mods>.mod.type-agents:not(:has(.mod-empty)){height:calc(var(--h,2)*88px)}
+body[data-profile="phone"] .mods>.mod.type-rss .articles-grid{flex:none;max-height:calc(var(--h,2)*88px)}
 body[data-profile="phone"] .mods>.mod.type-rooms{height:auto}
 body[data-profile="phone"] .mods>.type-rooms .rooms-list{flex:none;overflow:visible}
 body[data-profile="phone"] .mods>.mod.add-tile{min-height:120px;height:auto}

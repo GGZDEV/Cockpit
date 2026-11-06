@@ -1000,7 +1000,7 @@ window.HD = window.HD || {};
     return `<span class="pbar"><span class="pbar-top"><span>${esc(label)}</span><b>${v == null ? '–' : Math.round(v) + ' %'}</b></span>
       <span class="pbar-track"><i style="width: ${v || 0}%; background: ${loadColor(v)}"></i></span>${sub ? `<span class="muted small">${esc(sub)}</span>` : ''}</span>`;
   }
-  const pveEmpty = (title) => head(title) + '<div class="mod-empty"><p class="muted small">Aucun serveur Proxmox trouvé. Installez l\'intégration « Proxmox VE » (HACS) dans Home Assistant et ajoutez votre serveur : ses nœuds, VM et conteneurs apparaîtront ici en direct.</p></div>';
+  const pveEmpty = (title) => head(title) + '<div class="mod-empty"><p class="muted small">Aucun serveur Proxmox trouvé. Installez l\'intégration « Proxmox VE » (HACS) dans Home Assistant et ajoutez votre serveur : ses nœuds, VM et conteneurs apparaîtront ici en direct.</p></div>';
 
   function pveNode(m, list, c) {
     const pve = c.proxmox();

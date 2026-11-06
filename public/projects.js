@@ -70,7 +70,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
     view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
     deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null,
-    chat: null, drafts: {}, newFiles: [], allDone: false };
+    chat: null, drafts: {}, newFiles: [], chatFiles: {}, allDone: false };
   let pollTimer;
   const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
 
@@ -468,7 +468,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return list.length ? `<ul class="pj-atts">${list.map(a => `<li><button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}${a.by ? ' · ' + esc(a.by) : ''}</small></button>
       <button type="button" class="icon-button" data-pj="delete-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" aria-label="Retirer ${esc(a.name)}">${G.trash}</button></li>`).join('')}</ul>` : '';
   }
-  const filesOf = form => form.dataset.pjForm === 'new-chat' ? st.newFiles : (pending.get(form) || []);
+  // Zone de réponse d'une tâche : fichiers gardés par tâche, car la zone est redessinée à chaque rafraîchissement.
+  const filesOf = form => form.dataset.pjForm === 'new-chat' ? st.newFiles : form.dataset.pjForm === 'chat' ? (st.chatFiles[form.dataset.id] ||= []) : (pending.get(form) || []);
   function pendingHTML(list) {
     return list.map((f, i) => `<li><span class="pj-att is-new">${G.clip}<span>${esc(f.name)}</span><small>${fmtSize(f.size)} · à envoyer</small></span><button type="button" class="icon-button" data-pj="drop-file" data-id="${i}" aria-label="Ne pas joindre ${esc(f.name)}">${G.trash}</button></li>`).join('');
   }
@@ -481,7 +482,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       list.push(file);
     }
     if (form.dataset.pjForm === 'new-chat') return render();
-    pending.set(form, list);
+    if (form.dataset.pjForm !== 'chat') pending.set(form, list);
     const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(list);
   }
   async function uploadPending(form, taskId) {
@@ -585,10 +586,11 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const time = item.at ? `<time>${fmtTime(item.at)}</time>` : '';
     if (item.role === 'system') return `<p class="pj-sys"><span>${esc(item.text)}</span>${time}</p>`;
     if (item.role === 'user') {
-      const label = { brief: 'Consignes', answer: 'Vous · réponse à sa question', retry: 'Vous · précisions pour la relance', execute: 'Vous · exécution du plan' }[item.type] || 'Vous';
+      const label = item.waiting ? 'Vous · fichiers joints, transmis avec le prochain message'
+        : { brief: 'Consignes', answer: 'Vous · réponse à sa question', retry: 'Vous · précisions pour la relance', execute: 'Vous · exécution du plan', files: 'Vous · fichiers joints' }[item.type] || 'Vous';
       const files = item.attachments?.length ? `<div class="pj-msg-files">${item.attachments.map(a => `<button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}</small></button>`).join('')}</div>` : '';
       return `<div class="pj-msg is-user"><div class="pj-msg-meta"><span>${label}</span>${time}</div>
-        <div class="pj-bubble">${item.text ? richText(item.text) : '<p class="pj-help">Pas encore de consignes : écrivez-les ci-dessous.</p>'}${files}</div></div>`;
+        <div class="pj-bubble">${item.text ? richText(item.text) : item.type === 'brief' ? '<p class="pj-help">Pas encore de consignes : écrivez-les ci-dessous.</p>' : ''}${files}</div></div>`;
     }
     const run = item.run, name = run.agent?.name || assignee(task)?.name || 'Agent';
     const head = extra => `<div class="pj-msg-meta"><span class="pj-av" aria-hidden="true">${initial(name)}</span><b>${esc(name)}</b>${extra}</div>`;
@@ -632,6 +634,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <p class="pj-help">${direct ? `${agent} reçoit les consignes de la tâche${task.planFirst ? ' et commence par un plan en lecture seule' : ''} ; les consignes du projet sont dans le CLAUDE.md du dossier.` : `${agent} recevra les consignes, les critères et ${task.includeContext === false ? 'aucun contexte de projet' : 'le contexte du projet'}.`} Rien ne démarre sans ce clic.</p>
       <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
     return `<form class="pj-chatbox" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="${esc(m.kind || '')}" ${m.setsInstructions ? 'data-sets="1"' : ''}>
+      <ul class="pj-atts pj-pending">${pendingHTML(st.chatFiles[task.id] || [])}</ul>
+      <label class="icon-button pj-attach" title="Joindre des fichiers au message (captures, PDF, zip, textes · 10 Mo max)">${G.clip}<span class="sr-only">Joindre des fichiers</span><input type="file" name="files" multiple accept="${ACCEPT}" class="sr-only"></label>
       <label class="sr-only" for="pj-chat-input">Message à ${agent}</label>
       <textarea id="pj-chat-input" name="note" rows="${inline ? 1 : 2}" maxlength="8000" data-keep="chat" ${inline ? `data-pj-draft="${esc(task.id)}"` : ''} placeholder="${busy ? `${agent} travaille : vous pourrez envoyer dès sa réponse…` : esc(m.placeholder)}" ${m.needsText ? 'required' : ''}>${inline ? esc(st.drafts[task.id] || '') : ''}</textarea>
       <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${inline ? G.up : G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button>
@@ -807,12 +811,12 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
   });
   // Coller une capture d'écran dans une tâche l'ajoute aux pièces jointes.
   document.addEventListener('paste', event => {
-    const form = event.target.closest?.('[data-pj-form=task],[data-pj-form=edit-task],[data-pj-form=new-chat]'); if (!form) return;
+    const form = event.target.closest?.('[data-pj-form=task],[data-pj-form=edit-task],[data-pj-form=new-chat],[data-pj-form=chat]'); if (!form) return;
     const images = [...(event.clipboardData?.files || [])].filter(f => f.type.startsWith('image/')); if (!images.length) return;
     event.preventDefault();
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
     addFiles(form, images.map((f, i) => new File([f], `capture-${stamp}${images.length > 1 ? '-' + (i + 1) : ''}.${(f.type.split('/')[1] || 'png').replace('jpeg', 'jpg')}`, { type: f.type })));
-    toast('Capture ajoutée : elle sera envoyée à l’enregistrement.');
+    toast(form.dataset.pjForm === 'chat' ? 'Capture ajoutée : elle partira avec votre message.' : 'Capture ajoutée : elle sera envoyée à l’enregistrement.');
   });
   document.addEventListener('submit', async event => {
     const form = event.target.closest('[data-pj-form]'); if (!form) return;
@@ -864,6 +868,11 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
           if (!note) throw new Error('Écrivez d’abord ce que l’agent doit faire.');
           const saved = await api('tasks/' + taskId, 'PATCH', { instructions: note }); upsert(saved);
           const field = modal.querySelector('[data-pj-form=edit-task] [name=instructions]'); if (field && !field.value.trim()) field.value = saved.instructions;
+        }
+        // Fichiers joints au message : envoyés avant le lancement, pour que l'agent les reçoive avec lui. En cas d'échec, rien n'est lancé.
+        if (filesOf(form).length && !(event.submitter?.name === 'alt' && !note)) {
+          const withFiles = await uploadPending(form, taskId); if (withFiles) { upsert(withFiles); refreshAttachments(withFiles); }
+          delete st.chatFiles[taskId];
         }
         // Le message quitte la zone de saisie dès l'envoi ; il y revient si l'envoi échoue.
         const box = () => (modal.open && modal.querySelector('[data-pj-form=chat] [name=note]')) || document.querySelector?.('.pj-chat-composer [name=note]');

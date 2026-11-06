@@ -37,6 +37,18 @@ test('the task thread reads like a conversation: brief, agent replies and your m
   assert.equal(chatItems(task)[0].attachments[0].name, 'capture.png', 'attachments stay visible with the brief');
 });
 
+test('files added during the conversation appear with the message that sent them', () => {
+  const att = (id, at) => ({ id, name: id + '.png', size: 10, at });
+  const task = { id: 't', status: 'review', agent, instructions: 'X', createdAt: '2026-10-30T09:00:00Z',
+    attachments: [att('a', '2026-10-30T09:30:00Z'), att('b', '2026-10-30T10:30:00Z'), att('c', '2026-10-30T11:30:00Z'), att('d', '2026-10-30T12:30:00Z')], runs: [
+      run('initial', { createdAt: '2026-10-30T10:00:00Z' }),
+      run('reprise', { note: 'Voici la capture', createdAt: '2026-10-30T11:00:00Z' }),
+      run('retry', { createdAt: '2026-10-30T12:00:00Z' }),
+    ] };
+  const items = chatItems(task).filter(i => i.attachments?.length).map(i => [i.type, i.attachments.map(a => a.id).join(), !!i.waiting]);
+  assert.deepEqual(JSON.parse(JSON.stringify(items)), [['brief', 'a', false], ['reprise', 'b', false], ['files', 'c', false], ['files', 'd', true]]);
+});
+
 test('a running execution shows a live agent message, and a closed task ends the thread', () => {
   const live = chatItems({ status: 'doing', agent, instructions: 'X', runs: [run('initial', { status: 'started', outcome: undefined, liveText: 'Je regarde…' })] }).at(-1);
   assert.equal(live.type, 'live'); assert.equal(live.text, 'Je regarde…');

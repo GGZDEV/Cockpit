@@ -6,21 +6,32 @@ const OPEN = ['pending', 'started'];
 
 // Messages du fil, du plus ancien au plus récent.
 // role : 'user' (vous), 'agent' (réponse ou exécution) ou 'system' (repère discret).
+// Chaque pièce jointe apparaît avec le message qui l'a transmise : les consignes pour celles d'avant le premier lancement,
+// sinon le message suivant son ajout ; celles ajoutées depuis le dernier message partiront avec le prochain.
 export function chatItems(task) {
-  const items = [{ role: 'user', type: 'brief', at: task.createdAt, text: task.instructions || '', attachments: task.attachments || [] }];
+  const runs = task.runs || [], atts = task.attachments || [];
+  const between = (from, to) => atts.filter(a => (!from || (a.at || '') >= from) && (!to || (a.at || '') < to));
+  const items = [{ role: 'user', type: 'brief', at: task.createdAt, text: task.instructions || '', attachments: between(null, runs[0]?.createdAt) }];
   const agentName = run => run.agent?.name || task.agent?.name || 'l’agent';
-  for (const run of task.runs || []) {
+  runs.forEach((run, i) => {
+    const files = i ? between(runs[i - 1].createdAt, run.createdAt) : [], start = items.length;
     if (run.kind === 'execute') items.push({ role: 'user', type: 'execute', at: run.createdAt, text: run.note || 'Plan accepté : exécute-le.', run });
     else if (['reprise', 'answer'].includes(run.kind) && run.note) items.push({ role: 'user', type: run.kind, at: run.createdAt, text: run.note, run });
     else if (run.kind === 'retry') items.push(run.note ? { role: 'user', type: 'retry', at: run.createdAt, text: run.note, run } : { role: 'system', type: 'retry', at: run.createdAt, text: 'Relance envoyée à ' + agentName(run) });
     else items.push({ role: 'system', type: 'launch', at: run.createdAt, text: 'Confiée à ' + agentName(run) });
+    if (files.length) {
+      if (items[start].role === 'user') items[start].attachments = files;
+      else items.splice(start, 0, { role: 'user', type: 'files', at: files[0].at, text: '', attachments: files });
+    }
     if (OPEN.includes(run.status)) items.push({ role: 'agent', type: 'live', at: run.startedAt || run.createdAt, text: run.liveText || '', run });
     else if (run.status === 'succeeded' && run.outcome === 'plan') items.push({ role: 'agent', type: 'plan', at: run.endedAt, text: run.result || '', run });
     else if (run.status === 'succeeded' && run.outcome === 'question') items.push({ role: 'agent', type: 'question', at: run.endedAt, text: run.result || '', run });
     else if (run.status === 'succeeded') items.push({ role: 'agent', type: 'result', at: run.endedAt, text: run.result || '', run });
     else items.push({ role: 'agent', type: 'error', at: run.endedAt, text: run.error || '', run });
     if (run.accepted) items.push({ role: 'system', type: 'accepted', at: run.accepted, text: 'Résultat accepté · tâche close' });
-  }
+  });
+  const waiting = runs.length ? between(runs.at(-1).createdAt, null) : [];
+  if (waiting.length) items.push({ role: 'user', type: 'files', waiting: true, at: waiting[0].at, text: '', attachments: waiting });
   if (task.status === 'done' && !task.runs?.at(-1)?.accepted) items.push({ role: 'system', type: 'closed', at: task.acceptedAt || task.movedAt || task.updatedAt, text: 'Tâche close' });
   return items;
 }

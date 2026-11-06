@@ -114,11 +114,17 @@ test('tasks take attachments: checked, downloadable, listed in the brief, remove
   assert.ok(att.localPath.startsWith(path.join(dir, 'attachments')), 'stored under data/attachments, never at the given path');
   assert.equal((await call('tasks/DO-1/attachments', 'POST', { name: 'virus.png', data: Buffer.from('MZ fake').toString('base64') })).status, 415);
   assert.equal((await call('tasks/DO-1/attachments', 'POST', { name: 'outil.exe', data: PNG.toString('base64') })).status, 415);
-  assert.equal((await call('tasks/DO-1/attachments', 'POST', { name: 'page.html', data: Buffer.from('<script>').toString('base64') })).status, 415);
 
   const file = await call(att.download);
   assert.equal(file.status, 200); assert.deepEqual(file.body, PNG);
   assert.equal(file.headers.get('x-content-type-options'), 'nosniff'); assert.match(file.headers.get('content-security-policy'), /sandbox/);
+
+  // Une page HTML est acceptée mais toujours téléchargée, dans un bac à sable : aucun script ne s'exécute.
+  const html = await ui('tasks/' + task.id + '/attachments?name=' + encodeURIComponent('page.html'), 'POST', null, Buffer.from('<script>alert(1)</script>'));
+  assert.equal(html.status, 200); assert.equal(html.body.attachment.type, 'text/html; charset=utf-8');
+  const page = await call('tasks/DO-1/attachments/' + html.body.attachment.id);
+  assert.equal(page.status, 200); assert.match(page.headers.get('content-disposition'), /^attachment;/); assert.match(page.headers.get('content-security-policy'), /sandbox/);
+  await ui('tasks/' + task.id + '/attachments/' + html.body.attachment.id, 'DELETE');
 
   // Depuis l'interface : envoi brut, puis suppression.
   const pdf = await ui('tasks/' + task.id + '/attachments?name=' + encodeURIComponent('cahier.pdf'), 'POST', null, Buffer.from('%PDF-1.4 test'));

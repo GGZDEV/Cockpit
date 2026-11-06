@@ -1,12 +1,13 @@
 'use strict';
-// Pièces jointes des tâches : captures, PDF, zip, textes. Stockées dans data/attachments/<tâche>/ (hors dépôt).
+// Pièces jointes des tâches : captures, PDF, zip, textes, pages HTML (toujours téléchargées, jamais affichées). Stockées dans data/attachments/<tâche>/ (hors dépôt).
 // Le nom de fichier sur disque est un identifiant : le nom d'origine n'est jamais utilisé comme chemin.
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
 const TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', pdf: 'application/pdf', zip: 'application/zip',
-  txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', csv: 'text/csv; charset=utf-8', json: 'application/json', log: 'text/plain; charset=utf-8' };
+  txt: 'text/plain; charset=utf-8', md: 'text/markdown; charset=utf-8', csv: 'text/csv; charset=utf-8', json: 'application/json', log: 'text/plain; charset=utf-8',
+  html: 'text/html; charset=utf-8', htm: 'text/html; charset=utf-8' };
 // Signature des formats binaires : un fichier renommé (ex. .exe en .png) est refusé.
 const MAGIC = { png: [[0x89, 0x50, 0x4e, 0x47]], jpg: [[0xff, 0xd8, 0xff]], jpeg: [[0xff, 0xd8, 0xff]], gif: [[0x47, 0x49, 0x46, 0x38]], webp: [[0x52, 0x49, 0x46, 0x46]],
   pdf: [[0x25, 0x50, 0x44, 0x46]], zip: [[0x50, 0x4b, 0x03, 0x04], [0x50, 0x4b, 0x05, 0x06]] };

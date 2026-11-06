@@ -68,7 +68,7 @@ Chaque projet peut avoir un **déploiement** : URL https, mode automatique ou ma
 Tu ne peux **pas** : régler l'URL, activer le déploiement automatique, déployer, ni valider un nom public (\`deploy\`, \`deployment\`, \`newRepository\` sont ignorés ou refusés en 403). L'utilisateur le fait dans l'onglet Projets (« Déployer », « Valider la mise en ligne publique de x.ggz.ovh »). Pour un projet à mettre en ligne, dis-lui de renseigner l'URL et le type de déploiement dans « Modifier le projet » ; si \`deploy.registered\` n'est pas \`ok\`, c'est qu'il manque un réglage ou que le service est injoignable. Un push sur la branche de production ne déploie que si le mode automatique est actif.
 
 ## Pièces jointes
-Captures (png, jpg, gif, webp), PDF, zip, textes (txt, md, csv, json, log) ; 10 Mo par fichier, 20 par tâche. Le contenu est vérifié : un fichier renommé est refusé.
+Captures (png, jpg, gif, webp), PDF, zip, textes (txt, md, csv, json, log, html) ; 10 Mo par fichier, 20 par tâche. Le contenu est vérifié : un fichier renommé est refusé.
 Joindre un fichier (contenu en base64 dans un fichier JSON) :
 \`\`\`
 { printf '{"name":"capture.png","data":"'; base64 -w0 capture.png; printf '"}'; } > /tmp/pj.json

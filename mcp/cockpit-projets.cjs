@@ -70,7 +70,7 @@ const TOOLS = [
     inputSchema: { type: 'object', properties: { tache: { type: 'string', description: 'Code ou identifiant.' }, ...TASK_FIELDS }, required: ['tache'] },
     call: ({ tache, ...a }) => send('PATCH', 'tasks/' + encodeURIComponent(tache), a) },
   { name: 'projets_joindre_fichier', title: 'Joindre un fichier à une tâche', annotations: WRITE,
-    description: 'Joint un fichier de ce PC à une tâche : capture (png, jpg, gif, webp), PDF, zip ou texte (txt, md, csv, json, log), 10 Mo au maximum. Jamais de fichier contenant un secret.',
+    description: 'Joint un fichier de ce PC à une tâche : capture (png, jpg, gif, webp), PDF, zip ou texte (txt, md, csv, json, log, html), 10 Mo au maximum. Jamais de fichier contenant un secret.',
     inputSchema: { type: 'object', properties: { tache: { type: 'string', description: 'Code ou identifiant.' }, chemin: { type: 'string', description: 'Chemin du fichier sur ce PC.' }, nom: { type: 'string', description: 'Nom affiché (par défaut, celui du fichier).' } }, required: ['tache', 'chemin'] },
     call: ({ tache, chemin, nom }) => {
       const file = path.resolve(chemin), size = fs.statSync(file).size;

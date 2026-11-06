@@ -792,8 +792,9 @@ span.h2 { font-size: 15px; font-weight: 600; }
 .wh-list { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
 .wh-list > span { display: flex; align-items: center; justify-content: space-between; min-height: 28px; }
 .wh-list b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.wh-days { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: flex-start; font-size: 14px; }
-.wh-day { flex: 1 1 0; display: grid; grid-template-columns: 52px 30px minmax(0, 1fr) 30px; align-items: center; column-gap: 12px; min-height: 26px; max-height: 40px; }
+/* As many days as the card has room for: rows that don't fit wrap into a second column, clipped out of view. */
+.wh-days { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: flex-start; justify-content: flex-start; overflow: hidden; font-size: 14px; }
+.wh-day { flex: 1 0 auto; width: 100%; display: grid; grid-template-columns: 52px 30px minmax(0, 1fr) 30px; align-items: center; column-gap: 12px; min-height: 26px; max-height: 40px; }
 .wh-days.is-narrow .wh-day { grid-template-columns: 40px 26px minmax(0, 1fr) 26px; column-gap: 8px; }
 .wh-day > span:first-child { font-weight: 500; }
 .wh-day .wh-num { text-align: right; }
@@ -813,6 +814,8 @@ span.h2 { font-size: 15px; font-weight: 600; }
 /* Short cards (small tablets): tighter spacing so the forecast still fits. */
 /* (Not on phones: there cards take their natural height, which size containment would hide.) */
 @media (min-width: 861px) and (min-height: 621px) { .hero-weather { container-type: size; } }
+/* Natural-height cards would grow with every day: keep the per-size count there. */
+@media (max-width: 860px), (max-height: 620px) { .wh-day.is-extra { display: none; } }
 @container (max-height: 380px) {
   .wh-center { flex-direction: row; flex-wrap: nowrap; justify-content: center; column-gap: 10px; }
   .wh-center .wh-now svg { width: 34px; height: 34px; }

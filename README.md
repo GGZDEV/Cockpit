@@ -50,7 +50,7 @@ Le chat utilise les **conversations existantes**. Un envoi réel transmet le mes
 
 ### Home Assistant sur le PC
 
-Dans **Connexions & réglages**, renseigner l’adresse HA et un jeton longue durée. L’adresse suggérée provient du script de déploiement du projet Cockpit. Le jeton saisi est conservé **uniquement en mémoire**, jusqu’au rechargement de la page. La connexion se fait directement du navigateur à HA, via le client WebSocket repris du projet initial.
+Dans **Connexions & réglages**, renseigner l’adresse HA et un jeton longue durée. L’adresse suggérée provient du script de déploiement du projet Cockpit. Avec **Se souvenir du jeton sur cet appareil** (coché par défaut), le jeton est gardé dans le navigateur (`mb.ha.token`) et la maison se reconnecte seule au démarrage, y compris après un déploiement ; il n’est jamais envoyé au serveur Cockpit. Décoché, il reste en mémoire jusqu’au rechargement. **Déconnecter** l’efface. La connexion se fait directement du navigateur à HA, via le client WebSocket repris du projet initial.
 
 Les commandes réelles d’éclairage, thermostat, scènes, prises, ventilateurs, automatisations et scripts partent seulement lorsque l’utilisateur appuie sur le contrôle correspondant, en données réelles. Les droits restent ceux du compte HA utilisé. Les registres des pièces peuvent nécessiter un compte administrateur.
 
@@ -82,7 +82,7 @@ L’application de l’écran d’accueil a son propre stockage, séparé de Saf
 
 Fichiers concernés : `public/manifest.json`, les balises iOS de `public/index.html`, `public/pwa.css` (zones sûres, uniquement en mode écran d’accueil) et les icônes opaques `public/brand/apple-touch-icon.png`, `icon-192.png`, `icon-512.png`. Après un changement de `public/brand/icon.png`, régénérer les icônes avec `node scripts/pwa-icons.js`. Pas de fonctionnement hors ligne : iOS n’autorise pas de service worker sur l’adresse HTTP de Home Assistant.
 
-Dans les réglages, **Utiliser ma session Home Assistant** réutilise la session du parent HA, une session propre au prototype ou celle du navigateur, suivant le mécanisme déjà utilisé dans Cockpit. Une connexion OAuth propre au prototype peut être conservée dans ce navigateur ; ses clés sont distinctes (`mb.oauth`) de celles de Cockpit. Le jeton longue durée saisi manuellement, lui, n’est pas enregistré.
+Dans les réglages, **Utiliser ma session Home Assistant** réutilise la session du parent HA, une session propre au prototype ou celle du navigateur, suivant le mécanisme déjà utilisé dans Cockpit. Une connexion OAuth propre au prototype peut être conservée dans ce navigateur ; ses clés sont distinctes (`mb.oauth`) de celles de Cockpit. Le jeton longue durée saisi manuellement n’est mémorisé que si la case « Se souvenir du jeton » est cochée.
 
 **Limite de cette étape :** la version servie par HA donne accès à la maison et aux modules locaux sans dépendre du PC. Les données RSS/agents/Spotify/métriques Cockpit restent disponibles sur le PC via le service local. Une passerelle authentifiée entre appareils n’est pas encore développée. Le serveur PC écoute volontairement sur la boucle locale : ce n’est pas une version de production accessible sur tout le réseau.
 

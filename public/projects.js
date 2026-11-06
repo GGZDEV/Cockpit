@@ -6,7 +6,6 @@ import { chatItems, composerMode, canClose, richText } from './task-chat.js';
 const COLUMNS = [
   { id: 'todo', label: 'À faire', color: '#f5c542', ring: 'solid' },
   { id: 'doing', label: 'En cours', color: '#ff9f43', ring: 'half' },
-  { id: 'blocked', label: 'Bloqué', color: '#ff6b6b', ring: 'solid' },
   { id: 'review', label: 'À valider', color: 'var(--accent)', ring: 'solid' },
   { id: 'done', label: 'Terminé', color: '#4c9dff', ring: 'fill' },
   { id: 'deployed', label: 'Déployé', color: '#34c77b', ring: 'fill' },
@@ -73,6 +72,8 @@ const isClosed = t => t.status === 'done' || t.status === 'deployed';
 const SIDE_W = 272, SIDE_MIN = 200, SIDE_MAX = 560;
 const sideWidth = w => Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(w) || SIDE_W)));
 const deployFailed = t => t.status === 'done' && !!t.deployError;
+// Pas de colonne « Bloqué » : une tâche bloquée reste dans « En cours », bordée de rouge.
+const colOf = t => t.status === 'blocked' ? 'doing' : t.status;
 
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
@@ -151,7 +152,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   }
   function card(task) {
     const p = projectOf(task), done = isClosed(task);
-    return `<article class="pj-card ${needsMe(task) && !done ? 'needs-me' : ''} ${done ? 'is-done' : ''} ${deployFailed(task) ? 'is-deploy-failed' : ''}" ${deployFailed(task) ? `title="Déploiement échoué : ${esc(task.deployError.message)}"` : ''} draggable="true" data-pj-task="${esc(task.id)}">
+    return `<article class="pj-card ${needsMe(task) && !done ? 'needs-me' : ''} ${done ? 'is-done' : ''} ${deployFailed(task) ? 'is-deploy-failed' : ''} ${task.status === 'blocked' ? 'is-blocked' : ''}" ${task.status === 'blocked' ? 'title="Bloqué"' : ''} ${deployFailed(task) ? `title="Déploiement échoué : ${esc(task.deployError.message)}"` : ''} draggable="true" data-pj-task="${esc(task.id)}">
       <button class="pj-card-open" data-pj="open-task" data-id="${esc(task.id)}" aria-label="Ouvrir ${esc(task.code)} ${esc(task.title)}"></button>
       <div class="pj-card-top">${prioBars(task.priority)}<span class="pj-code">${esc(task.code)}</span><span class="pj-grow"></span><span class="pj-proj"><i style="background:${esc(p?.color || '#888')}"></i>${esc(p?.name || '')}</span></div>
       <h3>${esc(task.title)}</h3>
@@ -178,12 +179,12 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         ${workspaceHTML(project)}${bootstrapHTML(project)}${deployHTML(project)}</div>
         <button class="button" data-pj="edit-project" data-id="${esc(project.id)}">${icon('edit')} Projet et contexte</button></section>` : '';
     return `${context}<div class="pj-board-scroll"><div class="pj-board">${COLUMNS.map(col => {
-      const tasks = list.filter(t => t.status === col.id);
+      const tasks = list.filter(t => colOf(t) === col.id);
       return `<section class="pj-col" data-pj-col="${col.id}" aria-label="${col.label}" style="--col:${col.color}">
         <header class="pj-col-head"><span class="pj-ring r-${col.ring}"></span><h2>${col.label}</h2><span class="pj-count">${tasks.length}</span><span class="pj-grow"></span>
           <button class="icon-button" data-pj="quick-add" data-id="${col.id}" aria-label="Ajouter une tâche dans ${col.label}" ${visibleProjects().length ? '' : 'disabled'}>${icon('plus')}</button></header>
         ${st.quickAdd === col.id ? quickAdd(col.id) : ''}
-        ${tasks.map(card).join('') || `<div class="pj-empty-col">${col.id === 'blocked' ? 'Rien ne bloque' : col.id === 'review' ? 'Aucun résultat à valider' : 'Aucune tâche'}</div>`}
+        ${tasks.map(card).join('') || `<div class="pj-empty-col">${col.id === 'review' ? 'Aucun résultat à valider' : 'Aucune tâche'}</div>`}
       </section>`;
     }).join('')}</div></div>`;
   }
@@ -236,7 +237,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function chatSide() {
     const list = st.tasks.filter(matches).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
     const visible = visibleProjects(), current = visible.find(p => p.id === st.project);
-    const item = t => `<button type="button" class="pj-side-item ${st.chat === t.id ? 'is-active' : ''} ${deployFailed(t) ? 'is-deploy-failed' : ''}" ${deployFailed(t) ? `title="Déploiement échoué : ${esc(t.deployError.message)}"` : ''} data-pj="open-task" data-id="${esc(t.id)}" ${st.chat === t.id ? 'aria-current="page"' : ''}>
+    const item = t => `<button type="button" class="pj-side-item ${st.chat === t.id ? 'is-active' : ''} ${deployFailed(t) ? 'is-deploy-failed' : ''} ${t.status === 'blocked' ? 'is-blocked' : ''}" ${deployFailed(t) ? `title="Déploiement échoué : ${esc(t.deployError.message)}"` : ''} data-pj="open-task" data-id="${esc(t.id)}" ${st.chat === t.id ? 'aria-current="page"' : ''}>
       <span class="pj-dot d-${dotKind(t)}" aria-hidden="true"></span><span class="pj-side-text"><span class="pj-side-title">${esc(t.title)}</span><span class="pj-side-meta">${esc(t.code)} · ${esc(taskMeta(t))}</span></span></button>`;
     const groups = CHAT_GROUPS.map(g => {
       const items = list.filter(g.has), shown = ['done', 'deployed'].includes(g.id) && !st.allDone ? items.slice(0, 5) : items;
@@ -330,7 +331,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   async function taskDetails(taskId) {
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
     await loadAgents();
-    showModal(task.code + ' · ' + task.title, 'Consignes, pièces jointes, moteur et priorité. Enregistrer ne lance rien.', `<div class="pj-panel-bar"><label>Statut<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${task.status === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
+    showModal(task.code + ' · ' + task.title, 'Consignes, pièces jointes, moteur et priorité. Enregistrer ne lance rien.', `<div class="pj-panel-bar"><label>Statut<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${colOf(task) === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
         <span class="pj-help">Changer le statut ne lance ni n’arrête aucun agent.</span></div>
       <form class="pj-form" data-pj-form="edit-task" data-id="${esc(task.id)}">${taskFields(task)}<p class="form-status pj-help" role="status"></p>
         <div class="pj-form-actions"><button class="button primary" type="submit">Enregistrer</button><button class="button pj-danger" type="button" data-pj="delete-task" data-id="${esc(task.id)}">Supprimer</button></div></form>`, 'pj-task-edit', true);
@@ -655,8 +656,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
     st.panel = taskId; loadAgents().then(() => { const sel = modal.querySelector('[data-pj-panel] select[name=agent]'); if (sel && !sel.matches(':focus')) sel.innerHTML = agentOptions(st.tasks.find(t => t.id === taskId)?.agent); });
     const p = projectOf(task), parts = { thread: threadHTML(task), composer: composerHTML(task) };
-    showModal(task.code + ' · ' + task.title, (p?.name || '') + ' · ' + (COLUMNS.find(c => c.id === task.status)?.label || '') + (task.createdBy ? ' · créée par ' + task.createdBy : ''),`<div class="pj-panel" data-pj-panel="${esc(task.id)}">
-      <div class="pj-panel-bar"><label>Colonne<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${task.status === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
+    showModal(task.code + ' · ' + task.title, (p?.name || '') + ' · ' + ((task.status === 'blocked' ? 'Bloqué' : COLUMNS.find(c => c.id === task.status)?.label) || '') + (task.createdBy ? ' · créée par ' + task.createdBy : ''),`<div class="pj-panel" data-pj-panel="${esc(task.id)}">
+      <div class="pj-panel-bar"><label>Colonne<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${colOf(task) === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
         <span class="pj-help">Déplacer la carte ne lance ni n’arrête aucun agent.</span></div>
       <details class="pj-details" ${task.agent ? '' : 'open'}><summary>Détails de la tâche <span class="muted">· consignes, pièces jointes, agent, priorité</span></summary>
         <form class="pj-form" data-pj-form="edit-task" data-id="${esc(task.id)}">${taskFields(task)}
@@ -688,7 +689,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     patch(part('composer'), composerHTML(task));
     if (grew && nearEnd) modal.scrollTop = modal.scrollHeight;
     const select = panel.querySelector('[data-pj-move]'); if (select && document.activeElement !== select) select.value = task.status;
-    const subtitle = modal.querySelector('.dialog-heading p'); if (subtitle) subtitle.textContent = (projectOf(task)?.name || '') + ' · ' + (COLUMNS.find(c => c.id === task.status)?.label || '');
+    const subtitle = modal.querySelector('.dialog-heading p'); if (subtitle) subtitle.textContent = (projectOf(task)?.name || '') + ' · ' + ((task.status === 'blocked' ? 'Bloqué' : COLUMNS.find(c => c.id === task.status)?.label) || '');
   }
 
   // ----- Actions ------------------------------------------------------------------------

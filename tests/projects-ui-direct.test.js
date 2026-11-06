@@ -47,5 +47,23 @@ test('Projects tab: an OpenClaw task keeps its agent line and manual wording', a
   const { ui, shown, click } = loadUI(api);
   ui.html(); await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
   assert.match(ui.html(), /Manuelle/, 'no agent and OpenClaw engine: still a manual task');
-  await click('open-task', task.id); assert.match(shown(), /Tâche manuelle : aucun agent ne répond ici/);
+  await click('open-task', task.id); assert.match(ui.html(), /Tâche manuelle : aucun agent ne répond ici/);
+  await click('view-set', 'board'); await click('open-task', task.id); assert.match(shown(), /Tâche manuelle : aucun agent ne répond ici/);
+});
+
+test('Projects tab: the default view is a chat — tasks as conversations, new task as an empty chat', async t => {
+  const { ui: api, project, create } = await setup(t);
+  const p = await project('alpha'), task = await create(p.id, { title: 'Corriger le déploiement' });
+  const { ui, shown, click } = loadUI(api);
+  ui.html(); await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
+  let page = ui.html();
+  assert.match(page, /class="pj-root is-chat /); assert.match(page, /<h2 style="--gc:[^"]+">Brouillons<span>1<\/span><\/h2>/);
+  assert.match(page, new RegExp('data-pj="open-task" data-id="' + task.id + '"[^]*Corriger le déploiement[^]*' + task.code + ' · Non lancé · Claude Code'));
+  assert.match(page, /Que doit faire Claude Code sur alpha \?/); assert.match(page, /data-pj-form="new-chat"/); assert.match(page, /Garder en brouillon/); assert.match(page, /Reprendre un brouillon/);
+  await click('open-task', task.id); page = ui.html();
+  assert.match(page, /<h1>Corriger le déploiement<\/h1><span class="pj-pill is-draft"><i><\/i>Brouillon<\/span>/); assert.match(page, /aria-current="step"[^>]*>[^]*Brouillon<\/li>/);
+  assert.match(page, /class="pj-chat-thread"/); assert.match(page, /data-pj-form="chat"/); assert.match(page, /aria-label="Contexte de la tâche"/); assert.match(page, /<dt>Moteur<\/dt><dd>Claude Code<\/dd>/);
+  assert.match(page, /data-pj="close-task"/); assert.doesNotMatch(page, /pj-chatbox-foot[^]*data-pj="close-task"/, 'Clore lives in the header only');
+  await click('task-details', task.id); assert.match(shown(), /data-pj-form="edit-task"/);
+  await click('chat-new'); assert.match(ui.html(), /data-pj-form="new-chat"/);
 });

@@ -105,3 +105,11 @@ test('the Messages module fits a phone-width card: + instead of « Nouveau », n
   assert.match(css, /@media\(hover:none\) and \(pointer:coarse\)\{\.kbd,\.messenger-search kbd\{display:none\}\}/);
   assert.match(css, /@media\(max-width:420px\)\{[^\n]*\.messenger-top \.messenger-new\{[^}]*font-size:0/);
 });
+
+test('the weather card lists every upcoming day and clips the ones that do not fit', () => {
+  const js = read('native-renderers.js'), css = read('design/home.css');
+  assert.match(js, /const next = nDays \? upcoming : \[\];/);
+  assert.match(js, /wh-day\$\{i >= nDays \? ' is-extra' : ''\}/);
+  assert.match(css, /\.wh-days \{[^}]*flex-wrap: wrap;[^}]*overflow: hidden;/);
+  assert.match(css, /@media \(max-width: 860px\), \(max-height: 620px\) \{ \.wh-day\.is-extra \{ display: none; \} \}/, 'les cartes à hauteur naturelle gardent leur nombre de jours');
+});

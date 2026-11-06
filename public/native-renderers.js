@@ -51,7 +51,8 @@ function homeWeather(c) {
     const nHours = strip ? (w === 2 ? 3 : w === 3 ? 6 : 9) : narrow ? 4 : big ? (w === 2 ? 5 : w === 3 ? 7 : 9) : 0;
     const nDays = tiny || strip ? 0 : h === 2 ? 3 : h === 3 ? 5 : 7;
     const upcoming = days.filter((f) => new Date(f.datetime).toDateString() === todayKey || new Date(f.datetime) > new Date());
-    const next = upcoming.slice(0, nDays);
+    // Every upcoming day is rendered: the card shows as many as fit (see .wh-days), nDays stays the guaranteed minimum.
+    const next = nDays ? upcoming : [];
     const hours = nHours && hourlyFc && hourlyFc.items ? hourlyFc.items.filter((x) => Date.parse(x.datetime) > Date.now() - 30 * 60000).slice(0, nHours) : [];
     const lowOf = (f) => (f.templow != null ? f.templow : f.temperature);
     const lo = Math.min(...next.map(lowOf)), hi = Math.max(...next.map((f) => f.temperature));
@@ -71,7 +72,7 @@ function homeWeather(c) {
     const daysHtml = next.length ? `<span class="wh-days${narrow ? ' is-narrow' : ''}">${next.map((f, i) => {
         const l = lowOf(f);
         const left = ((l - lo) / span) * 100, width = Math.max(4, ((f.temperature - l) / span) * 100);
-        return `<span class="wh-day"><span>${esc(W.dayLabel(f.datetime, i))}</span><span class="muted wh-num">${n0(l)}</span>
+        return `<span class="wh-day${i >= nDays ? ' is-extra' : ''}"><span>${esc(W.dayLabel(f.datetime, i))}</span><span class="muted wh-num">${n0(l)}</span>
           <span class="wh-track"><i style="left: ${left.toFixed(1)}%; width: ${Math.min(100 - left, width).toFixed(1)}%"></i></span><b class="wh-num">${n0(f.temperature)}</b></span>`;
       }).join('')}</span>` : '';
     const upd = st.last_updated ? ' · maj. ' + hhmm(new Date(st.last_updated)) : '';

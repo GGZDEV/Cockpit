@@ -1,0 +1,73 @@
+/* Thème Verre, écrans en grille : verre sombre façon Apple sur fond à halos (maquette « polish Apple »).
+   Accent et fond viennent des réglages (--accent, --accent-soft, --accent-glow posés par applyDisplay). */
+[data-theme="home"][data-design="home"]{--glass-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08),0 20px 44px rgba(0,0,0,.35);--glass-blur:blur(30px) saturate(170%);--chip-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.09)}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) #app{padding:16px;gap:16px;box-sizing:border-box}
+
+/* Rail : logo en haut à gauche, pilule de verre centrée verticalement, réglages après un séparateur, pastille de connexion en bas. */
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail{position:relative;isolation:isolate;width:64px;height:auto;align-self:center;margin:0 2px;padding:10px 0 14px;gap:6px;border:0;border-radius:32px;background:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
+/* Le verre est porté par ::before : un backdrop-filter sur le rail lui-même piégerait le logo fixe. */
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgba(40,40,46,.38);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(255,255,255,.10),0 24px 48px rgba(0,0,0,.45)}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand{position:fixed;z-index:2;top:35px;left:25px;width:50px;height:50px;margin:0;color:#ededed}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand>svg{width:46px;height:39px}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn{width:44px;height:44px;border-radius:22px;color:#98989f}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn.is-on{background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-spacer{display:block;order:1;flex:none;width:24px;height:1px;margin:4px 0;background:rgba(255,255,255,.12)}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-btn:last-child{order:2}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.native-rail-mode{order:3;display:flex;margin-top:6px}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .source-mode{width:20px;height:20px;padding:0;border:0;background:none;box-shadow:none;font-size:0;display:flex;align-items:center;justify-content:center}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .status-dot{display:block;width:9px;height:9px;margin:0;border-radius:5px;background:#636366}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .status-dot.connected{background:#4cff7a;box-shadow:0 0 0 2px rgba(48,209,88,.18),0 0 8px 2px rgba(48,209,88,.85),0 0 18px 4px rgba(48,209,88,.45)}
+
+/* Zone principale et en-tête : heure au centre, date dessous, pastilles de verre à droite. */
+[data-theme="home"][data-design="home"] .panel{padding:14px 16px 8px;gap:22px}
+[data-theme="home"][data-design="home"] .hz-center{flex-direction:column;gap:2px}
+[data-theme="home"][data-design="home"] .home-clock{letter-spacing:-.03em}
+[data-theme="home"][data-design="home"] .hz-center .ht-h-date .home-date{font-size:.5em!important;font-weight:600}
+[data-theme="home"][data-design="home"] .hz-center .ht-h-date:not(.has-color){color:var(--fg-muted)}
+[data-theme="home"][data-design="home"] .hchip,[data-theme="home"][data-design="home"] .chip,[data-theme="home"][data-design="home"] .round-btn.card,[data-theme="home"][data-design="home"] .temp-pill{background:rgba(40,40,46,.40);-webkit-backdrop-filter:blur(24px) saturate(170%);backdrop-filter:blur(24px) saturate(170%);box-shadow:var(--chip-shadow);color:#fff}
+[data-theme="home"][data-design="home"] .page-head .round-btn{width:40px;height:40px}
+[data-theme="home"][data-design="home"] .btn-glass{background:rgba(40,40,46,.40);box-shadow:var(--chip-shadow);color:#fff;border:0}
+[data-theme="home"][data-design="home"] .btn-solid{background:var(--accent);color:#fff;border:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
+
+/* Modules : cartes de verre aux grands rayons, quel que soit le type. */
+[data-theme="home"][data-design="home"] .mods{gap:16px}
+[data-theme="home"][data-design="home"] .mod.card,[data-theme="home"][data-design="home"] .add-tile,[data-theme="home"][data-design="home"] .dashboard-empty{border-radius:28px;background:rgba(36,36,42,.40);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-shadow)}
+[data-theme="home"][data-design="home"] .mod.card.hov:hover{background:rgba(44,44,50,.46)}
+[data-theme="home"][data-design="home"] .mod-head h2{font-size:16px;letter-spacing:-.01em}
+[data-theme="home"][data-design="home"] .pill{background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
+[data-theme="home"][data-design="home"] .pill.is-on{background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
+[data-theme="home"][data-design="home"] a{color:var(--accent)}
+[data-theme="home"][data-design="home"] .glass,[data-theme="home"][data-design="home"] dialog{background:rgba(30,30,34,.86)}
+[data-theme="home"][data-design="home"] .mod .button{border:0;border-radius:17px;background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.10);color:#fff}
+[data-theme="home"][data-design="home"] .button.primary{background:var(--accent);color:#fff;border-color:transparent}
+
+/* Projets en chat : liste, conversation et contexte en trois panneaux de verre. */
+[data-theme="home"][data-design="home"] .pj-root.is-chat{gap:16px;background:none;--pj-chip:rgba(255,255,255,.08);--pj-card:rgba(255,255,255,.06);--pj-line:rgba(255,255,255,.10);--pj-soft:rgba(255,255,255,.08);--pj-muted:#98989f;--pj-text:#fff}
+[data-theme="home"][data-design="home"] .pj-root.is-chat>.pj-side,[data-theme="home"][data-design="home"] .pj-chat-main{border:0;border-radius:28px;background:rgba(36,36,42,.40);-webkit-backdrop-filter:var(--glass-blur);backdrop-filter:var(--glass-blur);box-shadow:var(--glass-shadow);overflow:hidden}
+[data-theme="home"][data-design="home"] .pj-root.is-chat>.pj-side{padding:18px 14px}
+[data-theme="home"][data-design="home"] .pj-side-new{min-height:42px;justify-content:center;border:0;border-radius:21px;background:var(--accent);color:#fff;font-size:15px;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
+[data-theme="home"][data-design="home"] .pj-side-new.is-active{background:var(--accent)}
+[data-theme="home"][data-design="home"] .pj-side-search{border-radius:19px;background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.10);border:0}
+[data-theme="home"][data-design="home"] .pj-side-item{border-radius:16px;padding:10px 12px}
+[data-theme="home"][data-design="home"] .pj-side-item.is-active{background:var(--accent-soft);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 0 0 1px var(--accent-glow)}
+[data-theme="home"][data-design="home"] .pj-chat-main{background:rgba(36,36,42,.40)}
+[data-theme="home"][data-design="home"] .pj-chat-thread .pj-msg.is-user .pj-bubble{background:var(--accent);color:#fff;border-radius:20px 20px 6px 20px;box-shadow:inset 0 1px 0 rgba(255,255,255,.25)}
+[data-theme="home"][data-design="home"] .pj-chatbox{border:0;border-radius:26px;background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.10),0 10px 30px rgba(0,0,0,.30)}
+[data-theme="home"][data-design="home"] .pj-send{border-radius:19px;background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
+
+/* Réglage des couleurs : une pastille par couleur (accent, fond, trois halos). */
+.halo-picks{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0}
+.halo-pick{position:relative;display:inline-flex;align-items:center;gap:8px;height:38px;padding:0 14px 0 6px;border-radius:19px;background:rgba(255,255,255,.08);box-shadow:inset 0 1px 0 rgba(255,255,255,.10);font-size:13px;font-weight:500;cursor:pointer}
+.halo-pick input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;border:0;padding:0}
+.halo-dot{width:26px;height:26px;border-radius:13px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.25)}
+.halo-pick:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+
+/* Petits écrans : le rail passe en barre basse (home.css), le logo fixe s’efface. */
+@media (max-width:860px),(max-height:620px){
+  [data-theme="home"][data-design="home"]:not([data-profile="phone"]) #app{padding:12px 12px 104px}
+  [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail{width:auto;height:68px;align-self:auto;margin:0;padding:0 10px;border-radius:34px}
+  [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand{display:none}
+  [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-spacer{width:1px;height:24px;margin:0 4px}
+  [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.native-rail-mode{margin:0 0 0 6px}
+}

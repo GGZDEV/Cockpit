@@ -264,14 +264,14 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   // Nouvelle tâche = nouveau chat : le message devient les consignes, rien ne démarre sans « Lancer ».
   function chatNew() {
     const visible = visibleProjects();
-    if (!visible.length) return `<div class="pj-chat-scroll"><div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div></div>`;
+    if (!visible.length) return `<div class="pj-chat-scroll"><div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div></div>`;
     const p = visible.find(x => x.id === st.project) || visible[0], engine = ENGINE[p.engine || 'claude'], caps = st.capabilities.engines || {};
     const drafts = st.tasks.filter(t => t.projectId === p.id && t.status === 'todo' && !t.runs?.length).slice(0, 4);
     return `<header class="pj-chat-head"><div class="pj-crumbs"><span>${esc(p.name)}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
         <button class="button" data-pj="edit-project" data-id="${esc(p.id)}">${icon('edit')} Projet et contexte</button></header>
       <div class="pj-chat-scroll"><div class="pj-new">
         <div class="pj-new-hero"><span class="pj-new-mark" aria-hidden="true">${G.prompt}</span><h1>Que doit faire ${esc(engine)} sur ${esc(p.name)} ?</h1>
-          <p>Écrivez la tâche comme un message. Elle reste en brouillon tant que vous n’avez pas cliqué sur « Lancer ».</p></div>
+          <p>Écrivez la tâche comme un message. Elle reste en brouillon tant que vous n’avez pas cliqué sur « Lancer ».</p></div>
         <form class="pj-compose" data-pj-form="new-chat" id="pj-new-chat">
           <div class="pj-compose-top"><label class="pj-pick-chip"><i style="background:${esc(p.color || '#888')}"></i><span class="sr-only">Projet</span><select name="projectId" data-pj-pick="project">${visible.map(x => `<option value="${esc(x.id)}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
             <label class="pj-pick-chip"><span class="sr-only">Moteur</span><select name="engine"><option value="">Moteur du projet · ${esc(engine)}</option>${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${caps[v] === false ? 'disabled' : ''}>${l}</option>`).join('')}</select></label></div>
@@ -345,7 +345,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const visible = visibleProjects();
     const chips = [{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<button class="pj-chip" data-pj="project" data-id="${esc(p.id)}" aria-pressed="${st.project === p.id}">${p.color ? `<i style="background:${esc(p.color)}"></i>` : ''}${esc(p.name)}<span>${st.tasks.filter(t => (p.id === 'all' ? projectOf(t) && !projectOf(t).archived : t.projectId === p.id)).length}</span></button>`).join('');
     const error = st.error ? `<div class="pj-banner is-bad" role="alert">${G.alert}<span>${esc(st.error)}</span><button class="button" data-pj="reload">Réessayer</button></div>` : '';
-    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
+    const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
       : `<div class="pj-filters"><div class="pj-chips" role="group" aria-label="Projet">${chips}</div>
         ${attention ? `<button class="pj-chip pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>${board()}`;
     return `<div class="pj-root" data-scroll="page:projects">
@@ -575,7 +575,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   async function taskForm() {
     await loadAgents();
     const project = st.projects.find(p => p.id === st.project) || visibleProjects()[0];
-    showModal('Nouvelle tâche', 'Créer ou assigner une tâche ne lance rien : l’agent démarre uniquement avec le bouton « Lancer ».', `<form class="pj-form" data-pj-form="task">${taskFields({ projectId: project?.id, agent: project?.agent || null }, { withProject: true })}
+    showModal('Nouvelle tâche', 'Créer ou assigner une tâche ne lance rien : l’agent démarre uniquement avec le bouton « Lancer ».', `<form class="pj-form" data-pj-form="task">${taskFields({ projectId: project?.id, agent: project?.agent || null }, { withProject: true })}
       <p class="form-status pj-help" role="status"></p><div class="pj-form-actions"><button class="button primary" type="submit">Créer la tâche</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-task-new', true);
   }
 

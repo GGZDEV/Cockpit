@@ -3,19 +3,19 @@
 [data-theme="home"][data-design="home"]{--glass-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08),0 20px 44px rgba(0,0,0,.35);--glass-blur:blur(30px) saturate(170%);--chip-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.09)}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) #app{padding:16px;gap:16px;box-sizing:border-box}
 
-/* Rail : logo en haut à gauche, pilule de verre centrée verticalement, réglages après un séparateur, pastille de connexion en bas. */
+/* Rail : logo en haut à gauche (centré sur l’axe du rail et sur la ligne d’en-tête de 48px), pilule de verre centrée verticalement, réglages après un séparateur, pastille de connexion en bas. */
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail{position:relative;isolation:isolate;width:64px;height:auto;align-self:center;margin:0 2px;padding:10px 0 14px;gap:6px;border:0;border-radius:32px;background:none;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none}
 /* Le verre est porté par ::before : un backdrop-filter sur le rail lui-même piégerait le logo fixe. */
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail::before{content:"";position:absolute;inset:0;z-index:-1;border-radius:inherit;background:rgba(40,40,46,.38);-webkit-backdrop-filter:blur(30px) saturate(180%);backdrop-filter:blur(30px) saturate(180%);box-shadow:inset 0 1px 0 rgba(255,255,255,.22),inset 0 -1px 0 rgba(255,255,255,.05),inset 0 0 0 1px rgba(255,255,255,.10),0 24px 48px rgba(0,0,0,.45)}
-[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand{position:fixed;z-index:2;top:35px;left:25px;width:50px;height:50px;margin:0;color:#ededed}
-[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand>svg{width:46px;height:39px}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand{position:fixed;z-index:2;top:30px;left:20px;width:60px;height:48px;margin:0;color:#ededed}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.cockpit-rail-brand>svg{width:57px;height:48px}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn{width:44px;height:44px;border-radius:22px;color:#98989f}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn:hover{background:rgba(255,255,255,.08);color:#fff}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail-btn.is-on{background:var(--accent);color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.35),0 6px 18px var(--accent-glow)}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-spacer{display:block;order:1;flex:none;width:24px;height:1px;margin:4px 0;background:rgba(255,255,255,.12)}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-btn:last-child{order:2}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.native-rail-mode{order:3;display:flex;margin-top:6px}
-[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .source-mode{width:20px;height:20px;padding:0;border:0;background:none;box-shadow:none;font-size:0;display:flex;align-items:center;justify-content:center}
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .source-mode{width:20px;height:20px;padding:0;gap:0;border:0;background:none;box-shadow:none;font-size:0;display:flex;align-items:center;justify-content:center}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .status-dot{display:block;width:9px;height:9px;margin:0;border-radius:5px;background:#636366}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) .native-rail-mode .status-dot.connected{background:#4cff7a;box-shadow:0 0 0 2px rgba(48,209,88,.18),0 0 8px 2px rgba(48,209,88,.85),0 0 18px 4px rgba(48,209,88,.45)}
 

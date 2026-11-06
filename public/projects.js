@@ -61,11 +61,12 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   }
   const projectOf = task => st.projects.find(p => p.id === task.projectId);
   // Moteur qui traite la tâche (calculé par le serveur) ; Claude Code et Codex n'ont pas d'agent OpenClaw à choisir.
-  const engineOf = task => st.engines[task.id] || 'openclaw';
+  // Tâche tout juste créée ou modifiée : pas encore dans engineByTask (relu au prochain rafraîchissement) ; même règle que le serveur.
+  const engineOf = task => st.engines[task.id] || (st.capabilities.direct === false ? 'openclaw' : task.engine || (task.runs?.length ? 'openclaw' : st.projects.find(p => p.id === task.projectId)?.engine) || 'openclaw');
   const isDirect = task => engineOf(task) !== 'openclaw';
   const assignee = task => isDirect(task) ? { name: ENGINE[engineOf(task)] } : task.agent;
   const visibleProjects = () => st.projects.filter(p => !p.archived);
-  function upsert(task) { const i = st.tasks.findIndex(t => t.id === task.id); if (i >= 0) st.tasks[i] = task; else st.tasks.push(task); }
+  function upsert(task) { if (task.engine) delete st.engines[task.id]; const i = st.tasks.findIndex(t => t.id === task.id); if (i >= 0) st.tasks[i] = task; else st.tasks.push(task); }
 
   async function refresh(quiet = true) {
     if (st.loading) return; st.loading = true;

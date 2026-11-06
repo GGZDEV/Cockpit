@@ -69,11 +69,14 @@ const STEPS = ['Brouillon', 'En cours', 'À valider', 'Terminé', 'Déployé'];
 const STEP_OF = { todo: 0, doing: 1, blocked: 1, review: 2, done: 3, deployed: 4 };
 // Close : Terminé ou Déployé. Déploiement échoué : la tâche reste en Terminé, bordée de rouge.
 const isClosed = t => t.status === 'done' || t.status === 'deployed';
+// Largeur de la liste des tâches (vue conversations), réglable à la souris et mémorisée.
+const SIDE_W = 272, SIDE_MIN = 200, SIDE_MAX = 560;
+const sideWidth = w => Math.round(Math.min(SIDE_MAX, Math.max(SIDE_MIN, Number(w) || SIDE_W)));
 const deployFailed = t => t.status === 'done' && !!t.deployError;
 
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
-    view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
+    view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), search: '', attention: false,
     deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null,
     chat: null, drafts: {}, newFiles: [], chatFiles: {}, allDone: false };
   let pollTimer;
@@ -122,8 +125,6 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const q = st.search.trim().toLowerCase(), p = projectOf(task);
     if (!p || p.archived) return false;
     if (st.project !== 'all' && task.projectId !== st.project) return false;
-    if (st.who === 'me' && assignee(task)) return false;
-    if (st.who === 'agents' && !assignee(task)) return false;
     if (st.attention && !needsMe(task)) return false;
     return !q || [task.title, task.code, task.instructions, p.name, assignee(task)?.name].some(v => String(v || '').toLowerCase().includes(q));
   }
@@ -253,7 +254,6 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <button type="button" class="pj-side-new ${st.chat ? '' : 'is-active'}" data-pj="chat-new" ${visible.length ? '' : 'disabled'}>${icon('plus')} Nouvelle tâche</button>
       <label class="pj-side-search">${icon('search')}<span class="sr-only">Rechercher une tâche</span><input type="search" id="pj-search" placeholder="Rechercher…" value="${esc(st.search)}" autocomplete="off"></label>
       <div class="pj-side-filters"><label class="pj-side-proj">${current ? `<i style="background:${esc(current.color || '#888')}"></i>` : ''}<span class="sr-only">Projet</span><select data-pj-pick="project">${[{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<option value="${esc(p.id)}" ${st.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
-        ${[['all', 'Tout'], ['me', 'Mes tâches'], ['agents', 'Agents']].map(([id, label]) => `<button type="button" class="pj-side-tab" data-pj="who" data-id="${id}" aria-pressed="${st.who === id}">${label}</button>`).join('')}
         ${attention ? `<button type="button" class="pj-side-tab pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>
       <div class="pj-side-list">${groups || `<p class="pj-help">${st.tasks.length ? 'Aucune tâche ne correspond.' : 'Aucune tâche pour l’instant.'}</p>`}</div>
       <footer class="pj-side-foot"><button type="button" class="icon-button" data-pj="view-set" data-id="board" aria-label="Afficher le tableau" title="Tableau des tâches">${G.board}</button>
@@ -330,7 +330,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function chatHTML(error) {
     if (st.chat && !st.tasks.some(t => t.id === st.chat)) st.chat = null;
     const task = st.chat && st.tasks.find(t => t.id === st.chat);
-    return `<div class="pj-root is-chat ${task ? 'has-task' : ''}">${chatSide()}<main class="pj-chat-main">${error}${task ? chatTask(task) : chatNew()}</main></div>`;
+    return `<div class="pj-root is-chat ${task ? 'has-task' : ''}" style="--pj-side-w:${sideWidth(read('mb.projects.side', SIDE_W))}px">${chatSide()}
+      <div class="pj-resize" data-pj-resize role="separator" aria-orientation="vertical" aria-label="Largeur de la liste des tâches" aria-valuemin="${SIDE_MIN}" aria-valuemax="${SIDE_MAX}" aria-valuenow="${sideWidth(read('mb.projects.side', SIDE_W))}" tabindex="0" title="Glisser pour redimensionner · double-clic pour réinitialiser"></div><main class="pj-chat-main">${error}${task ? chatTask(task) : chatNew()}</main></div>`;
   }
   async function taskDetails(taskId) {
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
@@ -348,11 +349,10 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const attention = st.tasks.filter(t => projectOf(t) && !projectOf(t).archived && needsMe(t) && t.status !== 'done').length;
     const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
     const visible = visibleProjects();
-    const tabs = [['all', 'Tout'], ['me', 'Mes tâches'], ['agents', 'Agents']].map(([id, label]) => `<button data-pj="who" data-id="${id}" aria-pressed="${st.who === id}">${label}</button>`).join('');
     const chips = [{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<button class="pj-chip" data-pj="project" data-id="${esc(p.id)}" aria-pressed="${st.project === p.id}">${p.color ? `<i style="background:${esc(p.color)}"></i>` : ''}${esc(p.name)}<span>${st.tasks.filter(t => (p.id === 'all' ? projectOf(t) && !projectOf(t).archived : t.projectId === p.id)).length}</span></button>`).join('');
     const error = st.error ? `<div class="pj-banner is-bad" role="alert">${G.alert}<span>${esc(st.error)}</span><button class="button" data-pj="reload">Réessayer</button></div>` : '';
     const body = st.view === 'grid' ? grid() : !visible.length ? `<div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`
-      : `<div class="pj-filters"><div class="pj-seg" role="group" aria-label="Assignation">${tabs}</div><div class="pj-chips" role="group" aria-label="Projet">${chips}</div>
+      : `<div class="pj-filters"><div class="pj-chips" role="group" aria-label="Projet">${chips}</div>
         ${attention ? `<button class="pj-chip pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>${board()}`;
     return `<div class="pj-root" data-scroll="page:projects">
       <header class="pj-head"><div><h1>Projets</h1><p>${esc(date.charAt(0).toUpperCase() + date.slice(1))} · ${active.length} tâche${active.length > 1 ? 's' : ''} · ${active.filter(t => t.status === 'doing').length} en cours${attention ? ` · <b class="pj-attn-text">${attention} en attente de vous</b>` : ''}</p></div>
@@ -728,7 +728,6 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const idv = el.dataset.id;
     try {
       switch (el.dataset.pj) {
-        case 'who': st.who = idv; render(); break;
         case 'project': st.project = idv; write('mb.projects.filter', idv); st.quickAdd = null; render(); break;
         case 'attention': st.attention = !st.attention; render(); break;
         case 'view': st.view = st.view === 'grid' ? 'board' : 'grid'; write('mb.projects.mode', st.view); render(); break;
@@ -899,6 +898,24 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
   document.addEventListener('drop', event => { if (!st.dragging) return; const col = event.target.closest?.('[data-pj-col]'); event.preventDefault(); const taskId = st.dragging; st.dragging = null; document.querySelectorAll('.pj-col.is-over,.is-dragging').forEach(c => c.classList.remove('is-over', 'is-dragging')); if (col) move(taskId, col.dataset.pjCol); });
   document.addEventListener('dragend', () => { st.dragging = null; document.querySelectorAll('.pj-col.is-over,.is-dragging').forEach(c => c.classList.remove('is-over', 'is-dragging')); });
   modal.addEventListener('close', () => { if (modal.open) return; modal.classList.remove('pj-drawer'); st.panel = null; schedule(); });
+  const setSide = (handle, w) => { w = sideWidth(w); handle.closest('.pj-root').style.setProperty('--pj-side-w', w + 'px'); handle.setAttribute('aria-valuenow', w); return w; };
+  document.addEventListener('pointerdown', event => {
+    const handle = event.target.closest?.('[data-pj-resize]'); if (!handle || event.button !== 0) return;
+    event.preventDefault();
+    const left = handle.closest('.pj-root').getBoundingClientRect().left;
+    let w = sideWidth(read('mb.projects.side', SIDE_W));
+    handle.setPointerCapture(event.pointerId); handle.classList.add('is-dragging'); document.body.classList.add('pj-resizing');
+    const moveTo = e => { w = setSide(handle, e.clientX - left); };
+    const stop = () => { handle.removeEventListener('pointermove', moveTo); handle.classList.remove('is-dragging'); document.body.classList.remove('pj-resizing'); write('mb.projects.side', w); };
+    handle.addEventListener('pointermove', moveTo);
+    handle.addEventListener('pointerup', stop, { once: true }); handle.addEventListener('pointercancel', stop, { once: true });
+  });
+  document.addEventListener('dblclick', event => { const handle = event.target.closest?.('[data-pj-resize]'); if (handle) write('mb.projects.side', setSide(handle, SIDE_W)); });
+  document.addEventListener('keydown', event => {
+    const handle = event.target.closest?.('[data-pj-resize]'); if (!handle || !['ArrowLeft', 'ArrowRight'].includes(event.key)) return;
+    event.preventDefault();
+    write('mb.projects.side', setSide(handle, sideWidth(read('mb.projects.side', SIDE_W)) + (event.key === 'ArrowRight' ? 16 : -16)));
+  });
   document.addEventListener('visibilitychange', () => { if (!document.hidden && isActive()) refresh(); });
 
   return { html, enter: () => { refresh(); loadAgents(true); }, leave: () => clearTimeout(pollTimer) };

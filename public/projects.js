@@ -44,12 +44,33 @@ const G = {
   clip: glyph('<path d="m20 11.5-8.2 8.2a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/>'),
   trash: glyph('<path d="M4 7h16M9 7V4.5h6V7m-8.5 0 1 13h9l1-13"/>'),
   dots: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>',
+  prompt: glyph('<path d="m5 8 4 4-4 4"/><path d="M12 16h7"/>'),
+  up: glyph('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  stop: '<svg class="icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>',
+  back: glyph('<path d="m15 6-6 6 6 6"/>'),
+  chat: glyph('<path d="M5 5h14v10H9l-4 4z"/>'),
+  done: glyph('<path d="m5 12 5 5 9-10"/>'),
+  target: glyph('<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/>'),
+  links: glyph('<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>'),
+  repo: glyph('<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8"/><path d="M18 10a6 6 0 0 1-6 6H8"/>'),
 };
+// Vue « conversations » : chaque tâche est un chat, regroupé par statut dans la barre latérale.
+const VIEWS = ['chat', 'board', 'grid'];
+const CHAT_GROUPS = [
+  { id: 'run', label: 'En cours', color: '#ff9f43', has: t => ['doing', 'blocked'].includes(t.status) || (t.status === 'todo' && !!openRun(t)) },
+  { id: 'review', label: 'À valider', color: 'var(--accent)', has: t => t.status === 'review' },
+  { id: 'todo', label: 'Brouillons', color: 'var(--pj-muted)', has: t => t.status === 'todo' && !openRun(t) },
+  { id: 'done', label: 'Terminés', color: '#4c9dff', has: t => t.status === 'done' },
+];
+const TASK_PILL = { todo: ['Brouillon', 'is-draft'], doing: ['En cours', 'is-run'], blocked: ['Bloqué', 'is-block'], review: ['À valider', 'is-review'], done: ['Terminé', 'is-done'] };
+const STEPS = ['Brouillon', 'En cours', 'À valider', 'Terminé'];
+const STEP_OF = { todo: 0, doing: 1, blocked: 1, review: 2, done: 3 };
 
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
-    view: read('mb.projects.view', 'board') === 'grid' ? 'grid' : 'board', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
-    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null };
+    view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), who: 'all', search: '', attention: false,
+    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null,
+    chat: null, drafts: {}, newFiles: [], allDone: false };
   let pollTimer;
   const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
 
@@ -73,7 +94,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     catch (e) { st.error = e.message; if (!quiet) toast(e.message); }
     finally { st.loading = false; }
     if (!st.projects.some(p => p.id === st.project)) st.project = 'all';
-    render(); updatePanel(); schedule();
+    renderChat(); updatePanel(); schedule();
     refreshDeploys().then(() => schedule());
   }
   async function loadAgents(force = false) {
@@ -191,8 +212,130 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (!st.projects.length) return `<div class="pj-empty"><h2>Aucun projet pour l’instant</h2><p>Un projet regroupe vos tâches et le contexte que vos agents recevront : objectif, consignes, ressources, dépôt…</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div>`;
     return `${filters}<div class="pj-pgrid">${list.map(projectCard).join('') || `<div class="pj-empty"><p>${st.archived ? 'Aucun projet archivé.' : 'Aucun projet ne correspond à ces filtres.'}</p></div>`}</div>`;
   }
+  // ----- Vue « conversations » ------------------------------------------------------------
+  // Rendu qui garde le fil de la conversation ouverte collé en bas s'il l'était déjà.
+  function renderChat(toEnd = false) {
+    const thread = () => document.querySelector?.('.pj-chat-thread');
+    const t = thread(), nearEnd = toEnd || (t && t.scrollHeight - t.scrollTop - t.clientHeight < 160);
+    render();
+    if (nearEnd) { const el = thread(); if (el) el.scrollTop = el.scrollHeight; }
+  }
+  const dotKind = t => { const run = lastRun(t); return openRun(t) ? 'run' : t.status === 'done' ? 'done' : t.status === 'review' ? 'review' : t.status === 'blocked' || ['failed', 'interrupted'].includes(run?.status) ? 'block' : t.status === 'doing' ? 'run' : 'draft'; };
+  function taskMeta(task) {
+    const run = lastRun(task), who = assignee(task)?.name || 'Manuelle';
+    if (openRun(task)) return openRun(task).status === 'started' ? who + ' travaille…' : 'En attente de démarrage';
+    if (task.status === 'done') return 'Validé';
+    if (['failed', 'interrupted'].includes(run?.status)) return (run.status === 'failed' ? 'Échec' : 'Interrompue') + ' · à relancer';
+    if (task.status === 'blocked') return run?.outcome === 'question' ? 'Bloqué · une question pour vous' : 'Bloqué';
+    if (task.status === 'review') return run?.outcome === 'plan' ? 'Plan à relire' : 'Résultat prêt';
+    return (run ? 'En pause' : 'Non lancé') + ' · ' + who;
+  }
+  function chatSide() {
+    const list = st.tasks.filter(matches).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+    const visible = visibleProjects(), current = visible.find(p => p.id === st.project);
+    const item = t => `<button type="button" class="pj-side-item ${st.chat === t.id ? 'is-active' : ''}" data-pj="open-task" data-id="${esc(t.id)}" ${st.chat === t.id ? 'aria-current="page"' : ''}>
+      <span class="pj-dot d-${dotKind(t)}" aria-hidden="true"></span><span class="pj-side-text"><span class="pj-side-title">${esc(t.title)}</span><span class="pj-side-meta">${esc(t.code)} · ${esc(taskMeta(t))}</span></span></button>`;
+    const groups = CHAT_GROUPS.map(g => {
+      const items = list.filter(g.has), shown = g.id === 'done' && !st.allDone ? items.slice(0, 5) : items;
+      return items.length ? `<section class="pj-side-group" aria-label="${g.label}"><h2 style="--gc:${g.color}">${g.label}<span>${items.length}</span></h2>${shown.map(item).join('')}
+        ${shown.length < items.length ? '<button type="button" class="pj-side-more" data-pj="all-done">Voir toutes les tâches terminées</button>' : ''}</section>` : '';
+    }).join('');
+    const attention = st.tasks.filter(t => projectOf(t) && !projectOf(t).archived && needsMe(t) && t.status !== 'done').length;
+    return `<nav class="pj-side" aria-label="Tâches">
+      <button type="button" class="pj-side-new ${st.chat ? '' : 'is-active'}" data-pj="chat-new" ${visible.length ? '' : 'disabled'}>${icon('plus')} Nouvelle tâche</button>
+      <label class="pj-side-search">${icon('search')}<span class="sr-only">Rechercher une tâche</span><input type="search" id="pj-search" placeholder="Rechercher…" value="${esc(st.search)}" autocomplete="off"></label>
+      <div class="pj-side-filters"><label class="pj-side-proj">${current ? `<i style="background:${esc(current.color || '#888')}"></i>` : ''}<span class="sr-only">Projet</span><select data-pj-pick="project">${[{ id: 'all', name: 'Tous les projets' }, ...visible].map(p => `<option value="${esc(p.id)}" ${st.project === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></label>
+        ${[['all', 'Tout'], ['me', 'Mes tâches'], ['agents', 'Agents']].map(([id, label]) => `<button type="button" class="pj-side-tab" data-pj="who" data-id="${id}" aria-pressed="${st.who === id}">${label}</button>`).join('')}
+        ${attention ? `<button type="button" class="pj-side-tab pj-attn" data-pj="attention" aria-pressed="${st.attention}">${G.alert} À traiter <span>${attention}</span></button>` : ''}</div>
+      <div class="pj-side-list">${groups || `<p class="pj-help">${st.tasks.length ? 'Aucune tâche ne correspond.' : 'Aucune tâche pour l’instant.'}</p>`}</div>
+      <footer class="pj-side-foot"><button type="button" class="icon-button" data-pj="view-set" data-id="board" aria-label="Afficher le tableau" title="Tableau des tâches">${G.board}</button>
+        <button type="button" class="icon-button" data-pj="view-set" data-id="grid" aria-label="Afficher les projets" title="Vue des projets">${G.cards}</button>
+        <span class="pj-grow"></span><button type="button" class="icon-button" data-pj="new-project" aria-label="Nouveau projet" title="Nouveau projet">${icon('folder')}</button></footer></nav>`;
+  }
+  function projectChips(p) {
+    const repo = p.context?.repository, w = p.workspace, d = deployOf(p);
+    return [repo ? `<span class="pj-mini">${G.repo}${esc(isGithub(repo) ? repo.replace(/^https:\/\/github\.com\//i, '').replace(/(\.git)?\/?$/, '') : repo)}</span>` : '<span class="pj-mini">Aucun dépôt</span>',
+      w ? `<span class="pj-mini ${w.status === 'ready' ? 'is-ok' : w.status === 'failed' ? 'is-bad' : ''}"><i></i>${WORKSPACE[w.status] || ''}</span>` : '',
+      p.claudeMd ? '<span class="pj-mini is-ok">CLAUDE.md à jour</span>' : '',
+      d.url ? `<span class="pj-mini">Déploiement ${d.auto ? 'auto' : 'manuel'} → ${esc(d.url.replace(/^https:\/\//, ''))}</span>` : ''].join('');
+  }
+  // Nouvelle tâche = nouveau chat : le message devient les consignes, rien ne démarre sans « Lancer ».
+  function chatNew() {
+    const visible = visibleProjects();
+    if (!visible.length) return `<div class="pj-chat-scroll"><div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div></div>`;
+    const p = visible.find(x => x.id === st.project) || visible[0], engine = ENGINE[p.engine || 'claude'], caps = st.capabilities.engines || {};
+    const drafts = st.tasks.filter(t => t.projectId === p.id && t.status === 'todo' && !t.runs?.length).slice(0, 4);
+    return `<header class="pj-chat-head"><div class="pj-crumbs"><span>${esc(p.name)}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
+        <button class="button" data-pj="edit-project" data-id="${esc(p.id)}">${icon('edit')} Projet et contexte</button></header>
+      <div class="pj-chat-scroll"><div class="pj-new">
+        <div class="pj-new-hero"><span class="pj-new-mark" aria-hidden="true">${G.prompt}</span><h1>Que doit faire ${esc(engine)} sur ${esc(p.name)} ?</h1>
+          <p>Écrivez la tâche comme un message. Elle reste en brouillon tant que vous n’avez pas cliqué sur « Lancer ».</p></div>
+        <form class="pj-compose" data-pj-form="new-chat" id="pj-new-chat">
+          <div class="pj-compose-top"><label class="pj-pick-chip"><i style="background:${esc(p.color || '#888')}"></i><span class="sr-only">Projet</span><select name="projectId" data-pj-pick="project">${visible.map(x => `<option value="${esc(x.id)}" ${x.id === p.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+            <label class="pj-pick-chip"><span class="sr-only">Moteur</span><select name="engine"><option value="">Moteur du projet · ${esc(engine)}</option>${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${caps[v] === false ? 'disabled' : ''}>${l}</option>`).join('')}</select></label></div>
+          <label class="sr-only" for="pj-new-input">Message à ${esc(engine)}</label>
+          <textarea id="pj-new-input" name="instructions" rows="5" maxlength="20000" data-pj-draft="new" placeholder="Décrivez ce qu’il faut faire… Le contexte du projet et son dépôt sont joints automatiquement. Collez des captures avec Ctrl+V.">${esc(st.drafts.new || '')}</textarea>
+          <ul class="pj-atts pj-pending">${pendingHTML(st.newFiles)}</ul>
+          <details class="pj-compose-more" data-key="new-expected" ${st.drafts['new-expected'] ? 'open' : ''}><summary>${G.target} Résultat attendu</summary><textarea name="expected" rows="2" maxlength="4000" data-pj-draft="new-expected" placeholder="Une PR, un rapport, un fichier…">${esc(st.drafts['new-expected'] || '')}</textarea></details>
+          <details class="pj-compose-more" data-key="new-links" ${st.drafts['new-links'] ? 'open' : ''}><summary>${G.links} Adresses utiles</summary><textarea name="links" rows="2" data-pj-draft="new-links" placeholder="Une par ligne, « libellé | adresse » possible">${esc(st.drafts['new-links'] || '')}</textarea></details>
+          <div class="pj-compose-foot"><label class="icon-button pj-attach" title="Joindre des fichiers (captures, PDF, zip, textes · 10 Mo max)">${G.clip}<span class="sr-only">Joindre des fichiers</span><input type="file" name="files" multiple accept="${ACCEPT}" class="sr-only"></label>
+            <span class="pj-grow"></span><button class="button" type="submit" name="draft" value="1">Garder en brouillon</button><button class="button primary pj-launch" type="submit">Lancer ${G.up}</button></div>
+        </form>
+        <div class="pj-new-chips">${projectChips(p)}</div>
+        ${drafts.length ? `<section class="pj-drafts" aria-label="Reprendre un brouillon"><h2>Reprendre un brouillon</h2><div>${drafts.map(t => `<button type="button" class="pj-draft-card" data-pj="open-task" data-id="${esc(t.id)}">
+            <span class="pj-side-meta"><span class="pj-dot d-draft" aria-hidden="true"></span>Brouillon · ${esc(t.code)}</span><b>${esc(t.title)}</b>${t.instructions ? `<span>${esc(t.instructions.slice(0, 140))}${t.instructions.length > 140 ? '…' : ''}</span>` : ''}</button>`).join('')}</div></section>` : ''}
+      </div></div>`;
+  }
+  function reviewBanner(task) {
+    const run = lastRun(task);
+    if (task.status !== 'review' || run?.status !== 'succeeded' || run.outcome !== 'result' || run.accepted) return '';
+    return `<div class="pj-review"><p>${esc(assignee(task)?.name || 'L’agent')} a terminé. Validez pour passer la tâche en Terminé, ou répondez ci-dessous pour la relancer.</p>
+      <button class="button primary" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}>${G.done} Valider et terminer</button></div>`;
+  }
+  function contextHTML(task, p) {
+    const repo = p?.context?.repository, d = p && deployOf(p), files = lastRun(task)?.summary?.files || [];
+    const ext = (url, label) => `<a href="${esc(safeUrl(url))}" target="_blank" rel="noopener noreferrer">${esc(label)}</a>`;
+    const row = (label, value) => value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : '';
+    return `<aside class="pj-chat-aside" aria-label="Contexte de la tâche"><h2>Contexte</h2><dl>
+      ${row('Projet', `<span class="pj-dot" style="background:${esc(p?.color || '#888')}" aria-hidden="true"></span>${esc(p?.name || '')}`)}
+      ${row('Dépôt', repo ? (isGithub(repo) ? ext(repo, repo.replace(/^https:\/\/github\.com\//i, '').replace(/(\.git)?\/?$/, '')) : esc(repo)) : '')}
+      ${row('Branche', task.direct?.branch ? `<code>${esc(task.direct.branch)}</code>` : '')}
+      ${row('Résultat attendu', esc(task.expected || ''))}
+      ${row('Adresses utiles', (task.links || []).map(l => ext(l.url, l.label || l.url.replace(/^https?:\/\//, ''))).join('<br>'))}
+      ${row('Moteur', esc(assignee(task)?.name || 'Tâche manuelle'))}</dl>
+      ${task.attachments?.length ? `<section><h3>Pièces jointes</h3>${attachmentsHTML(task)}</section>` : ''}
+      ${files.length ? `<section><h3>Fichiers modifiés</h3>${files.slice(0, 12).map(f => `<code class="pj-file">${esc(f)}</code>`).join('')}${files.length > 12 ? `<p class="pj-help">et ${files.length - 12} autres</p>` : ''}</section>` : ''}
+      ${d && (d.url || d.auto) ? `<div class="pj-aside-card"><span>Déploiement</span><p>${d.auto ? `Automatique dès que la tâche est close (branche ${esc(d.branch)}).` : 'Manuel, avec le bouton « Déployer » du projet.'}</p>${d.url ? ext(d.url, d.url.replace(/^https:\/\//, '')) : ''}</div>` : ''}
+      <button class="button" type="button" data-pj="task-details" data-id="${esc(task.id)}">${icon('edit')} Détails de la tâche</button></aside>`;
+  }
+  // Tâche ouverte : en-tête (statut, avancement, actions), fil de messages, zone de saisie et contexte.
+  function chatTask(task) {
+    const p = projectOf(task), [label, tone] = TASK_PILL[task.status] || TASK_PILL.todo, step = STEP_OF[task.status] ?? 0, banner = reviewBanner(task);
+    const steps = STEPS.map((s, i) => `${i ? '<li class="pj-step-sep" aria-hidden="true"></li>' : ''}<li class="${i < step ? 'is-past' : i === step ? 'is-now' : ''}" ${i === step ? 'aria-current="step"' : ''}>${i < step ? G.done : '<i aria-hidden="true"></i>'}${s}</li>`).join('');
+    const stop = openRun(task) && isDirect(task) ? `<button class="button pj-stop" type="button" data-pj="stop-run" data-id="${esc(task.id)}">${G.stop} Arrêter</button>` : '';
+    return `<header class="pj-chat-head"><button type="button" class="icon-button pj-chat-back" data-pj="chat-new" aria-label="Retour aux tâches">${G.back}</button>
+        <div class="pj-chat-title"><div><h1>${esc(task.title)}</h1><span class="pj-pill ${tone}"><i></i>${label}</span><span class="pj-code">${esc(task.code)}</span></div><ol class="pj-steps ${tone}" aria-label="Avancement">${steps}</ol></div>
+        <div class="pj-panel-actions">${stop}${banner ? '' : closeHTML(task)}<button type="button" class="icon-button" data-pj="task-details" data-id="${esc(task.id)}" aria-label="Détails de la tâche" title="Détails de la tâche">${G.dots}</button></div></header>
+      <div class="pj-chat-body"><div class="pj-chat-conv"><div class="pj-chat-thread"><div class="pj-thread" aria-live="polite">${threadHTML(task)}</div></div>
+        <div class="pj-chat-composer">${banner}${composerHTML(task, true)}</div></div>${contextHTML(task, p)}</div>`;
+  }
+  function chatHTML(error) {
+    if (st.chat && !st.tasks.some(t => t.id === st.chat)) st.chat = null;
+    const task = st.chat && st.tasks.find(t => t.id === st.chat);
+    return `<div class="pj-root is-chat ${task ? 'has-task' : ''}">${chatSide()}<main class="pj-chat-main">${error}${task ? chatTask(task) : chatNew()}</main></div>`;
+  }
+  async function taskDetails(taskId) {
+    const task = st.tasks.find(t => t.id === taskId); if (!task) return;
+    await loadAgents();
+    showModal(task.code + ' · ' + task.title, 'Consignes, pièces jointes, moteur et priorité. Enregistrer ne lance rien.', `<div class="pj-panel-bar"><label>Statut<select data-pj-move="${esc(task.id)}">${COLUMNS.map(c => `<option value="${c.id}" ${task.status === c.id ? 'selected' : ''}>${c.label}</option>`).join('')}</select></label>
+        <span class="pj-help">Changer le statut ne lance ni n’arrête aucun agent.</span></div>
+      <form class="pj-form" data-pj-form="edit-task" data-id="${esc(task.id)}">${taskFields(task)}<p class="form-status pj-help" role="status"></p>
+        <div class="pj-form-actions"><button class="button primary" type="submit">Enregistrer</button><button class="button pj-danger" type="button" data-pj="delete-task" data-id="${esc(task.id)}">Supprimer</button></div></form>`, 'pj-task-edit', true);
+  }
+
   function html() {
     if (!st.loaded && !st.error) { if (!st.loading) refresh(); return '<div class="pj-root"><p class="pj-loading" role="status">Chargement des projets…</p></div>'; }
+    if (st.view === 'chat') return chatHTML(st.error ? `<div class="pj-banner is-bad" role="alert">${G.alert}<span>${esc(st.error)}</span><button class="button" data-pj="reload">Réessayer</button></div>` : '');
     const active = st.tasks.filter(t => matches(t) && t.status !== 'done');
     const attention = st.tasks.filter(t => projectOf(t) && !projectOf(t).archived && needsMe(t) && t.status !== 'done').length;
     const date = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
@@ -206,6 +349,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return `<div class="pj-root" data-scroll="page:projects">
       <header class="pj-head"><div><h1>Projets</h1><p>${esc(date.charAt(0).toUpperCase() + date.slice(1))} · ${active.length} tâche${active.length > 1 ? 's' : ''} · ${active.filter(t => t.status === 'doing').length} en cours${attention ? ` · <b class="pj-attn-text">${attention} en attente de vous</b>` : ''}</p></div>
         <div class="pj-actions"><label class="pj-search">${icon('search')}<span class="sr-only">Rechercher</span><input type="search" id="pj-search" placeholder="Rechercher…" value="${esc(st.search)}" autocomplete="off"></label>
+          <button class="pj-round" data-pj="view-set" data-id="chat" aria-label="Afficher les conversations" title="Conversations">${G.chat}</button>
           <button class="pj-round" data-pj="view" aria-label="${st.view === 'grid' ? 'Afficher le tableau' : 'Afficher les projets'}" title="${st.view === 'grid' ? 'Tableau des tâches' : 'Vue des projets'}">${st.view === 'grid' ? G.board : G.cards}</button>
           ${st.view === 'grid' || !visible.length ? `<button class="pj-cta" data-pj="new-project">${icon('plus')} Nouveau projet</button>` : `<button class="pj-round" data-pj="new-project" aria-label="Nouveau projet" title="Nouveau projet">${icon('folder')}</button><button class="pj-cta" data-pj="new-task">${icon('plus')} Nouvelle tâche</button>`}</div></header>
       ${error}${body}</div>`;
@@ -323,30 +467,31 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return list.length ? `<ul class="pj-atts">${list.map(a => `<li><button type="button" class="pj-att" data-pj="open-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" data-name="${esc(a.name)}">${G.clip}<span>${esc(a.name)}</span><small>${fmtSize(a.size)}${a.by ? ' · ' + esc(a.by) : ''}</small></button>
       <button type="button" class="icon-button" data-pj="delete-attachment" data-id="${esc(task.id)}" data-att="${esc(a.id)}" aria-label="Retirer ${esc(a.name)}">${G.trash}</button></li>`).join('')}</ul>` : '';
   }
-  function pendingHTML(form) {
-    const list = pending.get(form) || [];
+  const filesOf = form => form.dataset.pjForm === 'new-chat' ? st.newFiles : (pending.get(form) || []);
+  function pendingHTML(list) {
     return list.map((f, i) => `<li><span class="pj-att is-new">${G.clip}<span>${esc(f.name)}</span><small>${fmtSize(f.size)} · à envoyer</small></span><button type="button" class="icon-button" data-pj="drop-file" data-id="${i}" aria-label="Ne pas joindre ${esc(f.name)}">${G.trash}</button></li>`).join('');
   }
   function addFiles(form, files) {
-    const list = pending.get(form) || [];
+    const list = filesOf(form);
     for (const file of files) {
       if (file.size > MAX_FILE) { toast(file.name + ' dépasse 10 Mo.'); continue; }
       const ext = (file.name.split('.').pop() || '').toLowerCase();
       if (!ACCEPT.split(',').includes('.' + ext)) { toast(file.name + ' : type refusé (captures, PDF, zip, textes).'); continue; }
       list.push(file);
     }
+    if (form.dataset.pjForm === 'new-chat') return render();
     pending.set(form, list);
-    const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(form);
+    const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(list);
   }
   async function uploadPending(form, taskId) {
-    const list = pending.get(form) || []; let task = null;
+    const list = filesOf(form); let task = null;
     while (list.length) {
       const file = list[0];
       const response = await sources.feedmeFetch('/api/projects/tasks/' + taskId + '/attachments?name=' + encodeURIComponent(file.name), { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file, signal: timeoutSignal(180000) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(file.name + ' : ' + (data.error || 'envoi impossible.'));
       task = data.task; list.shift();
-      const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(form);
+      const box = form.querySelector('.pj-pending'); if (box) box.innerHTML = pendingHTML(list);
     }
     return task;
   }
@@ -475,10 +620,11 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     return `${used ? `<p class="pj-help">${esc(used)}</p>` : ''}${resume}`;
   }
   const threadHTML = task => chatItems(task).map(item => messageHTML(item, task)).join('');
-  function composerHTML(task) {
+  // inline : zone de saisie de la vue « conversations » (Clore et Arrêter sont dans l'en-tête, le brouillon survit aux rafraîchissements).
+  function composerHTML(task, inline = false) {
     const direct = isDirect(task), m = composerMode(task, { busy: st.launching.has(task.id), direct }), agent = esc(assignee(task)?.name || 'l’agent');
     // « Clore la tâche » reste sous la zone de saisie : visible quelle que soit la longueur du fil.
-    const foot = (left = '') => `<div class="pj-chatbox-foot">${left}<span class="pj-grow"></span><div class="pj-panel-actions">${closeHTML(task)}</div></div>`;
+    const foot = (left = '') => `<div class="pj-chatbox-foot">${left}<span class="pj-grow"></span>${inline ? '' : `<div class="pj-panel-actions">${closeHTML(task)}</div>`}</div>`;
     if (m.mode === 'manual') return foot('<p class="pj-help">Tâche manuelle : aucun agent ne répond ici. Choisissez un agent dans « Détails de la tâche » pour lui confier le travail.</p>');
     const busy = m.mode === 'busy';
     if (!busy && m.kind === 'initial' && !m.needsText) return `<form class="pj-chatbox is-launch" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="initial">
@@ -486,11 +632,11 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
     return `<form class="pj-chatbox" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="${esc(m.kind || '')}" ${m.setsInstructions ? 'data-sets="1"' : ''}>
       <label class="sr-only" for="pj-chat-input">Message à ${agent}</label>
-      <textarea id="pj-chat-input" name="note" rows="2" maxlength="8000" data-keep="chat" placeholder="${busy ? `${agent} travaille : vous pourrez envoyer dès sa réponse…` : esc(m.placeholder)}" ${m.needsText ? 'required' : ''}></textarea>
-      <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button>
+      <textarea id="pj-chat-input" name="note" rows="${inline ? 1 : 2}" maxlength="8000" data-keep="chat" ${inline ? `data-pj-draft="${esc(task.id)}"` : ''} placeholder="${busy ? `${agent} travaille : vous pourrez envoyer dès sa réponse…` : esc(m.placeholder)}" ${m.needsText ? 'required' : ''}>${inline ? esc(st.drafts[task.id] || '') : ''}</textarea>
+      <button class="button primary pj-send" type="submit" ${busy ? 'disabled' : ''}>${inline ? G.up : G.launch} ${busy ? (st.launching.has(task.id) ? 'Envoi…' : 'En cours') : m.label}</button>
       ${m.alt ? `<button class="button pj-send" type="submit" name="alt" value="${esc(m.alt.kind)}">${m.alt.label}</button>` : ''}</form>
       ${foot(`${m.quick ? `<button class="pj-chip" type="button" data-pj="quick-continue" data-id="${esc(task.id)}">${G.launch} Oui, continue</button>` : ''}
-        ${busy && direct && openRun(task) ? `<button class="button" type="button" data-pj="stop-run" data-id="${esc(task.id)}">Arrêter</button>` : ''}<span class="pj-help">${busy ? (direct ? `${agent} travaille : la session et le dossier sont conservés si vous l’arrêtez.` : esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')) : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
+        ${busy && direct && openRun(task) && !inline ? `<button class="button" type="button" data-pj="stop-run" data-id="${esc(task.id)}">Arrêter</button>` : ''}<span class="pj-help">${busy ? (direct ? `${agent} travaille : la session et le dossier sont conservés si vous l’arrêtez.` : esc(st.capabilities.interruptReason || 'L’arrêt n’est pas disponible avec cette connexion.')) : `Ctrl+Entrée pour envoyer · ${agent} garde le fil de la tâche${task.status === 'done' ? ' · la tâche sera rouverte' : ''}`}</span>`)}`;
   }
   function closeHTML(task) {
     if (task.status === 'done') return `<span class="pj-closed">${icon('check')} Tâche close</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
@@ -573,18 +719,22 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'who': st.who = idv; render(); break;
         case 'project': st.project = idv; write('mb.projects.filter', idv); st.quickAdd = null; render(); break;
         case 'attention': st.attention = !st.attention; render(); break;
-        case 'view': st.view = st.view === 'grid' ? 'board' : 'grid'; write('mb.projects.view', st.view); render(); break;
+        case 'view': st.view = st.view === 'grid' ? 'board' : 'grid'; write('mb.projects.mode', st.view); render(); break;
+        case 'view-set': st.view = VIEWS.includes(idv) ? idv : 'chat'; write('mb.projects.mode', st.view); renderChat(true); break;
+        case 'chat-new': st.chat = null; render(); globalThis.requestAnimationFrame?.(() => document.querySelector('#pj-new-input')?.focus()); break;
+        case 'all-done': st.allDone = true; render(); break;
+        case 'task-details': await taskDetails(idv); break;
         case 'project-status': st.projectStatus = idv; render(); break;
         case 'toggle-archived': st.archived = !st.archived; render(); break;
         case 'reload': st.error = ''; await refresh(false); break;
-        case 'open-project': st.project = idv; st.view = 'board'; write('mb.projects.filter', idv); write('mb.projects.view', 'board'); render(); break;
+        case 'open-project': st.project = idv; st.view = 'board'; write('mb.projects.filter', idv); write('mb.projects.mode', 'board'); render(); break;
         case 'new-project': await projectForm(); break;
         case 'edit-project': await projectForm(st.projects.find(p => p.id === idv)); break;
         case 'archive-project': { const p = st.projects.find(p => p.id === idv); if (!p) break; const saved = await api('projects/' + p.id, 'PATCH', { archived: !p.archived }); Object.assign(p, saved); if (st.project === p.id) st.project = 'all'; toast(saved.archived ? 'Projet archivé. Retrouvez-le avec le filtre « Archivés ».' : 'Projet restauré.'); render(); break; }
         case 'new-task': await taskForm(); break;
         case 'quick-add': st.quickAdd = idv; render(); requestAnimationFrame(() => document.querySelector('#pj-quick-title')?.focus()); break;
         case 'quick-cancel': st.quickAdd = null; render(); break;
-        case 'open-task': await openPanel(idv); break;
+        case 'open-task': if (st.view === 'chat') { st.chat = idv; renderChat(true); } else await openPanel(idv); break;
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
         // Une tâche avec une branche de travail est fusionnée dans la branche de production et poussée sur GitHub par Cockpit (sans agent).
         case 'close-task': {
@@ -627,25 +777,28 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         }
         case 'open-attachment': await openAttachment(idv, el.dataset.att, el.dataset.name); break;
         case 'delete-attachment': { const t = st.tasks.find(t => t.id === idv), a = t?.attachments?.find(a => a.id === el.dataset.att); if (!a || !confirm(`Retirer « ${a.name} » de la tâche ?`)) break; const saved = await api('tasks/' + idv + '/attachments/' + a.id, 'DELETE'); upsert(saved); refreshAttachments(saved); break; }
-        case 'drop-file': { const form = el.closest('form'); (pending.get(form) || []).splice(Number(idv), 1); form.querySelector('.pj-pending').innerHTML = pendingHTML(form); break; }
-        case 'delete-task': { const t = st.tasks.find(t => t.id === idv); if (!t || !confirm(`Supprimer définitivement « ${t.title} » et son historique ?`)) break; await api('tasks/' + idv, 'DELETE'); st.tasks = st.tasks.filter(x => x.id !== idv); modal.close(); render(); break; }
+        case 'drop-file': { const form = el.closest('form'); filesOf(form).splice(Number(idv), 1); if (form.dataset.pjForm === 'new-chat') render(); else form.querySelector('.pj-pending').innerHTML = pendingHTML(filesOf(form)); break; }
+        case 'delete-task': { const t = st.tasks.find(t => t.id === idv); if (!t || !confirm(`Supprimer définitivement « ${t.title} » et son historique ?`)) break; await api('tasks/' + idv, 'DELETE'); st.tasks = st.tasks.filter(x => x.id !== idv); if (st.chat === idv) st.chat = null; modal.close(); render(); break; }
       }
     } catch (e) { toast(e.message); }
   });
   // Ctrl+Entrée (ou Cmd+Entrée) envoie le message ; Entrée seule passe à la ligne.
   document.addEventListener('keydown', event => {
     if (event.key !== 'Enter' || !(event.ctrlKey || event.metaKey)) return;
-    const form = event.target.closest?.('[data-pj-form=chat]'); if (!form) return;
-    event.preventDefault(); const button = form.querySelector('[type=submit]'); if (button && !button.disabled) form.requestSubmit(button);
+    const form = event.target.closest?.('[data-pj-form=chat],[data-pj-form=new-chat]'); if (!form) return;
+    event.preventDefault(); const button = form.querySelector('.primary[type=submit]') || form.querySelector('[type=submit]'); if (button && !button.disabled) form.requestSubmit(button);
   });
   document.addEventListener('input', event => {
+    // Saisie en cours de la vue « conversations » : gardée en mémoire pour survivre aux rafraîchissements.
+    if (event.target.dataset?.pjDraft) { st.drafts[event.target.dataset.pjDraft] = event.target.value; return; }
     if (event.target.id !== 'pj-search') return;
     st.search = event.target.value; render();
   });
   document.addEventListener('change', event => {
     const el = event.target;
     if (el.matches('[data-pj-move]')) move(el.dataset.pjMove, el.value);
-    if (el.matches('.pj-form input[type=file][name=files]')) { addFiles(el.form, el.files); el.value = ''; }
+    if (el.matches('[data-pj-pick=project]')) { st.project = el.value; write('mb.projects.filter', el.value); render(); }
+    if (el.matches('[data-pj-form] input[type=file][name=files]')) { addFiles(el.form, el.files); el.value = ''; }
     if (el.matches('select[name=deployType]')) { const box = el.form.querySelector('[data-pj-typefields]'); if (box) box.innerHTML = typeFields(el.value, {}); }
     if (el.matches('input[name=repoMode]')) { const fresh = el.form.elements.repoMode.value === 'new'; el.form.querySelector('[data-pj-newrepo]').hidden = !fresh; el.form.elements.repository.disabled = fresh; }
     // Nouvelle tâche : changer de projet reprend l'agent de ce projet.
@@ -653,7 +806,7 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
   });
   // Coller une capture d'écran dans une tâche l'ajoute aux pièces jointes.
   document.addEventListener('paste', event => {
-    const form = event.target.closest?.('[data-pj-form=task],[data-pj-form=edit-task]'); if (!form) return;
+    const form = event.target.closest?.('[data-pj-form=task],[data-pj-form=edit-task],[data-pj-form=new-chat]'); if (!form) return;
     const images = [...(event.clipboardData?.files || [])].filter(f => f.type.startsWith('image/')); if (!images.length) return;
     event.preventDefault();
     const stamp = new Date().toISOString().slice(0, 19).replace(/[T:]/g, '-');
@@ -675,6 +828,18 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         try { const withFiles = await uploadPending(form, task.id); if (withFiles) upsert(withFiles); }
         catch (e) { toast('Tâche créée, mais ' + e.message); }
         render(); await openPanel(task.id);
+      } else if (kind === 'new-chat') {
+        // Le message devient les consignes ; sa première ligne sert de titre.
+        const instructions = String(fd.get('instructions') || '').trim(); if (!instructions) throw new Error('Écrivez d’abord ce qu’il faut faire.');
+        const projectId = String(fd.get('projectId') || ''), project = st.projects.find(p => p.id === projectId); if (!project) throw new Error('Créez d’abord un projet.');
+        const line = instructions.split('\n').find(l => l.trim()).trim().replace(/^#+\s*/, ''), title = line.length > 80 ? line.slice(0, 79).trimEnd() + '…' : line;
+        const task = await api('tasks', 'POST', { projectId, title, instructions, expected: String(fd.get('expected') || ''), links: parseLinks(fd.get('links')), engine: fd.get('engine') || '', agent: project.agent || null }); upsert(task);
+        try { const withFiles = await uploadPending(form, task.id); if (withFiles) upsert(withFiles); }
+        catch (e) { toast('Tâche créée, mais ' + e.message); }
+        for (const key of ['new', 'new-expected', 'new-links']) delete st.drafts[key];
+        st.chat = task.id; renderChat(true);
+        if (event.submitter?.name === 'draft') toast('Brouillon enregistré. Rien n’a été lancé.');
+        else await launch(task.id, 'initial', '');
       } else if (kind === 'edit-task') {
         let saved = await api('tasks/' + form.dataset.id, 'PATCH', readTask(form)); upsert(saved);
         const withFiles = await uploadPending(form, saved.id); if (withFiles) upsert(saved = withFiles);
@@ -700,12 +865,12 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
           const field = modal.querySelector('[data-pj-form=edit-task] [name=instructions]'); if (field && !field.value.trim()) field.value = saved.instructions;
         }
         // Le message quitte la zone de saisie dès l'envoi ; il y revient si l'envoi échoue.
-        const box = () => modal.querySelector('[data-pj-form=chat] [name=note]');
-        if (box()) box().value = '';
+        const box = () => (modal.open && modal.querySelector('[data-pj-form=chat] [name=note]')) || document.querySelector?.('.pj-chat-composer [name=note]');
+        if (box()) box().value = ''; delete st.drafts[taskId];
         // Deuxième bouton (ex. « Réviser le plan ») : son type de lancement remplace celui du formulaire, le message est alors obligatoire.
         const kind = event.submitter?.name === 'alt' ? event.submitter.value : form.dataset.kind;
         if (event.submitter?.name === 'alt' && !note) throw new Error('Écrivez ce qu’il faut changer.');
-        if (!await launch(taskId, kind, sets ? '' : note, submit) && !sets && box() && !box().value) box().value = note;
+        if (!await launch(taskId, kind, sets ? '' : note, submit) && !sets && box() && !box().value) { box().value = note; st.drafts[taskId] = note; }
       }
     } catch (e) { if (status) status.textContent = e.message; toast(e.message); }
     finally { if (submit?.isConnected) submit.disabled = false; }

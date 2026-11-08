@@ -308,6 +308,32 @@ test('closing a task publishes its branch: merged into main and pushed to GitHub
   assert.equal(again.status, 200); assert.equal(again.body.published.commit, closed.body.published.commit);
 });
 
+test('closing several tasks at once publishes them one after the other: nothing lost, even if GitHub moved meanwhile', async t => {
+  const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
+  const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git'), other = path.join(dir, 'autre-poste');
+  const cp = require('node:child_process'), who = ['-c', 'user.name=T', '-c', 'user.email=t@example.com'];
+  cp.execFileSync('git', ['clone', '-q', '--bare', local, origin]);
+  git(local, 'remote', 'add', 'origin', origin); git(local, 'fetch', '-q', 'origin');
+  const p = await project('alpha'), tasks = [];
+  for (const i of [1, 2, 3]) {
+    const task = await create(p.id); await launch(task.id); const done = await lastDone(task.id);
+    // Chaque tâche livre son propre fichier (le faux Claude produit toujours le même commit feature.txt).
+    git(done.direct.cwd, 'reset', '-q', '--hard', 'HEAD~1'); fs.writeFileSync(path.join(done.direct.cwd, `tache-${i}.txt`), `tâche ${i}\n`);
+    git(done.direct.cwd, 'add', '.'); git(done.direct.cwd, ...who, 'commit', '-qm', 'tâche ' + i);
+    tasks.push(task);
+  }
+  // Un autre poste pousse sur GitHub pendant ce temps.
+  cp.execFileSync('git', ['clone', '-q', origin, other]);
+  fs.writeFileSync(path.join(other, 'ailleurs.txt'), 'autre poste\n'); git(other, 'add', '.'); git(other, ...who, 'commit', '-qm', 'ailleurs'); git(other, 'push', '-q', 'origin', 'main');
+  const closed = await Promise.all(tasks.map(x => ui('tasks/' + x.id + '/accept', 'POST', {})));
+  for (const r of closed) { assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.status, 'done'); }
+  const files = git(origin, 'ls-tree', '--name-only', 'main').split('\n');
+  for (const f of ['tache-1.txt', 'tache-2.txt', 'tache-3.txt', 'ailleurs.txt']) assert.ok(files.includes(f), f + ' publié');
+  assert.equal(git(origin, 'rev-parse', 'main'), git(local, 'rev-parse', 'main'));
+  const subjects = git(origin, 'log', '--format=%s', 'main');
+  for (const x of tasks) assert.match(subjects, new RegExp('^' + x.code + ' · ', 'm'));
+});
+
 test('closing refuses to publish over uncommitted changes in the local copy, and leaves the task open', async t => {
   const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
   const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git');

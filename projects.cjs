@@ -259,7 +259,19 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (published) { task.published = published; delete task.deployError; delete task.deployCheck; }
     save(); return task;
   }
-  async function publishTask(task) {
+  // File d'attente par copie locale : plusieurs tâches closes coup sur coup sont publiées l'une après l'autre,
+  // chacune fusionnée par-dessus la précédente (jamais deux fusions ou deux push en même temps dans le même dépôt).
+  const publishQueue = new Map();
+  function publishTask(task) {
+    const project = store.projects.find(p => p.id === task.projectId);
+    const key = project?.workspace?.path || '';
+    const next = (publishQueue.get(key) || Promise.resolve()).catch(() => {}).then(() => publishNow(task));
+    const tail = next.catch(() => {});
+    publishQueue.set(key, tail);
+    tail.then(() => { if (publishQueue.get(key) === tail) publishQueue.delete(key); });
+    return next;
+  }
+  async function publishNow(task) {
     const project = store.projects.find(p => p.id === task.projectId), branch = task.direct?.branch, cwd = task.direct?.cwd;
     const dir = project?.workspace?.status === 'ready' ? project.workspace.path : '', prod = deploy.settingsOf(project).branch;
     if (!branch || !dir || !workspaces.git) return null;
@@ -273,19 +285,32 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const leftOut = cwd ? (await workspaces.git(['-C', cwd, 'status', '--porcelain', '--untracked-files=no']).then(String, () => '')).split('\n').map(l => l.slice(3).trim()).filter(Boolean).slice(0, 20) : [];
     if (await git('rev-parse', '--abbrev-ref', 'HEAD') !== prod) fail(`La copie locale ${dir} n’est pas sur la branche ${prod}.`);
     if (await git('status', '--porcelain', '--untracked-files=no')) fail(`La copie locale ${dir} contient des modifications non committées : rien n’a été publié.`);
-    try { await git('fetch', '-q', 'origin', prod); await git('merge', '-q', '--ff-only', 'origin/' + prod); }
-    catch { fail(`La branche ${prod} de la copie locale et celle de GitHub ont divergé : rien n’a été publié.`); }
-    // Identité Git du commit de fusion : celle de la copie locale, sinon « Cockpit ».
+    // Identité Git des commits de fusion : celle de la copie locale, sinon « Cockpit ».
     const who = (await git('config', 'user.email').catch(() => '')) ? [] : ['-c', 'user.name=Cockpit', '-c', 'user.email=cockpit@localhost'];
+    // Récupère GitHub dans la branche de production locale. Si elle porte déjà des fusions pas encore poussées
+    // (push précédent refusé) et que GitHub a avancé entre-temps, les deux historiques sont fusionnés : rien n'est écrasé.
+    const syncOrigin = async () => {
+      try { await git('fetch', '-q', 'origin', prod); }
+      catch (error) { fail(`La récupération de ${prod} depuis GitHub a échoué (${text(String(error.message || ''), 200)}) : rien n’a été publié.`); }
+      if (await git('merge', '-q', '--ff-only', 'origin/' + prod).then(() => true, () => false)) return;
+      try { await workspaces.git(['-C', dir, ...who, 'merge', '-q', '--no-ff', '-m', `Fusion de origin/${prod}`, 'origin/' + prod]); }
+      catch {
+        await git('merge', '--abort').catch(() => {});
+        fail(`La branche ${prod} de la copie locale et celle de GitHub ont divergé et entrent en conflit : rien n’a été publié.`);
+      }
+    };
+    await syncOrigin();
     if (pending) try { await workspaces.git(['-C', dir, ...who, 'merge', '-q', '--no-ff', '-m', `${task.code} · ${task.title}`.slice(0, 200), branch]); }
     catch (error) {
       const conflict = await git('diff', '--name-only', '--diff-filter=U').catch(() => '');
       await git('merge', '--abort').catch(() => {});
       fail(conflict ? `La branche de la tâche entre en conflit avec ${prod} : rien n’a été publié. Demandez à l’agent de récupérer ${prod} dans sa branche.` : `La fusion dans ${prod} a échoué (${text(String(error.message || ''), 200)}) : rien n’a été publié.`);
     }
+    // GitHub a avancé entre la récupération et l'envoi (autre poste, push manuel) : on récupère et on renvoie, sans forcer.
+    const push = () => git('push', '-q', 'origin', prod);
+    try { await push().catch(async error => { if (!/rejected|non-fast-forward|fetch first/i.test(String(error.message || '') + String(error.stderr || ''))) throw error; await syncOrigin(); await push(); }); }
+    catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(502, `La tâche est fusionnée dans ${prod} en local, mais l’envoi sur GitHub a échoué (${text(String(error.message || ''), 200)}). La tâche reste ouverte : recommencez une fois l’accès rétabli.`); }
     const commit = await git('rev-parse', 'HEAD');
-    try { await git('push', '-q', 'origin', prod); }
-    catch (error) { throw new HttpError(502, `La tâche est fusionnée dans ${prod} en local, mais l’envoi sur GitHub a échoué (${text(String(error.message || ''), 200)}). La tâche reste ouverte : recommencez une fois l’accès rétabli.`); }
     log(`Tâche ${task.code} publiée sur GitHub (${prod} · ${commit.slice(0, 7)})`);
     return { at: now(), branch: prod, commit, ...(leftOut.length ? { leftOut } : {}) };
   }

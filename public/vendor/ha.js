@@ -89,7 +89,7 @@ HD.HAConnection = class HAConnection {
     } else if (m.type === 'auth_invalid') {
       this.authFailed = true;
       this.emit('status', 'auth_invalid');
-      done(new Error((this.authKind === 'token' ? 'Jeton refusé : ' : 'Session refusée : ') + (m.message || 'auth_invalid')));
+      done(Object.assign(new Error((this.authKind === 'token' ? 'Jeton refusé : ' : 'Session refusée : ') + (m.message || 'auth_invalid')), { auth: true }));
       this.ws.close();
     } else if (m.type === 'auth_ok') {
       this.retry = 0;

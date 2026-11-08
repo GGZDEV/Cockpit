@@ -4,6 +4,7 @@ import { feedmeOverlayOpen, feedmePreferences, importFeedmePreferences } from '.
 import { haActions } from './ha-actions.js';
 import { accountSync } from './account-sync.js';
 import { Sources } from './data.js';
+import { restoreHA } from './ha-session.js';
 import { activeRoom, roomModel, roomLayoutKey, importedRoomWidgets, importedPageWidgets, defaultRoomWidgets, statesForWidget, spotifyStatesForWidget } from './rooms.js';
 import { modules, presets } from './modules.js';
 import { nativeContent, nativeTitle, nativeEvents } from './native-renderers.js';
@@ -460,12 +461,26 @@ async function haSession(method, body) {
 }
 // Un téléphone resté sur une autre disposition : on indique une fois où choisir « Téléphone ».
 if (isPhoneScreen() && profile !== 'phone' && !params.get('surface') && !read('mb.phone.hint', false)) { write('mb.phone.hint', true); setTimeout(() => toast('Disposition Téléphone disponible : Paramètres › Affichage sur cet appareil.'), 1500); }
+// Essai d'un jeton sans toucher à la connexion en cours (jeton d'un autre appareil).
+async function probeHA(url, token) { const conn = new HD.HAConnection(new URL(url).origin, token); try { await conn.connect(); } finally { conn.close(); } }
+// Jeton de cet appareil, sinon celui du serveur ; HA injoignable : on garde le jeton et on réessaie au retour sur la page.
+let haRetry = false;
+function restoreHomeAssistant() {
+  haRetry = false;
+  return restoreHA({
+    local: read('mb.ha.token', null) ? { url: read('mb.ha.url', sources.suggestedHA || ''), token: read('mb.ha.token', '') } : null,
+    loadServer: () => haSession('GET'), connect: (url, token) => sources.connectHA(url, token), probe: probeHA,
+    saveLocal: saved => { write('mb.ha.url', new URL(saved.url).origin); write('mb.ha.token', saved.token); },
+    dropLocal: () => write('mb.ha.token', null), saveServer: saved => haSession('PUT', saved)
+  }).then(result => {
+    if (result.reason === 'network') { haRetry = true; toast(result.error.message); }
+    else if (result.reason === 'refused') toast('Jeton Home Assistant refusé : reconnectez la maison dans les réglages.');
+  }).catch(e => toast(e.message));
+}
 if (HD.Auth?.servedByHA() && read('mb.ha.autologin', true)) HD.Auth.init(true).then(provider => provider && sources.connectHA(provider.hassUrl, provider)).catch(e => toast(e.message));
-else if (!sources.demo && read('mb.ha.token', null) && read('mb.ha.autologin', true)) sources.connectHA(read('mb.ha.url', sources.suggestedHA || ''), read('mb.ha.token', '')).then(() => haSession('PUT', { url: read('mb.ha.url', ''), token: read('mb.ha.token', '') })).catch(e => toast(e.message));
-// Nouvel appareil ou appli réinstallée : reprend la connexion mémorisée par le serveur Cockpit au lieu de redemander un jeton.
-else if (!sources.demo && read('mb.ha.autologin', true)) haSession('GET').then(saved => { if (!saved?.token || !saved.url || sources.ha) return; write('mb.ha.token', saved.token); return sources.connectHA(saved.url, saved.token); }).catch(e => toast(e.message));
+else if (!sources.demo && read('mb.ha.autologin', true)) restoreHomeAssistant();
 setInterval(() => { if (!document.hidden) sources.refresh(); }, 60000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && !sources.demo) { sources.ha?.retryNow(); sources.refresh(); } });
+document.addEventListener('visibilitychange', () => { if (!document.hidden && !sources.demo) { if (haRetry && !sources.ha) restoreHomeAssistant(); sources.ha?.retryNow(); sources.refresh(); } });
 
 $app.addEventListener('dblclick', event => { const head = event.target.closest('.widget-head'); if (head && !event.target.closest('button')) { const w = current().find(w => w.id === head.closest('[data-widget]').dataset.widget); if (w) { w.collapsed = !w.collapsed; persist(); render(true); } } });
 const advancedHA=haActions({sources,showModal,toast,opened:widget=>{detailId=widget.id;}});

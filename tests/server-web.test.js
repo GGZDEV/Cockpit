@@ -51,3 +51,20 @@ test('HTTPS proxy accepts same-origin writes but refuses foreign origins and hos
   assert.equal((await request({ 'Sec-Fetch-Site': 'cross-site' })).status, 403);
   assert.equal((await request({ 'X-Forwarded-Proto': 'http' })).status, 403);
 });
+
+test('Home Assistant session is remembered by the server behind the site password', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-ha-')), file = path.join(dir, 'data', 'ha-session.json');
+  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', projects: { allowedRoute: () => false }, haSessionFile: file });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); fs.rmSync(dir, { recursive: true, force: true }); }));
+  const url = 'http://127.0.0.1:' + server.address().port + '/api/ha-session', headers = { Authorization: 'Basic ' + Buffer.from('cockpit:secret').toString('base64'), 'Content-Type': 'application/json' };
+  assert.equal((await fetch(url)).status, 401);
+  assert.deepEqual(await (await fetch(url, { headers })).json(), { url: '', token: '' });
+  assert.equal((await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ url: 'javascript:alert(1)', token: 'x'.repeat(30) }) })).status, 400);
+  const token = 'eyJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJ4In0.abc_DEF-123';
+  assert.equal((await fetch(url, { method: 'PUT', headers, body: JSON.stringify({ url: 'https://ha.example:8123/lovelace', token }) })).status, 200);
+  assert.deepEqual(await (await fetch(url, { headers })).json(), { url: 'https://ha.example:8123', token });
+  if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
+  await fetch(url, { method: 'DELETE', headers });
+  assert.deepEqual(await (await fetch(url, { headers })).json(), { url: '', token: '' });
+});

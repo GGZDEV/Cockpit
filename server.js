@@ -58,12 +58,31 @@ const secretFile = name => {
   if (!file) return '';
   try { return fs.readFileSync(file, 'utf8').trim(); } catch (error) { throw new Error(name + ' est illisible : ' + error.message); }
 };
+// Connexion Home Assistant mémorisée par ce serveur : un seul jeton pour tous les appareils et toutes les republications
+// (en mode serveur, le site entier est protégé par le mot de passe ; sinon il n'écoute que sur ce PC).
+async function haSession(req, res, file) {
+  if (req.method === 'GET') {
+    try { const saved = JSON.parse(await fs.promises.readFile(file, 'utf8')); return json(res, 200, { url: String(saved.url || ''), token: String(saved.token || '') }); }
+    catch { return json(res, 200, { url: '', token: '' }); }
+  }
+  if (req.method === 'DELETE') { await fs.promises.rm(file, { force: true }); return json(res, 200, { ok: true }); }
+  if (req.method !== 'PUT') return json(res, 405, { error: 'Méthode indisponible.' });
+  const chunks = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > 16384) return json(res, 413, { error: 'Requête trop longue.' }); chunks.push(chunk); }
+  let body; try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return json(res, 400, { error: 'Requête invalide.' }); }
+  let url; try { url = new URL(String(body?.url || '')); } catch { return json(res, 400, { error: 'Adresse Home Assistant invalide.' }); }
+  const token = String(body?.token || '');
+  if (!/^https?:$/.test(url.protocol) || !/^[\w.-]{20,4000}$/.test(token)) return json(res, 400, { error: 'Adresse ou jeton Home Assistant invalide.' });
+  await fs.promises.mkdir(path.dirname(file), { recursive: true });
+  await fs.promises.writeFile(file, JSON.stringify({ url: url.origin, token }), { mode: 0o600 });
+  return json(res, 200, { ok: true });
+}
 const PWA_PUBLIC = new Set(['/manifest.json', '/brand/apple-touch-icon.png', '/brand/icon-192.png', '/brand/icon-512.png']);
 function cryptoSafe(a, b) {
   const crypto = require('node:crypto'), left = Buffer.from(a), right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
 }
-function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE') } = {}) {
+function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE'), haSessionFile = path.join(__dirname, 'data', 'ha-session.json') } = {}) {
   if (serverMode && !webPassword) throw new Error('COCKPIT_WEB_PASSWORD_FILE est obligatoire en mode serveur.');
   return http.createServer(async (req, res) => {
     try {
@@ -78,6 +97,7 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
       if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
       if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }
       if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, rss: true, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
+      if (url.pathname === '/api/ha-session') return haSession(req, res, haSessionFile);
       if (url.pathname === '/api/projects' || url.pathname.startsWith('/api/projects/')) {
         const service = projects || projectsService();
         if (!service.allowedRoute(req.method, url.pathname)) return json(res, 405, { error: 'Opération indisponible.' });

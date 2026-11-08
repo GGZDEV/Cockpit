@@ -15,11 +15,11 @@ body[data-profile="phone"] .rail-btn{flex:1 1 0;min-width:0;max-width:64px;width
 body[data-profile="phone"] .panel{height:auto;padding:0;overflow:visible}
 body[data-profile="phone"] .native-home-panel .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;height:auto;margin:0 0 12px;padding:0}
 body[data-profile="phone"] .native-home-panel .page-head>*{min-width:0}
-body[data-profile="phone"] .native-home-panel .page-head.is-home{display:grid;grid-template-columns:minmax(0,1fr) auto auto;grid-template-areas:"l c f" "r r r";align-items:center;gap:8px 10px;min-height:0}
+body[data-profile="phone"] .native-home-panel .page-head.is-home{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-areas:"l c f" "r r r";align-items:center;gap:8px 10px;min-height:0}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-left{grid-area:l;flex-wrap:nowrap;min-height:40px;overflow:hidden}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{grid-area:c;flex-wrap:nowrap;justify-content:flex-end;min-height:40px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{grid-area:c;flex-wrap:nowrap;justify-content:center;align-items:center;text-align:center;min-height:40px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center:empty{display:none}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.head-fixed{grid-area:f;flex-wrap:nowrap;gap:6px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.head-fixed{grid-area:f;justify-self:end;flex-wrap:nowrap;gap:6px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right{grid-area:r;grid-column:1/-1;flex-wrap:nowrap;justify-content:flex-start;min-height:0;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right:empty{display:none}
 body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right::-webkit-scrollbar{display:none}
@@ -91,6 +91,8 @@ body[data-profile="phone"] .pj-board{grid-template-columns:repeat(5,calc(min(100
 body[data-profile="phone"] .pj-col{scroll-snap-align:start}
 body[data-profile="phone"] .pj-context{padding:12px 14px}
 body[data-profile="phone"] .pj-context>div{flex-basis:100%}
+/* Vue chat : plein écran entre la barre d'état et les onglets du bas (6 + 48 + 6 px + bordure), sans cadre ni marges perdues. */
+body[data-profile="phone"] .projects-panel .pj-root.is-chat{position:fixed;z-index:4;top:env(safe-area-inset-top);bottom:calc(61px + env(safe-area-inset-bottom));left:max(0px,calc(50% - 280px));right:max(0px,calc(50% - 280px));height:auto;max-height:none;min-height:0;padding:0;gap:0;border:0;border-radius:0}
 
 /* Dialogues à la largeur du téléphone. */
 /* Choix en pastilles (hauteur 1 à 8…) : toujours sur une ligne, les boutons se partagent la largeur (36 px au moins pour le doigt). */

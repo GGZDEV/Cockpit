@@ -175,14 +175,15 @@ function createHarness({ adapter, enabled = false, command, prefixArgs = [], bas
   }
 
   // Lance le moteur ; résout toujours (jamais d'exception) avec ce qui s'est passé.
-  function run({ runId, args, cwd, prompt, timeoutMs, onEvent = () => {} }) {
+  // env : variables ajoutées par Cockpit pour cette exécution (ex. COCKPIT_VISUAL_DIR).
+  function run({ runId, args, cwd, prompt, timeoutMs, env = {}, onEvent = () => {} }) {
     const collector = adapter.createCollector(), started = Date.now();
     const program = resolveProgram(command, prefixArgs, { platform, execPath });
     if (program.refused) return Promise.resolve({ collector, durationMs: 0, spawnError: adapter.cmdRefusal });
     return new Promise(resolve => {
       let child, stderr = '', buffer = '', timedOut = false, settled = false;
       const done = value => { if (settled) return; settled = true; clearTimeout(timer); active.delete(runId); resolve({ collector, stderr: redact(stderr.slice(-4000)), timedOut, durationMs: Date.now() - started, ...value }); };
-      try { child = spawnImpl(program.file, [...program.args, ...args], { cwd, env: adapter.env(baseEnv), stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: !win }); }
+      try { child = spawnImpl(program.file, [...program.args, ...args], { cwd, env: { ...adapter.env(baseEnv), ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: !win }); }
       catch (error) { return done({ spawnError: error.message }); }
       active.set(runId, child);
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
@@ -210,5 +211,5 @@ function createHarness({ adapter, enabled = false, command, prefixArgs = [], bas
     close: () => { for (const child of active.values()) stop(child); } };
 }
 
-module.exports = { createHarness, directSettings, resolveProgram, killTree, insideDir, verdict, redact, childEnv, unavailability, fallbackDecision,
+module.exports = { createHarness, gitRunner, directSettings, resolveProgram, killTree, insideDir, verdict, redact, childEnv, unavailability, fallbackDecision,
   clip, DirectError, ENGINES, ENGINE_LABEL, DEFAULTS, DEFAULT_BASH, DEFAULT_MODEL, CODEX_EFFORTS, MARKER };

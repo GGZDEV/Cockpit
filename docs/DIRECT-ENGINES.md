@@ -18,6 +18,13 @@ inchangé, pour les projets et tâches qui l'utilisent déjà. Objectif : le moi
 1. Clic sur **Lancer** (rien ne démarre sans ce clic). Cockpit vérifie le dépôt (copie locale prête, sous le dossier des projets,
    racine Git, pas de lien symbolique), puis crée **un worktree et une branche par tâche** (`cockpit/<code>-<id>`), à côté
    de la copie principale qui n'est jamais modifiée. Le `CLAUDE.md` du projet y est copié.
+   **Préparation** (`task-env.cjs`, dans le suivi asynchrone : la réponse du lancement n'attend pas, chaque étape s'affiche dans la
+   chronologie, « Arrêter » l'interrompt) : dépendances installées si `node_modules` manque — `npm ci --no-audit --no-fund --prefer-offline`
+   avec `package-lock.json`/`npm-shrinkwrap.json`, `pnpm`/`yarn` s'ils sont installés (sinon signalé), `npm install --no-save
+   --no-package-lock` sans verrou (rien d'écrit dans le dépôt) — puis **tests de départ** (`npm test`, 10 min au plus) une seule fois par
+   commit de départ, si `scripts.test` n'est pas le texte par défaut de npm : `task.direct.baseline = { sha, at, ok, passed, failed, total, summary }`.
+   Un fichier suivi réécrit par ces tests est remis en état. Sans shell, environnement filtré, sortie tronquée et caviardée.
+   Une nouvelle session reçoit les sections « Environnement préparé » (échecs existants signalés comme tels) et « Vérification ».
 2. `claude -p …` est lancé **sans shell** (arguments en tableau, demande sur l'entrée standard) dans ce worktree.
 3. À la fin : résultat (ligne `STATUT:` facultative : `BLOQUÉ` = question, `ÉCHEC`), puis relevé Git fait par Cockpit sans jeton
    (branche, fichiers, commits, changements non commités), compteurs (jetons, appels, durée, coût estimé).

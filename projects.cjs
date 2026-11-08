@@ -15,6 +15,7 @@ const { RULES, agentSettings, configCommand, workspaceFiles } = require('./proje
 const claude = require('./claude-direct.cjs');
 const codex = require('./codex-direct.cjs');
 const harness = require('./direct-harness.cjs');
+const taskEnvironment = require('./task-env.cjs');
 const claudemd = require('./project-claudemd.cjs');
 const deploy = require('./project-deploy.cjs');
 const bootstrap = require('./project-bootstrap.cjs');
@@ -59,7 +60,7 @@ function cleanAgent(a) {
 }
 
 function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetchImpl = fetch, reconcileEvery = 15000, log = () => {}, workspaces = createWorkspaces(),
-  directEnabled = process.env.COCKPIT_DIRECT !== '0', openclawEnabled = process.env.COCKPIT_SERVER_MODE !== '1', claudeEngine, codexEngine, deployer = createDeployerClient({ fetchImpl }), github = createGithub() } = {}) {
+  directEnabled = process.env.COCKPIT_DIRECT !== '0', openclawEnabled = process.env.COCKPIT_SERVER_MODE !== '1', claudeEngine, codexEngine, deployer = createDeployerClient({ fetchImpl }), github = createGithub(), taskEnv = taskEnvironment.createTaskEnv() } = {}) {
   // Moteurs directs actifs par défaut ; COCKPIT_DIRECT=0 les coupe tous (retour à OpenClaw seul). Le même worktree sert aux deux moteurs.
   const claudeRun = claudeEngine || claude.createEngine({ enabled: directEnabled, workspacesRoot: workspaces.root });
   const engines = { claude: claudeRun, codex: codexEngine || codex.createEngine({ enabled: directEnabled && process.env.COCKPIT_CODEX_DIRECT !== '0', workspacesRoot: workspaces.root, worktreeRoot: claudeRun.worktreeRoot }) };
@@ -520,6 +521,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   const isDirectRun = run => harness.ENGINES.includes(run.engine);
   const directRuns = task => task.runs.filter(isDirectRun);
   const starting = new Set(); // tâches en cours de lancement : comptent dans la limite d'exécutions simultanées
+  const preparing = new Map(); // run id -> AbortController (dépendances et tests de départ avant le moteur)
   // Budget par tâche, partagé entre les moteurs : somme des coûts mesurés (estimation de Claude). Un coût non exposé (Codex) n'est jamais inventé.
   const spent = task => directRuns(task).reduce((sum, r) => sum + (Number(r.metrics?.costUsd) || 0), 0);
   const MIN_RUN_USD = 0.1; // en dessous, une exécution n'a pas de quoi aboutir : on refuse plutôt que de la couper aussitôt
@@ -538,7 +540,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (directRuns(task).length >= s.maxRuns) throw new HttpError(409, `Limite atteinte : ${s.maxRuns} exécutions pour cette tâche (réglage du projet).`);
     const budgetUsd = runBudget(task, s);
     if (name === 'claude' && budgetUsd < MIN_RUN_USD) throw new HttpError(409, `Budget de la tâche presque épuisé : ${spent(task).toFixed(2)} $ sur ${s.taskBudgetUsd} $ (estimation, réglage du projet).`);
-    const running = engines.claude.active.size + engines.codex.active.size + starting.size;
+    const running = engines.claude.active.size + engines.codex.active.size + starting.size + preparing.size;
     if (running >= engines.claude.maxParallel) throw new HttpError(409, `Déjà ${running} exécutions en cours sur ce PC : réessayez quand l’une d’elles sera terminée.`);
     launching.add(task.id); starting.add(task.id);
     try {
@@ -599,8 +601,39 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (name === 'claude') Object.assign(d, { sessionId, engine: 'claude' });
     return { run, attachmentIds: attachments.map(a => a.id) };
   }
+  // Avant le moteur, dans le suivi asynchrone (la réponse HTTP du lancement n'attend pas) : dépendances du worktree, puis tests de départ
+  // une fois par commit de départ. Faux si l'exécution a été arrêtée entre-temps (arrêt demandé ou arrêt de Cockpit).
+  async function prepareWorktree(task, run) {
+    const d = task.direct, controller = new AbortController(), signal = controller.signal;
+    preparing.set(run.id, controller);
+    let deps = null;
+    try {
+      const plan = taskEnv.plan(d.cwd);
+      if (plan) {
+        event(run, 'prepare', 'Préparation des dépendances… (' + plan.label + ')'); saveSoon();
+        deps = await taskEnv.install(d.cwd, { signal });
+        if (deps) { d.deps = { at: now(), status: deps.status, label: deps.label, summary: deps.summary }; event(run, 'prepare', taskEnvironment.describeInstall(deps)); saveSoon(); }
+      }
+      if (!signal.aborted && !closing && d.baseSha && d.baseline?.sha !== d.baseSha && taskEnv.testScript(d.cwd) && (await engines[run.engine].gitState(d.cwd))?.head === d.baseSha) {
+        event(run, 'baseline', 'Tests de départ…'); saveSoon();
+        const baseline = await taskEnv.baseline(d.cwd, d.baseSha, { signal });
+        if (baseline) { d.baseline = baseline; event(run, 'baseline', taskEnvironment.describeBaseline(baseline)); saveSoon(); }
+      }
+    } catch (error) { log('Préparation du worktree : ' + error.message); event(run, 'prepare', 'Préparation incomplète : ' + harness.redact(text(error.message, 300))); }
+    finally { preparing.delete(run.id); }
+    if (closing) { if (OPEN_RUN.includes(run.status)) fail(task, run, 'interrupted', 'Cockpit s’est arrêté pendant la préparation du worktree : « Relancer » reprend.'); return false; }
+    if (run.stopRequested || !OPEN_RUN.includes(run.status)) { if (OPEN_RUN.includes(run.status)) fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.'); return false; }
+    // Nouvelle session : le brief dit ce qui est prêt et comment vérifier (avant la phase « plan » éventuelle).
+    if (run.fresh) {
+      const section = taskEnvironment.environmentBrief({ deps: deps || (d.deps?.status && d.deps.status !== 'installed' ? d.deps : null), baseline: d.baseline?.sha === d.baseSha ? d.baseline : null, testable: taskEnv.testScript(d.cwd) });
+      const at = run.prompt.indexOf('\n## Phase : plan');
+      run.prompt = (at < 0 ? run.prompt + '\n\n' + section : run.prompt.slice(0, at) + '\n\n' + section + run.prompt.slice(at)).slice(0, 44000);
+    }
+    return true;
+  }
   async function followDirect(task, run, s, attachmentIds, { allowFallback = true } = {}) {
     const d = task.direct, engine = engines[run.engine], label = LABEL[run.engine];
+    if (!await prepareWorktree(task, run)) return;
     const folder = path.dirname(files.localPath(task.id, { id: 'x', ext: 'x' }));
     // Pièces jointes : lisibles par Claude via --add-dir ; Codex les lit sans qu'on rende leur dossier inscriptible.
     const addDirs = run.engine === 'claude' && task.attachments?.length && fs.existsSync(folder) ? [folder] : [];
@@ -673,6 +706,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (!run || !isDirectRun(run)) throw new HttpError(409, 'Aucune exécution Claude Code ou Codex à arrêter sur cette tâche.');
     run.stopRequested = true;
     const child = engines[run.engine].active.get(run.id);
+    preparing.get(run.id)?.abort();
     if (child) harness.killTree(child); else fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.');
     return task;
   }
@@ -1215,7 +1249,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     : /^\/api\/projects\/tasks\/[\w-]+\/attachments\/[\w-]+$/.test(pathname) ? ['GET', 'DELETE'].includes(method)
     : /^\/api\/projects\/tasks\/[\w-]+$/.test(pathname) ? ['PATCH', 'DELETE'].includes(method)
     : /^\/api\/projects\/tasks\/[\w-]+\/(launch|accept|stop)$/.test(pathname) ? method === 'POST' : false;
-  function close() { closing = true; clearInterval(timer); for (const c of streams.values()) c.abort(); engines.claude.close(); engines.codex.close(); if (saveTimer) save(); }
+  function close() { closing = true; clearInterval(timer); for (const c of streams.values()) c.abort(); for (const c of preparing.values()) c.abort(); engines.claude.close(); engines.codex.close(); if (saveTimer) save(); }
   async function agentHandle(req, res, url, json, client) {
     const parts = url.pathname.replace(/^\/agent\/v1\/?/, '').split('/').filter(Boolean);
     let body = {};

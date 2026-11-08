@@ -66,3 +66,5 @@ body[data-design="home"]{--ui-text:var(--fg);--ui-muted:var(--fg-muted);--ui-bg:
 .native-home-panel .hero-weather-content{border-radius:0}
 /* Écran étroit : six onglets ne tiennent pas en largeur (« Mon bureau » passait sur deux lignes, « Agents » touchait « Projets ») ; ils défilent sur une ligne. */
 @media(max-width:640px){.native-feed-panel .workspace-tabs{display:flex;overflow-x:auto;scrollbar-width:none}.native-feed-panel .workspace-tabs::-webkit-scrollbar{display:none}.native-feed-panel .workspace-tabs button{flex:1 0 auto;padding:0 12px;white-space:nowrap}}
+/* Aucune barre de défilement visible dans l’interface : le défilement reste possible à la molette, au doigt et au clavier. */
+*{scrollbar-width:none!important}*::-webkit-scrollbar{display:none!important}

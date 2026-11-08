@@ -7,6 +7,7 @@
 // ne la coupe pas, et après un redémarrage l'état est relu dans l'historique de la passerelle
 // sans jamais renvoyer la demande.
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { createWorkspaces, githubRepo, sameRepo } = require('./workspace.cjs');
@@ -625,7 +626,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (run.stopRequested || !OPEN_RUN.includes(run.status)) { if (OPEN_RUN.includes(run.status)) fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.'); return false; }
     // Nouvelle session : le brief dit ce qui est prêt et comment vérifier (avant la phase « plan » éventuelle).
     if (run.fresh) {
-      const section = taskEnvironment.environmentBrief({ deps: deps || (d.deps?.status && d.deps.status !== 'installed' ? d.deps : null), baseline: d.baseline?.sha === d.baseSha ? d.baseline : null, testable: taskEnv.testScript(d.cwd) });
+      const section = taskEnvironment.environmentBrief({ deps: deps || (d.deps?.status && d.deps.status !== 'installed' ? d.deps : null), baseline: d.baseline?.sha === d.baseSha ? d.baseline : null, testable: taskEnv.testScript(d.cwd), visual: run.engine === 'claude' ? claude.VISUAL_CHECK : '' });
       const at = run.prompt.indexOf('\n## Phase : plan');
       run.prompt = (at < 0 ? run.prompt + '\n\n' + section : run.prompt.slice(0, at) + '\n\n' + section + run.prompt.slice(at)).slice(0, 44000);
     }
@@ -644,7 +645,10 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const fallbackTo = allowFallback && s.fallback && s.fallback !== run.engine ? s.fallback : '';
     const before = fallbackTo ? await engine.gitState(d.cwd) : null; // preuve qu'aucune modification n'a eu lieu avant un secours
     run.tracking = 'live';
-    const result = await engine.run({ runId: run.id, args, cwd: d.cwd, prompt: run.prompt, timeoutMs: s.timeoutMin * 60000, onEvent: (ev, collector) => {
+    // Captures de scripts/visual-check.cjs : dossier propre à l'exécution, joint à la tâche puis supprimé.
+    const visualDir = run.engine === 'claude' && run.mode === 'work' ? fs.mkdtempSync(path.join(os.tmpdir(), 'cockpit-visual-')) : '';
+    const runEnv = visualDir ? { COCKPIT_VISUAL_DIR: visualDir, ...(process.env.COCKPIT_CHROMIUM ? { COCKPIT_CHROMIUM: process.env.COCKPIT_CHROMIUM } : {}) } : {};
+    const result = await engine.run({ runId: run.id, args, cwd: d.cwd, prompt: run.prompt, timeoutMs: s.timeoutMin * 60000, env: runEnv, onEvent: (ev, collector) => {
       if (ev.kind === 'init') {
         if (run.engine === 'codex' && collector.state.sessionId) { run.sessionId = collector.state.sessionId; Object.assign(d, { sessionId: run.sessionId, engine: 'codex' }); }
         d.sent = [...new Set([...(run.fresh ? [] : d.sent || []), ...attachmentIds])];
@@ -654,6 +658,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       else if (ev.kind === 'tool') { event(run, 'tool', ev.text); saveSoon(); }
       else if (ev.kind === 'text') { run.liveText = harness.redact(collector.state.text).slice(0, 20000); saveSoon(); }
     } });
+    if (visualDir) attachCaptures(task, run, visualDir);
     run.metrics = result.collector.metrics({ costBefore, usageBefore: run.fresh ? null : d.usage || null, durationMs: result.durationMs, model: run.model });
     run.durationMs = result.durationMs;
     if (run.engine === 'claude') { if (run.metrics.costTotal) d.costTotal = run.metrics.costTotal; if (run.metrics.usageTotal) d.usage = run.metrics.usageTotal; }
@@ -686,6 +691,21 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       task.status = 'review'; task.updatedAt = now(); return save();
     }
     finalize(task, run, reply);
+  }
+  // PNG produits pendant l'exécution (les plus récents, nombre et taille bornés) : pièces jointes de la tâche, déjà connues de la session.
+  const MAX_CAPTURES = 8, MAX_CAPTURE_BYTES = 5 * 1024 * 1024;
+  function attachCaptures(task, run, dir) {
+    try {
+      const pngs = fs.readdirSync(dir, { withFileTypes: true }).filter(e => e.isFile() && /\.png$/i.test(e.name)).map(e => ({ file: path.join(dir, e.name), stat: fs.statSync(path.join(dir, e.name)) }))
+        .filter(x => x.stat.size > 0 && x.stat.size <= MAX_CAPTURE_BYTES).sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs).slice(0, MAX_CAPTURES).reverse();
+      const added = [];
+      for (const { file } of pngs) {
+        try { added.push(files.add(task, { name: 'capture-' + path.basename(file), data: fs.readFileSync(file), by: LABEL[run.engine] })); }
+        catch (error) { if (error instanceof AttachmentError) { event(run, 'visual', 'Captures non jointes : ' + error.message); break; } throw error; }
+      }
+      if (added.length) { task.direct.sent = [...new Set([...(task.direct.sent || []), ...added.map(a => a.id)])]; task.updatedAt = now(); event(run, 'visual', added.length + (added.length > 1 ? ' captures jointes' : ' capture jointe') + ' à la tâche'); }
+    } catch (error) { log('Captures : ' + error.message); }
+    finally { fs.rmSync(dir, { recursive: true, force: true }); }
   }
   // Secours : l'exécution primaire est close en échec, puis l'autre moteur reçoit la même demande dans une nouvelle session,
   // dans le même worktree (resté propre). Un seul secours par demande : jamais de secours du secours.

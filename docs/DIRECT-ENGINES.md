@@ -25,6 +25,11 @@ inchangé, pour les projets et tâches qui l'utilisent déjà. Objectif : le moi
    commit de départ, si `scripts.test` n'est pas le texte par défaut de npm : `task.direct.baseline = { sha, at, ok, passed, failed, total, summary }`.
    Un fichier suivi réécrit par ces tests est remis en état. Sans shell, environnement filtré, sortie tronquée et caviardée.
    Une nouvelle session reçoit les sections « Environnement préparé » (échecs existants signalés comme tels) et « Vérification ».
+   **Vérification visuelle** : `node <Cockpit>/scripts/visual-check.cjs [--path /…] -- <commande du serveur>` (ou `--url`) démarre le serveur
+   du projet sur un port libre (`PORT`), attend qu'il réponde, vérifie `MemAvailable` (≥ 350 Mo, sinon abandon propre), puis capture chaque chemin
+   l'un après l'autre avec Chromium headless (`/usr/bin/chromium` ou `COCKPIT_CHROMIUM`) en mobile 390×844 (iPhone) et bureau 1440×900 ; serveur,
+   Chromium et profils temporaires sont toujours supprimés ; sortie JSON. Cette commande est autorisée à Claude même avec une liste de commandes
+   restreinte. Cockpit fournit `COCKPIT_VISUAL_DIR` propre à l'exécution, joint ensuite les PNG à la tâche (8 au plus, 5 Mo chacun) et supprime le dossier.
 2. `claude -p …` est lancé **sans shell** (arguments en tableau, demande sur l'entrée standard) dans ce worktree.
 3. À la fin : résultat (ligne `STATUT:` facultative : `BLOQUÉ` = question, `ÉCHEC`), puis relevé Git fait par Cockpit sans jeton
    (branche, fichiers, commits, changements non commités), compteurs (jetons, appels, durée, coût estimé).

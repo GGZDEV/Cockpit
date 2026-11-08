@@ -12,6 +12,9 @@ const DENY_BASH = ['git push', 'git remote', 'gh', 'npm publish', 'npm run deplo
 
 // Réglages passés en ligne de commande (--settings) : rien de ce qui alourdit le contexte sans servir une tâche de code.
 // Clés documentées : https://code.claude.com/docs/en/settings-reference (includeGitInstructions, autoMemoryEnabled, disableAllHooks, enabledPlugins).
+// Outil de captures (scripts/visual-check.cjs) : toujours autorisé, même quand le projet restreint les commandes.
+const VISUAL_CHECK = path.join(__dirname, 'scripts', 'visual-check.cjs');
+
 const LEAN_SETTINGS = JSON.stringify({ autoMemoryEnabled: false, disableAllHooks: true, includeGitInstructions: false, enabledPlugins: {} });
 
 // Style de réponse « caveman » (https://github.com/juliusbrussee/caveman, Apache-2.0) ajouté au prompt système de chaque appel :
@@ -45,7 +48,7 @@ function buildArgs({ mode = 'work', sessionId, fresh, settings, model, addDirs =
   const args = ['-p', '--output-format', 'stream-json', '--verbose', '--strict-mcp-config', '--disable-slash-commands'];
   if (has('--settings')) args.push('--settings', LEAN_SETTINGS);
   args.push('--tools', tools.join(','), '--permission-mode', mode === 'plan' ? 'plan' : 'acceptEdits');
-  if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule), 'WebFetch', 'WebSearch');
+  if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule), ...(s.allowedBash.includes('*') ? [] : [rule('node ' + VISUAL_CHECK)]), 'WebFetch', 'WebSearch');
   args.push('--disallowedTools', ...DENY_BASH.map(rule));
   // Dossier temporaire du système : scripts jetables (décoder une pièce jointe, essais) sans salir le worktree.
   const dirs = mode === 'plan' ? addDirs : [...addDirs, os.tmpdir()];
@@ -130,4 +133,4 @@ function createEngine({ command = process.env.COCKPIT_CLAUDE_BIN || 'claude', pr
   return { ...harness, buildArgs, flags: () => probed ||= probeFlags(command, prefixArgs, { execPath: options.execPath, env: options.baseEnv }) };
 }
 
-module.exports = { createEngine, buildArgs, createCollector, probeFlags, childEnv, DENY_BASH, LEAN_SETTINGS, CAVEMAN, OPTIONAL_FLAGS };
+module.exports = { createEngine, buildArgs, VISUAL_CHECK, createCollector, probeFlags, childEnv, DENY_BASH, LEAN_SETTINGS, CAVEMAN, OPTIONAL_FLAGS };

@@ -62,7 +62,7 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   assert.ok(!a.some(x => x.includes('Ajoute feature.txt')), 'the request goes through stdin, never in argv');
   // Demande courte : la tâche, puis l'environnement préparé et la vérification ; ni contexte de projet ni cadre.
   assert.match(call.input, /^Tâche AL-1 — « Tâche \d+ »\n\nAjoute feature\.txt\n\n## Résultat attendu\nfeature\.txt existe\n\n## Critères de réussite\nTests verts\n\n## Environnement préparé\n[^#]+\n\n## Vérification\n/);
-  assert.ok(call.input.length < 800 && !/Objectif alpha|Cadre|publi/i.test(call.input));
+  assert.ok(call.input.length < 1400 && !/Objectif alpha|Cadre|publi/i.test(call.input));
   // Dossier de travail : worktree de la tâche, avec le CLAUDE.md du projet ; la copie principale reste intacte.
   assert.ok(call.cwd.startsWith(path.join(dir, 'worktrees')) && call.cwd.endsWith('AL-1'));
   assert.match(call.claudeMd, /Généré par Cockpit/);
@@ -235,6 +235,7 @@ test('buildArgs: lists are always followed by an option, session id last, web to
   assert.equal(a.at(-2), '--resume'); assert.equal(a.at(-1), 'S');
   assert.equal(arg(a, '--tools'), 'default');
   assert.deepEqual(a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--allowedTools') + 3), ['Bash(git status:*)', 'Bash(npm test:*)']);
+  assert.ok(a.includes('Bash(node ' + claude.VISUAL_CHECK + ':*)') && path.isAbsolute(claude.VISUAL_CHECK), 'visual check allowed even with a restricted list');
   assert.ok(a[a.indexOf('--add-dir') + 3].startsWith('--'));
   assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {} }).includes('WebSearch'));
   // Style caveman ajouté au prompt système de chaque appel, travail comme plan, session neuve comme reprise.

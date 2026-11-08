@@ -45,6 +45,12 @@ function main() {
   // Même message en deux morceaux (outil puis texte) : un seul appel doit être compté.
   out({ type: 'assistant', message: { id: 'msg_1', model, content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: path.join(process.cwd(), 'README.md') } }], usage: usage(10, 1000, 0, 50) } });
   out({ type: 'assistant', message: { id: 'msg_1', model, content: [{ type: 'text', text: 'Je lis le dépôt.' }], usage: usage(10, 1000, 0, 50) } });
+  // Captures de visual-check : deux PNG et un fichier qui n'en est pas un, dans le dossier fourni par Cockpit.
+  if (mode === 'visual' && process.env.COCKPIT_VISUAL_DIR) {
+    const png = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex');
+    for (const name of ['accueil-mobile.png', 'accueil-bureau.png']) fs.writeFileSync(path.join(process.env.COCKPIT_VISUAL_DIR, name), png);
+    fs.writeFileSync(path.join(process.env.COCKPIT_VISUAL_DIR, 'notes.txt'), 'ignoré');
+  }
   if (!plan && mode === 'ok') {
     fs.appendFileSync('feature.txt', 'fait par le faux Claude\n');
     execFileSync('git', ['add', 'feature.txt']);

@@ -36,9 +36,12 @@ export const fonts = [['','Standard',''],['outfit','Moderne',"'Outfit',sans-seri
 const grad = (a,b,c) => `linear-gradient(160deg,${a} 0%,${b} 48%,${c} 100%) fixed`;
 export const backgrounds = [['halo','Halos',haloCSS()],['chaud','Chaud','#3d3946 linear-gradient(160deg,#7d6553 0%,#5e5049 38%,#4a4351 72%,#3d3946 100%) no-repeat fixed'],['nuit','Nuit',grad('#2F4A7A','#1B2740','#10141F')],['ocean','Océan',grad('#2E7C8A','#1A4A57','#0E242C')],['foret','Forêt',grad('#4F6B4A','#2E4234','#1A231D')],['aurore','Aurore',grad('#8A5A8F','#4E3866','#241B33')],['ardoise','Ardoise',grad('#5B6270','#3A3F48','#22252B')],['noir','Noir','#000000']];
 export function applyDisplay(home) {
-  if (!home) { document.body.style.removeProperty('background'); for (const p of ['--accent','--accent-soft','--accent-glow']) document.body.style.removeProperty(p); return; }
+  if (!home) { document.body.style.removeProperty('background'); for (const p of ['--app-bg','--accent','--accent-soft','--accent-glow']) document.body.style.removeProperty(p); return; }
   const b = homeDisplay.bg;
-  document.body.style.background = b.image ? `#000 linear-gradient(rgba(0,0,0,${b.dim}),rgba(0,0,0,${b.dim})),url("${b.image}") center / cover no-repeat fixed` : color(b.color) || (b.preset === 'halo' || !backgrounds.some(p => p[0] === b.preset) ? haloCSS(b.halo) : backgrounds.find(p => p[0] === b.preset)[2]);
+  const bg = b.image ? `#000 linear-gradient(rgba(0,0,0,${b.dim}),rgba(0,0,0,${b.dim})),url("${b.image}") center / cover no-repeat fixed` : color(b.color) || (b.preset === 'halo' || !backgrounds.some(p => p[0] === b.preset) ? haloCSS(b.halo) : backgrounds.find(p => p[0] === b.preset)[2]);
+  document.body.style.background = bg;
+  // Copie pour le calque fixe (styles.css, body::after) : iOS ignore « fixed » et étirerait le fond sur toute la page qui défile.
+  document.body.style.setProperty('--app-bg', bg);
   document.body.style.setProperty('--accent', homeDisplay.accent);
   document.body.style.setProperty('--accent-soft', rgba(homeDisplay.accent, .22));
   document.body.style.setProperty('--accent-glow', rgba(homeDisplay.accent, .45));

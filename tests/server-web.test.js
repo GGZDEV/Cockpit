@@ -7,7 +7,7 @@ const { createDeployerClient } = require('../deployer-client.cjs');
 test('server mode protects the single-origin web app and advertises only server mode', async t => {
   assert.throws(() => createServer({ serverMode: true, webPassword: '' }), /obligatoire/);
   const projects = { allowedRoute: () => true, handle: (req, res, url, json) => json(res, 200, { ok: true }) };
-  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', projects });
+  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', projects, stateDir: path.join(os.tmpdir(), 'cockpit-test-state-' + process.pid) });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const origin = 'http://127.0.0.1:' + server.address().port;
@@ -36,7 +36,7 @@ test('deployer token can be loaded from an external file without entering respon
 
 test('HTTPS proxy accepts same-origin writes but refuses foreign origins and hosts', async t => {
   const projects = { allowedRoute: () => true, handle: (req, res, url, json) => json(res, 200, { ok: true }) };
-  const server = createServer({ serverMode: true, allowedHosts: ['cockpit.ggz.ovh'], webPassword: 'secret', projects });
+  const server = createServer({ serverMode: true, allowedHosts: ['cockpit.ggz.ovh'], webPassword: 'secret', projects, stateDir: path.join(os.tmpdir(), 'cockpit-test-state-' + process.pid) });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const url = 'http://127.0.0.1:' + server.address().port + '/api/projects/projects';

@@ -5,6 +5,7 @@ const path = require('node:path');
 const { Readable } = require('node:stream');
 const { createProjects } = require('./projects.cjs');
 const { createRss } = require('./rss.cjs');
+const webSession = require('./web-session.cjs');
 const SERVER_MODE = process.env.COCKPIT_SERVER_MODE === '1';
 const ROOT = path.join(__dirname, 'public');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json', '.png':'image/png', '.woff2':'font/woff2' };
@@ -58,14 +59,24 @@ const secretFile = name => {
   if (!file) return '';
   try { return fs.readFileSync(file, 'utf8').trim(); } catch (error) { throw new Error(name + ' est illisible : ' + error.message); }
 };
+// Ancien emplacement (data/ du clone) : copié une fois dans le dossier d'état, sans être supprimé ni lu ailleurs.
+async function migrateHaSession(file, legacy) {
+  if (!legacy) return;
+  try { await fs.promises.access(file); return; } catch {}
+  let saved; try { saved = await fs.promises.readFile(legacy); } catch { return; }
+  await fs.promises.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await fs.promises.writeFile(file, saved, { flag: 'wx', mode: 0o600 }).catch(error => { if (error.code !== 'EEXIST') throw error; });
+}
 // Connexion Home Assistant mémorisée par ce serveur : un seul jeton pour tous les appareils et toutes les republications
 // (en mode serveur, le site entier est protégé par le mot de passe ; sinon il n'écoute que sur ce PC).
-async function haSession(req, res, file) {
+async function haSession(req, res, file, legacy) {
+  if (req.method !== 'DELETE') await migrateHaSession(file, legacy);
   if (req.method === 'GET') {
     try { const saved = JSON.parse(await fs.promises.readFile(file, 'utf8')); return json(res, 200, { url: String(saved.url || ''), token: String(saved.token || '') }); }
     catch { return json(res, 200, { url: '', token: '' }); }
   }
-  if (req.method === 'DELETE') { await fs.promises.rm(file, { force: true }); return json(res, 200, { ok: true }); }
+  // Déconnecter efface aussi l'ancien emplacement, sinon la migration le ferait revenir.
+  if (req.method === 'DELETE') { await Promise.all([file, legacy].filter(Boolean).map(f => fs.promises.rm(f, { force: true }))); return json(res, 200, { ok: true }); }
   if (req.method !== 'PUT') return json(res, 405, { error: 'Méthode indisponible.' });
   const chunks = []; let size = 0;
   for await (const chunk of req) { size += chunk.length; if (size > 16384) return json(res, 413, { error: 'Requête trop longue.' }); chunks.push(chunk); }
@@ -73,31 +84,70 @@ async function haSession(req, res, file) {
   let url; try { url = new URL(String(body?.url || '')); } catch { return json(res, 400, { error: 'Adresse Home Assistant invalide.' }); }
   const token = String(body?.token || '');
   if (!/^https?:$/.test(url.protocol) || !/^[\w.-]{20,4000}$/.test(token)) return json(res, 400, { error: 'Adresse ou jeton Home Assistant invalide.' });
-  await fs.promises.mkdir(path.dirname(file), { recursive: true });
-  await fs.promises.writeFile(file, JSON.stringify({ url: url.origin, token }), { mode: 0o600 });
+  await fs.promises.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+  await fs.promises.writeFile(file + '.tmp', JSON.stringify({ url: url.origin, token }), { mode: 0o600 });
+  await fs.promises.chmod(file + '.tmp', 0o600); await fs.promises.rename(file + '.tmp', file);
   return json(res, 200, { ok: true });
 }
 const PWA_PUBLIC = new Set(['/manifest.json', '/brand/apple-touch-icon.png', '/brand/icon-192.png', '/brand/icon-512.png']);
-function cryptoSafe(a, b) {
-  const crypto = require('node:crypto'), left = Buffer.from(a), right = Buffer.from(b);
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+// Navigation de page (Sec-Fetch-Mode, ou Accept HTML des navigateurs qui n'envoient pas Sec-Fetch-*).
+const isNavigation = req => (req.method === 'GET' || req.method === 'HEAD') && (req.headers['sec-fetch-mode'] ? req.headers['sec-fetch-mode'] === 'navigate' : /text\/html/.test(req.headers.accept || ''));
+const fromBrowser = req => Object.keys(req.headers).some(name => name.startsWith('sec-fetch-'));
+const redirect = (res, location, cookie) => { res.writeHead(303, { Location: location, 'Cache-Control': 'no-store', ...(cookie ? { 'Set-Cookie': cookie } : {}) }); res.end(); };
+// Mot de passe web : cookie de session pour les navigateurs, Basic toujours accepté (curl, scripts, appareils déjà configurés).
+function authorize(req, res, session, secure) {
+  const ip = webSession.clientAddress(req);
+  if (req.headers.authorization) {
+    if (session.checkBasic(req.headers.authorization) && !session.basicLimiter.blocked(ip)) {
+      session.basicLimiter.succeed(ip);
+      if (isNavigation(req)) res.setHeader('Set-Cookie', session.issue(secure)); // migration transparente vers le cookie
+      return true;
+    }
+    session.basicLimiter.fail(ip);
+  }
+  if (/(?:^|;)\s*cockpit_session=/.test(req.headers.cookie || '')) {
+    const state = session.verify(req.headers.cookie);
+    if (state.ok) { if (state.renew) res.setHeader('Set-Cookie', session.issue(secure)); return true; }
+  }
+  // Pas de WWW-Authenticate pour un navigateur : la fenêtre native ne se mémorise pas sur téléphone.
+  if (isNavigation(req)) { res.writeHead(401, webSession.PAGE_HEADERS); res.end(req.method === 'HEAD' ? undefined : webSession.loginPage({ next: req.url })); }
+  else if (fromBrowser(req)) { res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Cockpit-Login': '1' }); res.end(JSON.stringify({ error: 'Connexion requise.' })); }
+  else { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Cockpit", charset="UTF-8"', 'Cache-Control': 'no-store' }); res.end('Authentification requise.'); }
+  return false;
 }
-function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE'), haSessionFile = path.join(__dirname, 'data', 'ha-session.json') } = {}) {
+async function account(req, res, url, session, secure, origin) {
+  if (req.method !== 'POST') return redirect(res, '/');
+  if (!trusted(req, false, origin)) return json(res, 403, { error: 'Hôte ou origine refusé.' });
+  if (url.pathname === '/logout') return redirect(res, '/', session.clear(secure));
+  const page = (status, error, next) => { res.writeHead(status, webSession.PAGE_HEADERS); res.end(webSession.loginPage({ next, error })); };
+  if (!/^application\/x-www-form-urlencoded\b/.test(req.headers['content-type'] || '')) return page(415, 'Formulaire invalide.');
+  const chunks = []; let size = 0;
+  for await (const chunk of req) { size += chunk.length; if (size > 8192) return page(413, 'Formulaire trop long.'); chunks.push(chunk); }
+  const form = new URLSearchParams(Buffer.concat(chunks).toString('utf8')), next = webSession.safeNext(form.get('next')), ip = webSession.clientAddress(req);
+  if (session.limiter.blocked(ip)) return page(429, 'Trop de tentatives. Réessayez dans quelques minutes.', next);
+  if (!session.checkPassword(form.get('password') || '')) { session.limiter.fail(ip); return page(401, 'Mot de passe incorrect.', next); }
+  session.limiter.succeed(ip);
+  return redirect(res, next, session.issue(secure));
+}
+function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = splitHosts(process.env.COCKPIT_ALLOWED_HOSTS), webPassword = process.env.COCKPIT_WEB_PASSWORD || secretFile('COCKPIT_WEB_PASSWORD_FILE'), stateDir = webSession.defaultStateDir(), haSessionFile, legacyHaSessionFile } = {}) {
   if (serverMode && !webPassword) throw new Error('COCKPIT_WEB_PASSWORD_FILE est obligatoire en mode serveur.');
+  // Jeton HA et secret de session dans le dossier d'état (hors du clone, qui est remplacé à chaque déploiement).
+  if (!haSessionFile) { haSessionFile = path.join(stateDir, 'ha-session.json'); legacyHaSessionFile ??= path.join(__dirname, 'data', 'ha-session.json'); }
+  const session = serverMode && webPassword ? webSession.createWebSession({ stateDir, password: webPassword }) : null;
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
-      // iOS fetches the manifest and home screen icons without the Basic credentials.
-      if (serverMode && webPassword && !PWA_PUBLIC.has(url.pathname)) {
-        const expected = 'Basic ' + Buffer.from('cockpit:' + webPassword).toString('base64');
-        const supplied = String(req.headers.authorization || '');
-        if (!cryptoSafe(supplied, expected)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Cockpit", charset="UTF-8"', 'Cache-Control': 'no-store' }); return res.end('Authentification requise.'); }
+      const secure = serverMode && req.headers['x-forwarded-proto'] === 'https';
+      // iOS fetches the manifest and home screen icons without credentials.
+      if (session && !PWA_PUBLIC.has(url.pathname)) {
+        if (url.pathname === '/login' || url.pathname === '/logout') return await account(req, res, url, session, secure, { serverMode, allowedHosts });
+        if (!authorize(req, res, session, secure)) return;
       }
       // The extension may frame public assets; API requests must originate inside our app.
       if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
       if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }
       if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, rss: true, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
-      if (url.pathname === '/api/ha-session') return haSession(req, res, haSessionFile);
+      if (url.pathname === '/api/ha-session') return await haSession(req, res, haSessionFile, legacyHaSessionFile);
       if (url.pathname === '/api/projects' || url.pathname.startsWith('/api/projects/')) {
         const service = projects || projectsService();
         if (!service.allowedRoute(req.method, url.pathname)) return json(res, 405, { error: 'Opération indisponible.' });

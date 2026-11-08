@@ -17,6 +17,7 @@ if [[ -z "$ALLOWED_HOSTS" || "$ALLOWED_HOSTS" == *://* ]]; then
   echo "Usage: $0 --allowed-hosts IP,nom-dns [--deployer-token-file /chemin/jeton]" >&2
   exit 2
 fi
+# Dossier d'état (secrets, secret de session, jeton HA) : conservé tel quel d'un déploiement à l'autre.
 mkdir -p "$CONFIG_DIR" "$UNIT_DIR" "$HOME/Projets"
 chmod 700 "$CONFIG_DIR"
 if [[ -n "$TOKEN_SOURCE" ]]; then
@@ -40,6 +41,7 @@ COCKPIT_WORKSPACES=$HOME/Projets
 COCKPIT_DEPLOYER_URL=http://192.168.1.236:8080
 COCKPIT_DEPLOYER_TOKEN_FILE=$CONFIG_DIR/deployer-token
 COCKPIT_WEB_PASSWORD_FILE=$CONFIG_DIR/web-password
+COCKPIT_STATE_DIR=$CONFIG_DIR
 COCKPIT_DIRECT=1
 COCKPIT_CODEX_DIRECT=0
 EOF

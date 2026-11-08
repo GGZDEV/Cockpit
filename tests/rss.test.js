@@ -26,7 +26,7 @@ test('serves articles and manages feeds without the PC service', async t => {
   const bodies = { 'https://blog.test/feed': RSS, 'https://atom.test/feed': ATOM, 'https://html.test/': '<html></html>' };
   const fetchImpl = async url => new Response(bodies[url] ?? '', { status: bodies[url] ? 200 : 404 });
   const rss = createRss({ dataDir: dir, fetchImpl, defaults: [{ url: 'https://blog.test/feed', category: 'Tech' }] });
-  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', rss, projects: { allowedRoute: () => false } });
+  const server = createServer({ serverMode: true, allowedHosts: ['127.0.0.1'], webPassword: 'secret', rss, projects: { allowedRoute: () => false }, stateDir: dir });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const origin = 'http://127.0.0.1:' + server.address().port, headers = { Authorization: 'Basic ' + Buffer.from('cockpit:secret').toString('base64'), 'Content-Type': 'application/json' };

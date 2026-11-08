@@ -5,13 +5,22 @@
 Un seul processus Node sert l’interface et `/api/projects/*` sur la même origine. Le mode `COCKPIT_SERVER_MODE=1` :
 
 - écoute sur `HOST`/`PORT` et vérifie `COCKPIT_ALLOWED_HOSTS` ;
-- demande une authentification HTTP Basic si `COCKPIT_WEB_PASSWORD_FILE` est configuré ;
+- protège tout le site par le mot de passe `COCKPIT_WEB_PASSWORD_FILE` (obligatoire) : page de connexion et cookie de session pour les navigateurs, HTTP Basic pour les scripts (voir « Connexion ») ;
 - ouvre directement **Projets** et ne rend ni modules PC, ni métriques système, ni réglages desktop/HA ;
 - exécute les tâches avec Claude Code (Codex peut être activé), dans `COCKPIT_WORKSPACES` ;
 - désactive le moteur OpenClaw historique, qui dépendait de la passerelle desktop FeedMe ;
 - joint Deployer CT113 à `http://192.168.1.236:8080` avec un jeton lu hors Git.
 
 Le service systemd utilisateur redémarre après une panne. Le linger de l’utilisateur permet son démarrage sans session ouverte. Les données restent dans `data/` (ignoré par Git), les dépôts dans `~/Projets`, les secrets et la configuration dans `~/.config/cockpit/`.
+
+## Connexion (persistante d’un déploiement à l’autre)
+
+- **Navigateur, téléphone, appli écran d’accueil iOS** : une navigation sans session reçoit **401** avec une page de connexion autonome (mot de passe seul ; identifiant caché `cockpit` pour les gestionnaires de mots de passe), sans `WWW-Authenticate`, donc sans fenêtre native. `POST /login` pose le cookie `cockpit_session` (HMAC-SHA256, `HttpOnly; SameSite=Lax; Path=/`, `Secure` derrière le proxy HTTPS, 400 jours, prolongé à chaque visite après un jour) puis renvoie vers la page demandée (chemin local seulement).
+- **Scripts, curl, contrôle de santé** (pas d’en-têtes `Sec-Fetch-*`) : `401` + `WWW-Authenticate: Basic` comme avant ; `-u cockpit:<mot de passe>` reste accepté. Une navigation authentifiée en Basic reçoit aussi le cookie : les appareils déjà configurés basculent seuls.
+- **Appel d’API sans session depuis le navigateur** : `401` JSON avec `X-Cockpit-Login: 1` ; `public/login-guard.js` recharge alors la page, qui affiche la connexion.
+- **Dossier d’état** `COCKPIT_STATE_DIR` (défaut `~/.config/cockpit`, `0700`) : `session-secret` (32 octets aléatoires, `0600`, créé une fois, jamais régénéré) et `ha-session.json` (`0600`). Le clone de déploiement peut donc être remplacé sans déconnecter personne. La clé de signature dépend du secret **et** du mot de passe web : changer `web-password` (puis redémarrer) déconnecte tous les appareils ; supprimer `session-secret` aussi.
+- **Se déconnecter** : bouton dans Paramètres (`POST /logout`). Les échecs de mot de passe sont limités par adresse (8 par quart d’heure, en mémoire). Manifeste et icônes PWA restent publics.
+- **Jeton Home Assistant** : mémorisé par le serveur dans `<état>/ha-session.json`. Au premier accès, un ancien `data/ha-session.json` est copié (sans être supprimé ; « Déconnecter » efface les deux). Au démarrage, chaque appareil essaie son jeton, puis celui du serveur s’il est refusé ; un jeton n’est enregistré qu’après avoir fonctionné, et une coupure réseau ne jette aucun jeton (`public/ha-session.js`).
 
 ## Audit des anciennes dépendances PC/desktop
 
@@ -60,12 +69,15 @@ curl -u "cockpit:$(cat ~/.config/cockpit/web-password)" \
 curl http://192.168.1.236:8080/health
 ```
 
-Dans le navigateur : `http://<IP_DE_L_HOTE>:3888/`, utilisateur `cockpit`, mot de passe contenu dans `~/.config/cockpit/web-password`. Créer ensuite un projet de test ; l’état Deployer doit indiquer l’hôte `192.168.1.236:8080`.
+Sans identifiants, `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3888/` doit répondre `401` (contrôle de santé de Deployer).
+
+Dans le navigateur : `http://<IP_DE_L_HOTE>:3888/`, page de connexion, mot de passe contenu dans `~/.config/cockpit/web-password`. Créer ensuite un projet de test ; l’état Deployer doit indiquer l’hôte `192.168.1.236:8080`.
 
 ## Secrets indispensables
 
 - `deployer-token` : obligatoire pour enregistrer et déployer un projet sur CT113 ; jamais committé, jamais envoyé au navigateur.
 - `web-password` : obligatoire pour protéger l’interface exposée sur le LAN ; jamais committé.
+- `session-secret`, `ha-session.json` : créés par le serveur dans le dossier d’état ; jamais committés, à conserver entre les déploiements.
 - authentifications `gh` et `claude` : restent dans leurs stockages utilisateur existants ; Cockpit ne les copie pas.
 
 Aucune configuration ne vise ni ne modifie `aio.ggz.ovh`.

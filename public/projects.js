@@ -36,6 +36,8 @@ const parseLinks = value => String(value || '').split('\n').map(line => line.tri
 const glyph = d => `<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const G = {
   filter: glyph('<path d="M4 5h16l-6 7.5V19l-4 1.5v-8Z"/>'),
+  menu: glyph('<path d="M4 7h16M4 12h11M4 17h16"/>'),
+  compose: glyph('<path d="M12 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6"/><path d="m17 3 4 4-8 8H9v-4z"/>'),
   board: glyph('<rect x="3.5" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="16.5" y="4" width="4" height="7" rx="1.5"/>'),
   cards: glyph('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
   launch: glyph('<path d="m8 5 11 7-11 7z"/>'),
@@ -80,7 +82,7 @@ const colOf = t => t.status === 'blocked' ? 'doing' : t.status;
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
     view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), search: '', attention: false,
-    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, expanded: new Set(), panel: null, launching: new Set(), dragging: null,
+    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, drawer: false, quickAdd: null, expanded: new Set(), panel: null, launching: new Set(), dragging: null,
     chat: null, drafts: {}, newFiles: [], chatFiles: {}, allDone: false };
   let pollTimer;
   const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
@@ -265,14 +267,16 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       p.claudeMd ? '<span class="pj-mini is-ok">CLAUDE.md à jour</span>' : '',
       d.url ? `<span class="pj-mini">Déploiement ${d.auto ? 'auto' : 'manuel'} → ${esc(d.url.replace(/^https:\/\//, ''))}</span>` : ''].join('');
   }
+  // Téléphone : la liste des tâches devient un tiroir ouvert par ce bouton (masqué sur grand écran, où la liste reste à gauche).
+  const menuButton = `<button type="button" class="icon-button pj-chat-menu" data-pj="drawer" aria-label="Liste des tâches" title="Liste des tâches">${G.menu}</button>`;
   // Nouvelle tâche = nouveau chat : le message devient les consignes, rien ne démarre sans « Lancer ».
   function chatNew() {
     const visible = visibleProjects();
     if (!visible.length) return `<div class="pj-chat-scroll"><div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div></div>`;
     const p = visible.find(x => x.id === st.project) || visible[0], engine = ENGINE[p.engine || 'claude'], caps = st.capabilities.engines || {};
     const drafts = st.tasks.filter(t => t.projectId === p.id && t.status === 'todo' && !t.runs?.length).slice(0, 4);
-    return `<header class="pj-chat-head"><div class="pj-crumbs"><span>${esc(p.name)}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
-        <button class="button" data-pj="edit-project" data-id="${esc(p.id)}">${icon('edit')} Projet et contexte</button></header>
+    return `<header class="pj-chat-head">${menuButton}<div class="pj-crumbs"><span>${esc(p.name)}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
+        <button class="button pj-edit-project" data-pj="edit-project" data-id="${esc(p.id)}" title="Projet et contexte">${icon('edit')} <span>Projet et contexte</span></button></header>
       <div class="pj-chat-scroll"><div class="pj-new">
         <div class="pj-new-hero"><span class="pj-new-mark" aria-hidden="true">${G.prompt}</span><h1>Que doit faire ${esc(engine)} sur ${esc(p.name)} ?</h1>
           <p>Écrivez la tâche comme un message. Elle reste en brouillon tant que vous n’avez pas cliqué sur « Lancer ».</p></div>
@@ -319,16 +323,18 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const p = projectOf(task), [label, tone] = TASK_PILL[task.status] || TASK_PILL.todo, step = STEP_OF[task.status] ?? 0, banner = reviewBanner(task);
     const steps = STEPS.map((s, i) => `${i ? '<li class="pj-step-sep" aria-hidden="true"></li>' : ''}<li class="${i < step ? 'is-past' : i === step ? 'is-now' : ''}" ${i === step ? 'aria-current="step"' : ''}>${i < step ? G.done : '<i aria-hidden="true"></i>'}${s}</li>`).join('');
     const stop = openRun(task) && isDirect(task) ? `<button class="button pj-stop" type="button" data-pj="stop-run" data-id="${esc(task.id)}">${G.stop} Arrêter</button>` : '';
-    return `<header class="pj-chat-head"><button type="button" class="icon-button pj-chat-back" data-pj="chat-new" aria-label="Retour aux tâches">${G.back}</button>
+    return `<header class="pj-chat-head">${menuButton}
         <div class="pj-chat-title"><div><h1>${esc(task.title)}</h1><span class="pj-pill ${tone}"><i></i>${label}</span><span class="pj-code">${esc(task.code)}</span></div><ol class="pj-steps ${tone}" aria-label="Avancement">${steps}</ol></div>
-        <div class="pj-panel-actions">${stop}${banner ? '' : closeHTML(task)}<button type="button" class="icon-button" data-pj="task-details" data-id="${esc(task.id)}" aria-label="Détails de la tâche" title="Détails de la tâche">${G.dots}</button></div></header>
+        <div class="pj-panel-actions">${stop}${banner ? '' : closeHTML(task)}<button type="button" class="icon-button" data-pj="task-details" data-id="${esc(task.id)}" aria-label="Détails de la tâche" title="Détails de la tâche">${G.dots}</button>
+          <button type="button" class="icon-button pj-chat-newbtn" data-pj="chat-new" aria-label="Nouvelle tâche" title="Nouvelle tâche">${G.compose}</button></div></header>
       <div class="pj-chat-body"><div class="pj-chat-conv"><div class="pj-chat-thread"><div class="pj-thread" aria-live="polite">${threadHTML(task)}</div></div>
         <div class="pj-chat-composer">${banner}${composerHTML(task, true)}</div></div>${contextHTML(task, p)}</div>`;
   }
   function chatHTML(error) {
     if (st.chat && !st.tasks.some(t => t.id === st.chat)) st.chat = null;
     const task = st.chat && st.tasks.find(t => t.id === st.chat);
-    return `<div class="pj-root is-chat ${task ? 'has-task' : ''}" style="--pj-side-w:${sideWidth(read('mb.projects.side', SIDE_W))}px">${chatSide()}
+    return `<div class="pj-root is-chat ${task ? 'has-task' : ''} ${st.drawer ? 'is-drawer' : ''}" style="--pj-side-w:${sideWidth(read('mb.projects.side', SIDE_W))}px">${chatSide()}
+      <button type="button" class="pj-scrim" data-pj="drawer" aria-label="Fermer la liste des tâches" tabindex="-1"></button>
       <div class="pj-resize" data-pj-resize role="separator" aria-orientation="vertical" aria-label="Largeur de la liste des tâches" aria-valuemin="${SIDE_MIN}" aria-valuemax="${SIDE_MAX}" aria-valuenow="${sideWidth(read('mb.projects.side', SIDE_W))}" tabindex="0" title="Glisser pour redimensionner · double-clic pour réinitialiser"></div><main class="pj-chat-main">${error}${task ? chatTask(task) : chatNew()}</main></div>`;
   }
   async function taskDetails(taskId) {
@@ -730,8 +736,9 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'project': st.project = idv; write('mb.projects.filter', idv); st.quickAdd = null; render(); break;
         case 'attention': st.attention = !st.attention; render(); break;
         case 'view': st.view = st.view === 'grid' ? 'board' : 'grid'; write('mb.projects.mode', st.view); render(); break;
-        case 'view-set': st.view = VIEWS.includes(idv) ? idv : 'chat'; write('mb.projects.mode', st.view); renderChat(true); break;
-        case 'chat-new': st.chat = null; render(); globalThis.requestAnimationFrame?.(() => document.querySelector('#pj-new-input')?.focus()); break;
+        case 'view-set': st.view = VIEWS.includes(idv) ? idv : 'chat'; st.drawer = false; write('mb.projects.mode', st.view); renderChat(true); break;
+        case 'drawer': st.drawer = !st.drawer; document.querySelector('.pj-root.is-chat')?.classList.toggle('is-drawer', st.drawer); break;
+        case 'chat-new': st.chat = null; st.drawer = false; render(); globalThis.requestAnimationFrame?.(() => document.querySelector('#pj-new-input')?.focus()); break;
         case 'all-done': st.allDone = true; render(); break;
         case 'task-details': await taskDetails(idv); break;
         case 'project-status': st.projectStatus = idv; render(); break;
@@ -745,7 +752,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'quick-add': st.quickAdd = idv; render(); requestAnimationFrame(() => document.querySelector('#pj-quick-title')?.focus()); break;
         case 'quick-cancel': st.quickAdd = null; render(); break;
         case 'col-more': st.expanded.add(idv); render(); break;
-        case 'open-task': if (st.view === 'chat') { st.chat = idv; renderChat(true); } else await openPanel(idv); break;
+        case 'open-task': if (st.view === 'chat') { st.chat = idv; st.drawer = false; renderChat(true); } else await openPanel(idv); break;
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
         // Une tâche avec une branche de travail est fusionnée dans la branche de production et poussée sur GitHub par Cockpit (sans agent).
         case 'close-task': {

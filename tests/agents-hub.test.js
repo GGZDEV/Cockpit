@@ -5,8 +5,12 @@ test('server secrets survive restart, reject tampering and never store plaintext
  const codec=secretStorage(dir),encrypted=codec.encrypt('server password');assert.ok(!encrypted.includes('server password'));assert.equal(secretStorage(dir).decrypt(encrypted),'server password');
  const bytes=Buffer.from(encrypted,'base64');bytes[15]^=1;assert.throws(()=>codec.decrypt(bytes.toString('base64')));
 });
+// Backend FeedMe (dossier voisin et son express) : présent seulement sur le PC ; ailleurs le test est ignoré, pas en échec.
+const BACKEND=process.env.AGENTS_TEST_BACKEND_DIR || path.resolve(__dirname,'..','..','FeedMe');
+const backendMissing=()=>{ if(!fs.existsSync(path.join(BACKEND,'agents.js')))return 'backend FeedMe absent ('+BACKEND+')'; try { require.resolve('express',{paths:[BACKEND]}); return ''; } catch { return 'express introuvable dans '+BACKEND; } };
 test('autonomous gateway serves agents and quotas with HA auth, denies PC routes and persists connections',async t=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agents-hub-'));const options={backendDir:process.env.AGENTS_TEST_BACKEND_DIR || path.resolve('../FeedMe'),dataDir:dir,haOrigin:'http://ha.test:8123',port:0,authorize:token=>token==='admin'};
+ const missing=backendMissing();if(missing)return t.skip(missing);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'agents-hub-'));const options={backendDir:BACKEND,dataDir:dir,haOrigin:'http://ha.test:8123',port:0,authorize:token=>token==='admin'};
  let service=await start(options);t.after(async()=>{await service.close();fs.rmSync(dir,{recursive:true,force:true});});
  let base='http://127.0.0.1:'+service.relay.address().port;const headers={Authorization:'Bearer admin',Origin:options.haOrigin};
  assert.equal((await fetch(base+'/api/feedme/agents/')).status,401);

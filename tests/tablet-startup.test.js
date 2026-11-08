@@ -14,7 +14,8 @@ test('module identifiers work on LAN HTTP without crypto.randomUUID', () => {
 });
 
 test('tablet entry point versions the startup loader and all static module imports', () => {
-  const build = buildTablet(), root = build.target;
+  // keepRuntime : le test ne doit pas réécrire public/runtime.json (fichier suivi, propre à chaque machine).
+  const build = buildTablet({ keepRuntime: true }), root = build.target;
   const html = fs.readFileSync(root + '/index.html', 'utf8');
   assert.match(html, new RegExp('startup.js\\?v=' + build.version));
   const app = fs.readFileSync(root + '/app.js', 'utf8');

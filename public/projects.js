@@ -56,6 +56,8 @@ const G = {
 };
 // Vue « conversations » : chaque tâche est un chat, regroupé par statut dans la barre latérale.
 const VIEWS = ['chat', 'board', 'grid'];
+// Tableau : chaque colonne montre les tâches les plus récentes d’abord, 10 au plus ; le bouton + affiche le reste.
+const COL_LIMIT = 10;
 const CHAT_GROUPS = [
   { id: 'run', label: 'En cours', color: '#ff9f43', has: t => ['doing', 'blocked'].includes(t.status) || (t.status === 'todo' && !!openRun(t)) },
   { id: 'review', label: 'À valider', color: 'var(--accent)', has: t => t.status === 'review' },
@@ -78,7 +80,7 @@ const colOf = t => t.status === 'blocked' ? 'doing' : t.status;
 export function createProjectsUI({ sources, modal, showModal, toast, render, isActive }) {
   const st = { loaded: false, loading: false, error: '', projects: [], tasks: [], engines: {}, capabilities: {}, agents: null, agentsError: '',
     view: VIEWS.includes(read('mb.projects.mode', 'chat')) ? read('mb.projects.mode', 'chat') : 'chat', project: read('mb.projects.filter', 'all'), search: '', attention: false,
-    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, panel: null, launching: new Set(), dragging: null,
+    deployInfo: {}, deployConfig: null, deployChecked: new Set(), projectStatus: 'all', archived: false, filters: false, quickAdd: null, expanded: new Set(), panel: null, launching: new Set(), dragging: null,
     chat: null, drafts: {}, newFiles: [], chatFiles: {}, allDone: false };
   let pollTimer;
   const pending = new WeakMap(); // formulaire -> fichiers choisis ou collés, envoyés à l'enregistrement
@@ -171,7 +173,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     </form>`;
   }
   function board() {
-    const list = st.tasks.filter(matches).sort((a, b) => (b.priority - a.priority) || (a.order - b.order));
+    const list = st.tasks.filter(matches).sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
     const project = st.project !== 'all' && st.projects.find(p => p.id === st.project);
     const context = project ? `<section class="pj-context" aria-label="Contexte du projet">
         <div><span class="pj-status s-${project.status}">${PROJECT_STATUS[project.status]}</span>${project.description ? `<p>${esc(project.description)}</p>` : ''}${project.context?.objective ? `<p class="muted"><b>Objectif :</b> ${esc(project.context.objective)}</p>` : ''}
@@ -184,7 +186,8 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         <header class="pj-col-head"><span class="pj-ring r-${col.ring}"></span><h2>${col.label}</h2><span class="pj-count">${tasks.length}</span><span class="pj-grow"></span>
           <button class="icon-button" data-pj="quick-add" data-id="${col.id}" aria-label="Ajouter une tâche dans ${col.label}" ${visibleProjects().length ? '' : 'disabled'}>${icon('plus')}</button></header>
         ${st.quickAdd === col.id ? quickAdd(col.id) : ''}
-        ${tasks.map(card).join('') || `<div class="pj-empty-col">${col.id === 'review' ? 'Aucun résultat à valider' : 'Aucune tâche'}</div>`}
+        ${(st.expanded.has(col.id) ? tasks : tasks.slice(0, COL_LIMIT)).map(card).join('') || `<div class="pj-empty-col">${col.id === 'review' ? 'Aucun résultat à valider' : 'Aucune tâche'}</div>`}
+        ${tasks.length > COL_LIMIT && !st.expanded.has(col.id) ? `<button class="pj-col-more" data-pj="col-more" data-id="${col.id}" aria-label="Afficher les ${tasks.length - COL_LIMIT} autres tâches de ${col.label}">${icon('plus')} ${tasks.length - COL_LIMIT}</button>` : ''}
       </section>`;
     }).join('')}</div></div>`;
   }
@@ -741,6 +744,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'new-task': await taskForm(); break;
         case 'quick-add': st.quickAdd = idv; render(); requestAnimationFrame(() => document.querySelector('#pj-quick-title')?.focus()); break;
         case 'quick-cancel': st.quickAdd = null; render(); break;
+        case 'col-more': st.expanded.add(idv); render(); break;
         case 'open-task': if (st.view === 'chat') { st.chat = idv; renderChat(true); } else await openPanel(idv); break;
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
         // Une tâche avec une branche de travail est fusionnée dans la branche de production et poussée sur GitHub par Cockpit (sans agent).

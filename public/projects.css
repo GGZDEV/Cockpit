@@ -56,6 +56,7 @@
 .pj-ring.r-half{background:linear-gradient(90deg,var(--col) 50%,transparent 50%)}
 .pj-ring.r-fill{background:var(--col)}
 .pj-empty-col{padding:28px 12px;border:1px dashed var(--pj-line);border-radius:14px;text-align:center;font-size:13px;color:var(--pj-muted)}
+.pj-col-more{display:flex;align-items:center;justify-content:center;gap:6px;height:36px;border:1px dashed var(--pj-line);border-radius:14px;background:none;color:var(--pj-muted);font:inherit;font-size:13px;cursor:pointer}.pj-col-more:hover{color:var(--pj-text);border-color:var(--col)}.pj-col-more .icon{width:15px;height:15px}
 .pj-card{position:relative;background:var(--pj-card);border:1px solid var(--pj-line);border-radius:14px;padding:14px 14px 12px;display:flex;flex-direction:column;gap:10px;cursor:grab}
 .pj-card:hover{border-color:var(--text-faint,#555)}
 .pj-card.needs-me{box-shadow:inset 0 0 0 1px rgba(255,184,107,.45)}

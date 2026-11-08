@@ -12,6 +12,8 @@ test('server mode protects the single-origin web app and advertises only server 
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
   const origin = 'http://127.0.0.1:' + server.address().port;
   assert.equal((await fetch(origin)).status, 401);
+  for (const file of ['/manifest.json', '/brand/apple-touch-icon.png', '/brand/icon-192.png']) assert.equal((await fetch(origin + file)).status, 200, file);
+  assert.equal((await fetch(origin + '/brand/icon.png')).status, 401);
   const headers = { Authorization: 'Basic ' + Buffer.from('cockpit:secret').toString('base64') };
   const page = await fetch(origin, { headers }); assert.equal(page.status, 200); assert.match(await page.text(), /server-config\.js/);
   const config = await fetch(origin + '/server-config.js', { headers }); assert.equal(await config.text(), 'globalThis.COCKPIT_SERVER_MODE=true;');

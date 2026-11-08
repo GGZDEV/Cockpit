@@ -58,6 +58,7 @@ const secretFile = name => {
   if (!file) return '';
   try { return fs.readFileSync(file, 'utf8').trim(); } catch (error) { throw new Error(name + ' est illisible : ' + error.message); }
 };
+const PWA_PUBLIC = new Set(['/manifest.json', '/brand/apple-touch-icon.png', '/brand/icon-192.png', '/brand/icon-512.png']);
 function cryptoSafe(a, b) {
   const crypto = require('node:crypto'), left = Buffer.from(a), right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
@@ -67,7 +68,8 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
   return http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://localhost');
-      if (serverMode && webPassword) {
+      // iOS fetches the manifest and home screen icons without the Basic credentials.
+      if (serverMode && webPassword && !PWA_PUBLIC.has(url.pathname)) {
         const expected = 'Basic ' + Buffer.from('cockpit:' + webPassword).toString('base64');
         const supplied = String(req.headers.authorization || '');
         if (!cryptoSafe(supplied, expected)) { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Cockpit", charset="UTF-8"', 'Cache-Control': 'no-store' }); return res.end('Authentification requise.'); }

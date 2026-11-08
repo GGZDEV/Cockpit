@@ -1,9 +1,9 @@
 /* Disposition Téléphone : une colonne, onglets en bas de l'écran, zones sûres de l'iPhone (encoche, barre d'état, barre d'accueil).
    Ne dépend pas de la largeur : choisie sur un grand écran, la même vue s'affiche centrée, comme un aperçu. */
 body[data-profile="phone"]{height:auto;min-height:100dvh;overflow-x:hidden;overflow-y:auto;overscroll-behavior-y:none}
-body[data-profile="phone"] #app{display:block;box-sizing:border-box;width:100%;max-width:560px;height:auto;min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left))}
-/* Le contenu qui défile ne passe plus sous l'heure et la batterie. */
-body[data-profile="phone"]::before{content:"";position:fixed;z-index:6;top:0;left:0;right:0;height:env(safe-area-inset-top);background:rgba(10,10,10,.82);-webkit-backdrop-filter:blur(20px);backdrop-filter:blur(20px);pointer-events:none}
+body[data-profile="phone"] #app{display:block;box-sizing:border-box;width:100%;max-width:560px;height:auto;min-height:100dvh;margin:0 auto;padding:calc(12px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) calc(92px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
+/* Le contenu qui défile ne passe plus sous l'heure et la batterie. Fond plein, sans flou : sur iOS le flou bave sous la bande, sur les boutons du haut. */
+body[data-profile="phone"]::before{content:"";position:fixed;z-index:6;top:0;left:0;right:0;height:env(safe-area-inset-top);background:rgba(10,10,10,.92);pointer-events:none}
 
 /* Barre d'onglets fixée en bas, toujours entière : sans logo ni libellé de connexion. */
 body[data-profile="phone"] .rail{position:fixed;z-index:5;left:0;right:0;bottom:0;top:auto;transform:none;box-sizing:border-box;width:auto;height:auto;min-height:0;margin:0;flex-direction:row;align-items:center;justify-content:space-around;gap:2px;padding:6px calc(8px + env(safe-area-inset-right)) calc(6px + env(safe-area-inset-bottom)) calc(8px + env(safe-area-inset-left));border:0;border-top:1px solid rgba(255,255,255,.08);border-radius:0;background:rgba(14,14,16,.86);-webkit-backdrop-filter:blur(24px);backdrop-filter:blur(24px);box-shadow:none}
@@ -12,7 +12,8 @@ body[data-profile="phone"] .rail-btn{flex:1 1 0;min-width:0;max-width:64px;width
 
 /* En-tête : grille fixe, quelle que soit la répartition des éléments entre les zones.
    1re ligne : zone gauche (le titre ou la date se raccourcit), zone centre, boutons fixes ; 2e ligne : zone droite, qui défile latéralement. */
-body[data-profile="phone"] .panel{height:auto;padding:0;overflow:visible}
+/* .native-home-panel : passe devant la marge du thème Verre (polish.css), qui doublait la marge latérale. */
+body[data-profile="phone"] .panel.native-home-panel{height:auto;padding:0;overflow:visible}
 body[data-profile="phone"] .native-home-panel .page-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;height:auto;margin:0 0 12px;padding:0}
 body[data-profile="phone"] .native-home-panel .page-head>*{min-width:0}
 body[data-profile="phone"] .native-home-panel .page-head.is-home{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);grid-template-areas:"l c f" "r r r";align-items:center;gap:8px 10px;min-height:0}
@@ -20,7 +21,7 @@ body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-left{grid-a
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center{grid-area:c;flex-wrap:nowrap;justify-content:center;align-items:center;text-align:center;min-height:40px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-center:empty{display:none}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.head-fixed{grid-area:f;justify-self:end;flex-wrap:nowrap;gap:6px}
-body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right{grid-area:r;grid-column:1/-1;flex-wrap:nowrap;justify-content:flex-start;min-height:0;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:2px 14px}
+body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right{grid-area:r;grid-column:1/-1;flex-wrap:nowrap;justify-content:flex-start;min-height:0;overflow-x:auto;scrollbar-width:none;margin:0 -10px;padding:2px 10px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home>.hz-right:empty{display:none}
 body[data-profile="phone"] .native-home-panel .page-head.is-home .hz-right::-webkit-scrollbar{display:none}
 body[data-profile="phone"] .native-home-panel .hzone>*,body[data-profile="phone"] .native-home-panel .head-fixed>*{flex:none}
@@ -42,7 +43,7 @@ body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .bt
 body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .btn-solid{height:40px;padding:0 14px}
 body[data-profile="phone"] .native-home-panel .page-head.is-home .head-fixed .icon{width:18px;height:18px}
 body[data-profile="phone"] .native-home-panel .edit-hint{margin:0 0 12px;font-size:13px;line-height:1.4}
-body[data-profile="phone"] .room-tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px 12px;padding:0 14px;scrollbar-width:none}
+body[data-profile="phone"] .room-tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 -10px 12px;padding:0 10px;scrollbar-width:none}
 body[data-profile="phone"] .room-tabs::-webkit-scrollbar{display:none}
 
 /* Modules : une seule colonne ; la hauteur choisie est un minimum : un module s'allonge plutôt que de couper son contenu
@@ -78,7 +79,7 @@ body[data-profile="phone"] .pj-search input{width:100%;min-width:0;font-size:16p
 body[data-profile="phone"] .pj-round{flex:none;width:42px;height:42px}
 body[data-profile="phone"] .pj-actions .pj-cta{flex:none;width:42px;height:42px;padding:0;justify-content:center;font-size:0}
 body[data-profile="phone"] .pj-actions .pj-cta .icon{width:20px;height:20px}
-body[data-profile="phone"] .pj-filters,body[data-profile="phone"] .pj-root>.pj-chips{flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -14px;padding:0 14px}
+body[data-profile="phone"] .pj-filters,body[data-profile="phone"] .pj-root>.pj-chips{flex-wrap:nowrap;gap:8px;overflow-x:auto;scrollbar-width:none;margin:0 -10px;padding:0 10px}
 body[data-profile="phone"] .pj-filters::-webkit-scrollbar,body[data-profile="phone"] .pj-root>.pj-chips::-webkit-scrollbar,body[data-profile="phone"] .pj-board-scroll::-webkit-scrollbar{display:none}
 body[data-profile="phone"] .pj-filters>*,body[data-profile="phone"] .pj-chips>*{flex:none}
 body[data-profile="phone"] .pj-filters .pj-chips{flex-wrap:nowrap}
@@ -86,8 +87,8 @@ body[data-profile="phone"] .pj-filters>.pj-attn{order:-1}
 body[data-profile="phone"] .pj-seg{width:auto;padding:3px}
 body[data-profile="phone"] .pj-seg button{flex:none;height:32px;padding:0 12px;font-size:13px}
 body[data-profile="phone"] .pj-chip{height:38px;padding:0 12px;font-size:13px}
-body[data-profile="phone"] .pj-board-scroll{margin:0 -14px;padding:0 14px 6px;scroll-snap-type:x mandatory;scroll-padding:0 14px;scrollbar-width:none;overscroll-behavior-x:contain}
-body[data-profile="phone"] .pj-board{grid-template-columns:repeat(5,calc(min(100vw,560px) - 56px));gap:10px}
+body[data-profile="phone"] .pj-board-scroll{margin:0 -10px;padding:0 10px 6px;scroll-snap-type:x mandatory;scroll-padding:0 10px;scrollbar-width:none;overscroll-behavior-x:contain}
+body[data-profile="phone"] .pj-board{grid-template-columns:repeat(5,calc(min(100vw,560px) - 48px));gap:10px}
 body[data-profile="phone"] .pj-col{scroll-snap-align:start}
 body[data-profile="phone"] .pj-context{padding:12px 14px}
 body[data-profile="phone"] .pj-context>div{flex-basis:100%}
@@ -101,3 +102,10 @@ body[data-profile="phone"] .module-settings-dialog .segmented.inline button{flex
 body[data-profile="phone"] dialog[open]{max-width:calc(100vw - 16px);max-height:calc(100dvh - 16px - env(safe-area-inset-top) - env(safe-area-inset-bottom))}
 body[data-profile="phone"] .connection-form select,body[data-profile="phone"] .connection-form input{font-size:16px}
 body[data-profile="phone"] .settings-section .connection-form+.setting-title{margin-top:18px}
+/* Paramètres : plein écran jusqu'en bas (plus de bande floue où l'on devine les onglets), titre et bouton Fermer
+   sous l'heure et la batterie, restés en haut pendant le défilement ; la barre d'accueil ne cache pas la fin. */
+body[data-profile="phone"] dialog.settings-dialog[open]{width:100%;height:100dvh;max-width:none;max-height:none}
+body[data-profile="phone"] .settings-dialog .dialog-heading{position:sticky;z-index:2;top:0;padding:calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));background:rgba(8,8,11,.94)}
+body[data-profile="phone"] .settings-dialog .dialog-heading h2{font-size:24px}
+body[data-profile="phone"] .settings-dialog .dialog-body{padding:4px calc(10px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
+body[data-profile="phone"][data-theme="feedme"] .settings-dialog .dialog-heading{background:var(--bg)}

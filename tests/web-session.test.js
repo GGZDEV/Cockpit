@@ -28,6 +28,7 @@ test('unauthenticated requests: login page for navigation, JSON for the app, Bas
   assert.match(page.body, /autocomplete="current-password"/); assert.match(page.body, /value="cockpit" autocomplete="username"/);
   assert.match(page.body, /name="next" value="\/\?v=2"/); assert.doesNotMatch(page.body, /https?:\/\//);
   assert.match(page.headers['content-security-policy'], /default-src 'none'/);
+  assert.equal(page.headers['referrer-policy'], 'same-origin');
   const api = await request(origin + '/api/projects/state', { headers: API });
   assert.equal(api.status, 401); assert.equal(api.headers['www-authenticate'], undefined); assert.equal(api.headers['x-cockpit-login'], '1');
   assert.deepEqual(JSON.parse(api.body), { error: 'Connexion requise.' });
@@ -101,6 +102,7 @@ test('an old cookie is renewed by the server and Basic navigation migrates to a 
 test('logout clears the cookie; login and logout refuse foreign origins', async t => {
   const origin = await start(t, { stateDir: tempDir(t) });
   assert.equal((await login(origin, 'secret', '/', { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await login(origin, 'secret', '/', { Origin: 'null' })).status, 403);
   assert.equal((await login(origin, 'secret', '/', { 'Sec-Fetch-Site': 'cross-site' })).status, 403);
   assert.equal((await request(origin + '/logout', { method: 'POST', headers: { Origin: 'https://evil.example' } })).status, 403);
   const out = await request(origin + '/logout', { method: 'POST', headers: { Origin: origin } });

@@ -107,7 +107,8 @@ ${error ? `<p class="error" role="alert">${escapeHtml(error)}</p>` : ''}<form me
 <label for="password">Mot de passe</label><input id="password" type="password" name="password" autocomplete="current-password" required autofocus>
 <button type="submit">Se connecter</button></form></main></body></html>`;
 }
-const PAGE_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY',
+// Keep same-origin form metadata: no-referrer makes browser POSTs send Origin: null.
+const PAGE_HEADERS = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'same-origin', 'X-Frame-Options': 'DENY',
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; manifest-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'" };
 
 module.exports = { COOKIE, MAX_AGE, createWebSession, defaultStateDir, ensureStateDir, clientAddress, safeNext, loginPage, PAGE_HEADERS };

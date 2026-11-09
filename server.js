@@ -49,7 +49,7 @@ async function discoverFeedMe() {
   })();
   try { return await discovery; } finally { discovery = null; }
 }
-function json(res, status, value) { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
+function json(res, status, value) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); }
 let sharedProjects;
 let sharedRss;
 const rssService = () => sharedRss ||= createRss({ log: message => console.error(message) });
@@ -111,7 +111,7 @@ function authorize(req, res, session, secure) {
   }
   // Pas de WWW-Authenticate pour un navigateur : la fenêtre native ne se mémorise pas sur téléphone.
   if (isNavigation(req)) { res.writeHead(401, webSession.PAGE_HEADERS); res.end(req.method === 'HEAD' ? undefined : webSession.loginPage({ next: req.url })); }
-  else if (fromBrowser(req)) { res.writeHead(401, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'X-Cockpit-Login': '1' }); res.end(JSON.stringify({ error: 'Connexion requise.' })); }
+  else if (fromBrowser(req)) { res.writeHead(401, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Cockpit-Login': '1' }); res.end(JSON.stringify({ error: 'Connexion requise.' })); }
   else { res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Cockpit", charset="UTF-8"', 'Cache-Control': 'no-store' }); res.end('Authentification requise.'); }
   return false;
 }

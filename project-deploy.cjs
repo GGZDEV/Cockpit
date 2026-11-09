@@ -118,7 +118,8 @@ function missing(project) {
   const d = settingsOf(project), list = [];
   if (!githubRepo(project?.context?.repository)) list.push('le dépôt GitHub du projet');
   if (!d.url) list.push('l’URL de déploiement');
-  if (!d.type) list.push('la recette de déploiement de ce projet (à préparer une seule fois dans Deployer)');
+  const slug = stateOf(project).slug;
+  if (!d.type) list.push(`la recette de déploiement de ce projet (à préparer une seule fois dans Deployer${slug ? ', identifiant « ' + slug + ' », même dépôt GitHub' : ''})`);
   else for (const f of TYPES[d.type].fields) if (f.required && !d.config[f.key]) list.push(f.label.charAt(0).toLowerCase() + f.label.slice(1));
   if (d.publicDomain && !d.publicUpstream) list.push('l’adresse interne du site (pour le nom public)');
   return list;

@@ -88,3 +88,40 @@ test('captures made during a Claude run are attached to the task and their folde
   assert.ok(input.includes('node ' + claude.VISUAL_CHECK + ' --path / -- '), 'le brief explique l’outil');
   assert.equal(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('cockpit-visual-') && fs.existsSync(path.join(os.tmpdir(), f, 'accueil-mobile.png'))).length, 0, 'dossier de captures supprimé');
 });
+
+test('inspection options: steps in order imply --inspect, malformed steps refused', () => {
+  const o = parse(['--click', '#menu', '--type=#q=a=b', '--eval', 'scrollTo(0, 400)', '--url', 'http://127.0.0.1:1']);
+  assert.equal(o.inspect, true);
+  assert.deepEqual(o.steps, [{ click: '#menu' }, { type: '#q', text: 'a=b' }, { eval: 'scrollTo(0, 400)' }]);
+  assert.equal(parse(['--inspect', '--url', 'http://127.0.0.1:1']).inspect, true); assert.equal(parse(['--url', 'http://127.0.0.1:1']).inspect, false);
+  assert.throws(() => parse(['--type', '#q', '--url', 'http://x']), /sélecteur=texte/);
+  assert.throws(() => parse(['--url', 'http://x', '--click']), /valeur attendue/);
+  assert.throws(() => parse(['--url', 'http://x', ...Array(11).fill(['--click', 'a']).flat()]), /10 étapes/);
+});
+
+// Vrai Chromium (ignoré s'il est absent) : erreurs de console et JavaScript, débordement, étapes rejouées avec une capture chacune.
+const chromium = process.env.COCKPIT_CHROMIUM || '/usr/bin/chromium';
+test('--inspect reports console errors and horizontal overflow, replays steps and captures after each', { skip: !fs.existsSync(chromium) && 'Chromium absent' }, async t => {
+  const b = bench(t);
+  const page = `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width"><body style="margin:0">
+<div id=large class="bloc rouge" style="width:600px;height:20px;background:red"></div><button id=b onclick="this.textContent='ok';document.title='cliqué'">Bouton</button><input id=q oninput="document.title='saisi:'+this.value">
+<script>console.error('boum console'); setTimeout(() => { throw new Error('boum js'); }, 10);</script>`;
+  const server = http.createServer((req, res) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end(page); });
+  await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => server.close());
+  const url = 'http://127.0.0.1:' + server.address().port;
+  const result = await main(['--url', url, '--click', '#b', '--type', '#q=salut', '--eval', 'if (document.title !== "saisi:salut") throw new Error("titre " + document.title)', '--click', '#absent', '--out', b.out],
+    { env: process.env, chromium, tmpRoot: b.tmpRoot, memory: () => null, budgetMs: 300 });
+  assert.equal(result.files.length, 10, result.errors.join(' | '));
+  assert.deepEqual(result.files.filter(f => f.viewport === 'mobile').map(f => path.basename(f.file)), ['accueil-mobile.png', 'accueil-mobile-etape1.png', 'accueil-mobile-etape2.png', 'accueil-mobile-etape3.png', 'accueil-mobile-etape4.png']);
+  assert.equal(result.files[1].step, '1 · clic #b');
+  for (const f of result.files) assert.ok(fs.readFileSync(f.file).subarray(0, 4).equals(PNG.subarray(0, 4)));
+  assert.equal(result.ok, false, 'a failed step fails the check');
+  assert.deepEqual(result.errors, ['/ mobile · étape 4 (clic #absent) : élément introuvable : #absent', '/ bureau · étape 4 (clic #absent) : élément introuvable : #absent'], 'the eval step saw the typed text');
+  for (const view of ['mobile', 'bureau']) {
+    assert.ok(result.console.includes(`/ ${view} : console.error boum console`), view);
+    assert.ok(result.console.some(l => l.startsWith(`/ ${view} : `) && /boum js/.test(l)), view);
+  }
+  assert.deepEqual(result.overflow, [{ path: '/', viewport: 'mobile', extraPx: 210, elements: ['div#large.bloc.rouge'] }], 'mobile only, noted once while unchanged');
+  await b.settle();
+  assert.deepEqual(fs.readdirSync(b.tmpRoot), [], 'profils temporaires supprimés');
+});

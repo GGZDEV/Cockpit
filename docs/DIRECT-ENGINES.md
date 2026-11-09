@@ -30,6 +30,10 @@ inchangé, pour les projets et tâches qui l'utilisent déjà. Objectif : le moi
    l'un après l'autre avec Chromium headless (`/usr/bin/chromium` ou `COCKPIT_CHROMIUM`) en mobile 390×844 (iPhone) et bureau 1440×900 ; serveur,
    Chromium et profils temporaires sont toujours supprimés ; sortie JSON. Cette commande est autorisée à Claude même avec une liste de commandes
    restreinte. Cockpit fournit `COCKPIT_VISUAL_DIR` propre à l'exécution, joint ensuite les PNG à la tâche (8 au plus, 5 Mo chacun) et supprime le dossier.
+   Avec `--inspect` (implicite dès qu'une étape est donnée), Chromium est piloté par le protocole DevTools (WebSocket de Node 22+, sans dépendance) :
+   sortie `console` (exceptions JavaScript, `console.error`, ressources en erreur), `overflow` (pixels de débordement horizontal et éléments fautifs,
+   noté de nouveau seulement s'il change), et étapes `--click <sélecteur>`, `--type <sélecteur>=<texte>`, `--eval <js>` (10 au plus) rejouées dans
+   l'ordre, chacune suivie d'une capture `<page>-<vue>-etapeN.png`. Une étape en échec est listée dans `errors` et rend `ok` faux.
 2. `claude -p …` est lancé **sans shell** (arguments en tableau, demande sur l'entrée standard) dans ce worktree.
 3. À la fin : résultat (ligne `STATUT:` facultative : `BLOQUÉ` = question, `ÉCHEC`), puis relevé Git fait par Cockpit sans jeton
    (branche, fichiers, commits, changements non commités), compteurs (jetons, appels, durée, coût estimé).

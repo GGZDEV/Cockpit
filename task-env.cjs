@@ -131,6 +131,7 @@ function environmentBrief({ deps, baseline, testable, visual }) {
   out.push('', '## Vérification', '- Pendant le travail : lance les tests ciblés des fichiers touchés.',
     '- À la fin : la suite complète une fois, comparée aux tests de départ ; distingue les échecs existants des nouveaux et corrige les nouveaux.');
   if (visual) out.push(`- Changement visuel : \`node ${visual} --path / -- <commande qui démarre le serveur, PORT fourni>\` (ou \`--url http://127.0.0.1:<port>\`) fait des captures mobile et bureau.`,
+    '  Ajoute `--inspect` pour relever erreurs JavaScript/console (`console`) et débordements horizontaux (`overflow`) ; `--click <sélecteur>`, `--type <sélecteur>=<texte>`, `--eval <js>` rejouent des interactions (capture après chacune).',
     '  Lis les PNG indiqués dans sa sortie JSON avec Read ; ils sont joints à la tâche à la fin de l’exécution.');
   return out.join('\n');
 }

@@ -92,12 +92,29 @@ test('phone modules go up to eight rows high; the other layouts keep four', () =
 test('on the phone the Kanban is a swipeable carousel of full columns and the project filters scroll on one line', () => {
   const css = rules(read('phone.css')), find = re => css.find(r => re.test(r)) || '';
   assert.match(find(/\.pj-board-scroll\{/), /scroll-snap-type:x mandatory/);
-  assert.match(find(/\.pj-board-scroll\{/), /margin:0 -14px;padding:0 14px/, 'les colonnes ne sont plus rognées par la double marge');
+  assert.match(find(/\.pj-board-scroll\{/), /margin:0 -10px;padding:0 10px/, 'les colonnes ne sont plus rognées par la double marge');
   assert.match(find(/\.pj-col\{/), /scroll-snap-align:start/);
-  assert.match(find(/\.pj-board\{/), /repeat\(5,calc\(min\(100vw,560px\) - 56px\)\)/, 'une colonne par écran, la suivante dépasse');
+  assert.match(find(/\.pj-board\{/), /repeat\(5,calc\(min\(100vw,560px\) - 48px\)\)/, 'une colonne par écran, la suivante dépasse');
   assert.match(find(/\.pj-filters,/), /flex-wrap:nowrap[^}]*overflow-x:auto/);
   assert.match(find(/\.pj-search input\{/), /font-size:16px/, 'pas de zoom automatique d’iOS sur le champ');
   assert.match(find(/\.pj-actions \.pj-cta\{/), /font-size:0/, '« Nouvelle tâche » devient un bouton + à côté de la recherche');
+});
+
+// CO-22 : marges latérales doublées par le thème Verre, Paramètres coupés en haut et en bas, flou qui bave sur les boutons.
+test('on the phone the side margin is 10 px, the status bar band is not blurred and the settings fill the screen below the status bar', () => {
+  const sheet = read('phone.css'), css = rules(sheet), find = re => css.find(r => re.test(r)) || '';
+  assert.match(find(/ #app\{/), /calc\(10px \+ env\(safe-area-inset-right\)\)/);
+  assert.match(find(/ \.panel\.native-home-panel\{/), /padding:0/, 'passe devant [data-theme="home"][data-design="home"] .panel de polish.css');
+  assert.match(read('polish.css'), /\[data-theme="home"\]\[data-design="home"\] \.panel\{padding:14px 16px 8px/);
+  assert.doesNotMatch(find(/\]::before\{/), /backdrop-filter/, 'pas de flou sous la barre d’état');
+  const dialog = find(/ dialog\.settings-dialog\[open\]\{/);
+  assert.match(dialog, /height:100dvh/); assert.match(dialog, /max-height:none/, 'la règle générale des dialogues ne la raccourcit plus');
+  const head = find(/ \.settings-dialog \.dialog-heading\{/);
+  assert.match(head, /position:sticky/); assert.match(head, /env\(safe-area-inset-top\)/, 'titre et bouton Fermer sous la barre d’état');
+  assert.match(find(/ \.settings-dialog \.dialog-body\{/), /env\(safe-area-inset-bottom\)/);
+  assert.match(find(/\.pj-root\.is-chat>\.pj-chat-main\{/), /border-radius:0[^}]*backdrop-filter:none/, 'chat plein écran sans carte vitrée qui bave en haut');
+  assert.match(find(/ \.settings-dialog \.dialog-heading\{/), /background:#08080b/, 'le texte qui défile ne transparaît plus sous le titre');
+  assert.doesNotMatch(sheet, /-14px/, 'plus de marge négative de l’ancienne largeur');
 });
 
 test('the Messages module fits a phone-width card: + instead of « Nouveau », no keyboard shortcut on touch screens', () => {

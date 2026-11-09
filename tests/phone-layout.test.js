@@ -112,6 +112,8 @@ test('on the phone the side margin is 10 px, the status bar band is not blurred 
   const head = find(/ \.settings-dialog \.dialog-heading\{/);
   assert.match(head, /position:sticky/); assert.match(head, /env\(safe-area-inset-top\)/, 'titre et bouton Fermer sous la barre d’état');
   assert.match(find(/ \.settings-dialog \.dialog-body\{/), /env\(safe-area-inset-bottom\)/);
+  assert.match(find(/\.pj-root\.is-chat>\.pj-chat-main\{/), /border-radius:0[^}]*backdrop-filter:none/, 'chat plein écran sans carte vitrée qui bave en haut');
+  assert.match(find(/ \.settings-dialog \.dialog-heading\{/), /background:#08080b/, 'le texte qui défile ne transparaît plus sous le titre');
   assert.doesNotMatch(sheet, /-14px/, 'plus de marge négative de l’ancienne largeur');
 });
 

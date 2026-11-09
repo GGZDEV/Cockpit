@@ -94,6 +94,8 @@ body[data-profile="phone"] .pj-context{padding:12px 14px}
 body[data-profile="phone"] .pj-context>div{flex-basis:100%}
 /* Vue chat : plein écran entre la barre d'état et les onglets du bas (6 + 48 + 6 px + bordure), sans cadre ni marges perdues. */
 body[data-profile="phone"] .projects-panel .pj-root.is-chat{position:fixed;z-index:4;top:env(safe-area-inset-top);bottom:calc(61px + env(safe-area-inset-bottom));left:max(0px,calc(50% - 280px));right:max(0px,calc(50% - 280px));height:auto;max-height:none;min-height:0;padding:0;gap:0;border:0;border-radius:0}
+/* Thème Verre : pas de carte vitrée (coins arrondis, flou qui bave sur la barre d'état et les boutons du haut), un fond assombri suffit. */
+body[data-profile="phone"] .pj-root.is-chat>.pj-chat-main{border-radius:0;background:rgba(10,10,12,.55);-webkit-backdrop-filter:none;backdrop-filter:none;box-shadow:none}
 
 /* Dialogues à la largeur du téléphone. */
 /* Choix en pastilles (hauteur 1 à 8…) : toujours sur une ligne, les boutons se partagent la largeur (36 px au moins pour le doigt). */
@@ -105,7 +107,7 @@ body[data-profile="phone"] .settings-section .connection-form+.setting-title{mar
 /* Paramètres : plein écran jusqu'en bas (plus de bande floue où l'on devine les onglets), titre et bouton Fermer
    sous l'heure et la batterie, restés en haut pendant le défilement ; la barre d'accueil ne cache pas la fin. */
 body[data-profile="phone"] dialog.settings-dialog[open]{width:100%;height:100dvh;max-width:none;max-height:none}
-body[data-profile="phone"] .settings-dialog .dialog-heading{position:sticky;z-index:2;top:0;padding:calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));background:rgba(8,8,11,.94)}
+body[data-profile="phone"] .settings-dialog .dialog-heading{position:sticky;z-index:2;top:0;padding:calc(8px + env(safe-area-inset-top)) calc(10px + env(safe-area-inset-right)) 10px calc(14px + env(safe-area-inset-left));border-bottom:1px solid var(--hairline);background:#08080b}
 body[data-profile="phone"] .settings-dialog .dialog-heading h2{font-size:24px}
 body[data-profile="phone"] .settings-dialog .dialog-body{padding:4px calc(10px + env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) calc(10px + env(safe-area-inset-left))}
 body[data-profile="phone"][data-theme="feedme"] .settings-dialog .dialog-heading{background:var(--bg)}

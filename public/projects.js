@@ -643,7 +643,6 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (m.mode === 'manual') return foot('<p class="pj-help">Tâche manuelle : aucun agent ne répond ici. Choisissez un agent dans « Détails de la tâche » pour lui confier le travail.</p>');
     const busy = m.mode === 'busy';
     if (!busy && m.kind === 'initial' && !m.needsText) return `<form class="pj-chatbox is-launch" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="initial">
-      <p class="pj-help">${direct ? `${agent} reçoit les consignes de la tâche${task.planFirst ? ' et commence par un plan en lecture seule' : ''} ; les consignes du projet sont dans le CLAUDE.md du dossier.` : `${agent} recevra les consignes, les critères et ${task.includeContext === false ? 'aucun contexte de projet' : 'le contexte du projet'}.`} Rien ne démarre sans ce clic.</p>
       <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
     return `<form class="pj-chatbox" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="${esc(m.kind || '')}" ${m.setsInstructions ? 'data-sets="1"' : ''}>
       <ul class="pj-atts pj-pending">${pendingHTML(st.chatFiles[task.id] || [])}</ul>

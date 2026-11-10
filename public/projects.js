@@ -874,6 +874,8 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         if (body.newRepository) toast('Projet créé. Le dépôt GitHub, la copie locale et le premier envoi se préparent : suivez l’avancement dans le projet.');
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
         modal.close(); render();
+        refresh(); // « Ce qui manque pour déployer » est calculé par le serveur : relu après chaque enregistrement
+        setTimeout(refresh, 3000); // la recette du service peut être reprise juste après l'enregistrement
       } else if (kind === 'chat') {
         const taskId = form.dataset.id, note = String(fd.get('note') || '').trim(), sets = !!form.dataset.sets;
         if (sets) {

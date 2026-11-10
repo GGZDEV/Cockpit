@@ -279,3 +279,11 @@ test('a closed and published task moves to « Déployé » after a successful de
   const other = (await s.ui('tasks', 'POST', { projectId: p.id, title: 'Autre' })).body;
   assert.equal((await s.ui('tasks/' + other.id, 'PATCH', { status: 'deployed' })).status, 400, 'only Cockpit fills « Déployé »');
 });
+
+test('missing recipe: the message names the identifier to prepare in Deployer once it is known', () => {
+  const { missingText } = require('../project-deploy.cjs');
+  const project = { context: { repository: 'https://github.com/o/mmtb' }, deployment: { url: 'https://mmtb.ggz.ovh' } };
+  assert.equal(missingText(project), 'Pour déployer, renseignez : la recette de déploiement de ce projet (à préparer une seule fois dans Deployer).');
+  project.deployState = { slug: 'mmtb' };
+  assert.equal(missingText(project), 'Pour déployer, renseignez : la recette de déploiement de ce projet (à préparer une seule fois dans Deployer, identifiant « mmtb », même dépôt GitHub).');
+});

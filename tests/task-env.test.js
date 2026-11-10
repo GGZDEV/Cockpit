@@ -117,9 +117,9 @@ test('direct runs prepare the worktree asynchronously before the engine, once pe
 });
 
 test('stopping during preparation aborts it and never starts the engine', async t => {
-  let aborted = false;
+  let aborted = false, hang = true;
   const taskEnv = { plan: () => ({ label: 'npm ci' }), testScript: () => false, baseline: async () => null,
-    install: (cwd, { signal }) => new Promise(resolve => signal.addEventListener('abort', () => { aborted = true; resolve({ status: 'aborted', label: 'npm ci' }); })) };
+    install: (cwd, { signal }) => hang ? new Promise(resolve => signal.addEventListener('abort', () => { aborted = true; resolve({ status: 'aborted', label: 'npm ci' }); })) : null };
   const { project, create, launch, until, ui, calls } = await setup(t, { taskEnv });
   const p = await project('alpha'), x = await create(p.id);
   await launch(x.id); await until(x.id, v => v.runs[0].events.some(e => /Préparation/.test(e.text)));
@@ -127,4 +127,28 @@ test('stopping during preparation aborts it and never starts the engine', async 
   const done = await until(x.id, v => v.runs[0].status === 'interrupted');
   await new Promise(r => setTimeout(r, 100));
   assert.equal(aborted, true); assert.equal(calls().length, 0); assert.match(done.runs[0].error, /avant le démarrage du moteur/);
+  // La session choisie par Cockpit n'a jamais existé chez Claude : « Relancer » en ouvre une nouvelle au lieu de la reprendre.
+  assert.equal(done.direct.sessionId, undefined);
+  hang = false; await launch(x.id, { kind: 'retry' }); await until(x.id, v => v.runs[1]?.status === 'succeeded');
+  assert.ok(calls()[0].args.includes('--session-id') && !calls()[0].args.includes('--resume'));
+});
+
+test('a restart during preparation does not leave a session that Claude never opened', async t => {
+  const taskEnv = { plan: () => ({ label: 'npm ci' }), testScript: () => false, baseline: async () => null,
+    install: (cwd, { signal }) => new Promise(resolve => signal.addEventListener('abort', () => resolve({ status: 'aborted', label: 'npm ci' }))) };
+  const { project, create, launch, until, calls, services, make } = await setup(t, { taskEnv });
+  const p = await project('alpha'), x = await create(p.id);
+  await launch(x.id); await until(x.id, v => v.runs[0].events.some(e => /Préparation/.test(e.text)));
+  services[0].close(); await new Promise(r => setTimeout(r, 100));
+  services.push(make());
+  const done = services[1].snapshot().tasks.find(v => v.id === x.id);
+  assert.equal(done.runs[0].status, 'interrupted'); assert.equal(calls().length, 0);
+  assert.equal(done.direct.sessionId, undefined);
+});
+
+test('the limit of simultaneous runs comes from COCKPIT_MAX_PARALLEL (2 by default, 1 to 8)', () => {
+  const { maxParallelFromEnv } = require('../direct-harness.cjs');
+  assert.equal(maxParallelFromEnv({}), 2); assert.equal(maxParallelFromEnv({ COCKPIT_MAX_PARALLEL: '4' }), 4);
+  assert.equal(maxParallelFromEnv({ COCKPIT_MAX_PARALLEL: '50' }), 8); assert.equal(maxParallelFromEnv({ COCKPIT_MAX_PARALLEL: '0' }), 2);
+  assert.equal(maxParallelFromEnv({ COCKPIT_MAX_PARALLEL: 'abc' }), 2);
 });

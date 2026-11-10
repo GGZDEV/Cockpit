@@ -275,7 +275,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     if (!visible.length) return `<div class="pj-chat-scroll"><div class="pj-empty"><h2>Commencez par un projet</h2><p>Créez un projet (avec son dépôt GitHub), écrivez une tâche puis cliquez sur « Lancer » : Claude Code la traite sur le serveur Cockpit. Rien ne démarre sans ce clic.</p><button class="button primary" data-pj="new-project">${icon('plus')} Créer un projet</button></div></div>`;
     const p = visible.find(x => x.id === st.project) || visible[0], engine = ENGINE[p.engine || 'claude'], caps = st.capabilities.engines || {};
     const drafts = st.tasks.filter(t => t.projectId === p.id && t.status === 'todo' && !t.runs?.length).slice(0, 4);
-    return `<header class="pj-chat-head">${menuButton}<div class="pj-crumbs"><span>${esc(p.name)}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
+    return `<header class="pj-chat-head">${menuButton}<div class="pj-crumbs"><span>${esc(p.name)}</span><span class="pj-status s-${p.status}" title="Statut du projet">${PROJECT_STATUS[p.status] || PROJECT_STATUS.prep}</span><span aria-hidden="true">/</span><b>Nouvelle tâche</b><span class="pj-pill is-draft"><i></i>Brouillon</span></div>
         <button class="button pj-edit-project" data-pj="edit-project" data-id="${esc(p.id)}" title="Projet et contexte">${icon('edit')} <span>Projet et contexte</span></button></header>
       <div class="pj-chat-scroll"><div class="pj-new">
         <div class="pj-new-hero"><span class="pj-new-mark" aria-hidden="true">${G.prompt}</span><h1>Que doit faire ${esc(engine)} sur ${esc(p.name)} ?</h1>
@@ -870,7 +870,8 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
           deployment: { url: String(fd.get('deployUrl') || '').trim(), auto: fd.has('deployAuto'), branch: String(fd.get('deployBranch') || '').trim() } };
         if (!form.dataset.id && fd.get('repoMode') === 'new') { delete body.context.repository; body.newRepository = { name: String(fd.get('newRepoName') || '').trim(), owner: String(fd.get('newRepoOwner') || '').trim(), private: !fd.has('newRepoPublic') }; }
         const saved = form.dataset.id ? await api('projects/' + form.dataset.id, 'PATCH', body) : await api('projects', 'POST', body);
-        if (body.newRepository) toast('Projet créé. Le dépôt GitHub, la copie locale et le premier envoi se préparent : suivez l’avancement dans le projet.');
+        if (form.dataset.id) toast('Projet enregistré · ' + PROJECT_STATUS[saved.status] + '.');
+        else if (body.newRepository) toast('Projet créé. Le dépôt GitHub, la copie locale et le premier envoi se préparent : suivez l’avancement dans le projet.');
         const i = st.projects.findIndex(p => p.id === saved.id); if (i >= 0) st.projects[i] = saved; else { st.projects.push(saved); st.project = saved.id; write('mb.projects.filter', saved.id); }
         modal.close(); render();
         refresh(); // « Ce qui manque pour déployer » est calculé par le serveur : relu après chaque enregistrement

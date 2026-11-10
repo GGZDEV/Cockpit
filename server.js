@@ -180,6 +180,10 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
         } catch (e) { if (!res.headersSent) json(res, 502, { error: e.name === 'AbortError' ? 'Cockpit ne répond pas à temps.' : 'Connexion à Cockpit interrompue.' }); else res.end(); }
         return;
       }
+      if (serverMode && process.env.COCKPIT_GODSEYE_PORT && require('./godseye.cjs').handles(url.pathname)) {
+        if (!trusted(req, false, { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
+        return require('./godseye.cjs').proxy(req, res, url);
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Méthode indisponible.' });
       let name;
       try { name = decodeURIComponent(url.pathname); } catch { return json(res, 400, { error: 'Adresse invalide.' }); }

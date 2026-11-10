@@ -103,7 +103,8 @@ Sans appel d'API (faux serveur local), la première requête pèse 18,7 k caract
 ## Limites et budgets (réglages du projet, valeurs par défaut)
 
 Délai 30 min (arrêt de toute l'arborescence), 10 exécutions par tâche, 5 $ par exécution et 20 $ par tâche (estimations de Claude ;
-la reprise d'une session annonce un coût cumulé, Cockpit en retire la part déjà comptée), 2 exécutions simultanées sur le PC.
+la reprise d'une session annonce un coût cumulé, Cockpit en retire la part déjà comptée), 2 exécutions simultanées sur le PC, tous moteurs confondus (chacune porte un
+processus du moteur, ses installations et ses tests, et consomme le quota de l'abonnement ; `COCKPIT_MAX_PARALLEL=1` à `8` + relancer pour changer).
 
 ## Codex
 

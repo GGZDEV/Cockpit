@@ -542,7 +542,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const budgetUsd = runBudget(task, s);
     if (name === 'claude' && budgetUsd < MIN_RUN_USD) throw new HttpError(409, `Budget de la tâche presque épuisé : ${spent(task).toFixed(2)} $ sur ${s.taskBudgetUsd} $ (estimation, réglage du projet).`);
     const running = engines.claude.active.size + engines.codex.active.size + starting.size + preparing.size;
-    if (running >= engines.claude.maxParallel) throw new HttpError(409, `Déjà ${running} exécutions en cours sur ce PC : réessayez quand l’une d’elles sera terminée.`);
+    if (running >= engines.claude.maxParallel) throw new HttpError(409, `Déjà ${running} exécutions en cours sur ce PC (limite : ${engines.claude.maxParallel}, réglable par COCKPIT_MAX_PARALLEL) : réessayez quand l’une d’elles sera terminée.`);
     launching.add(task.id); starting.add(task.id);
     try {
       const repo = await engine.repository(project);
@@ -602,6 +602,11 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (name === 'claude') Object.assign(d, { sessionId, engine: 'claude' });
     return { run, attachmentIds: attachments.map(a => a.id) };
   }
+  // Nouvelle session arrêtée avant le démarrage du moteur (préparation, redémarrage de Cockpit) : l'identifiant choisi
+  // par Cockpit n'a jamais existé chez le moteur ; l'oublier, sinon « Relancer » tenterait de reprendre une session introuvable.
+  function forgetUnstartedSession(task, run) {
+    if (run.fresh && run.status === 'pending' && task.direct?.sessionId && task.direct.sessionId === run.sessionId) delete task.direct.sessionId;
+  }
   // Avant le moteur, dans le suivi asynchrone (la réponse HTTP du lancement n'attend pas) : dépendances du worktree, puis tests de départ
   // une fois par commit de départ. Faux si l'exécution a été arrêtée entre-temps (arrêt demandé ou arrêt de Cockpit).
   async function prepareWorktree(task, run) {
@@ -622,6 +627,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
       }
     } catch (error) { log('Préparation du worktree : ' + error.message); event(run, 'prepare', 'Préparation incomplète : ' + harness.redact(text(error.message, 300))); }
     finally { preparing.delete(run.id); }
+    if (closing || run.stopRequested || !OPEN_RUN.includes(run.status)) forgetUnstartedSession(task, run);
     if (closing) { if (OPEN_RUN.includes(run.status)) fail(task, run, 'interrupted', 'Cockpit s’est arrêté pendant la préparation du worktree : « Relancer » reprend.'); return false; }
     if (run.stopRequested || !OPEN_RUN.includes(run.status)) { if (OPEN_RUN.includes(run.status)) fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.'); return false; }
     // Nouvelle session : le brief dit ce qui est prêt et comment vérifier (avant la phase « plan » éventuelle).
@@ -727,7 +733,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     run.stopRequested = true;
     const child = engines[run.engine].active.get(run.id);
     preparing.get(run.id)?.abort();
-    if (child) harness.killTree(child); else fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.');
+    if (child) harness.killTree(child); else { forgetUnstartedSession(task, run); fail(task, run, 'interrupted', 'Arrêtée à votre demande avant le démarrage du moteur.'); }
     return task;
   }
   // Régénère le CLAUDE.md d'un projet (seulement s'il a été généré par Cockpit et jamais retouché).
@@ -1047,6 +1053,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   // Une exécution d'un moteur direct ne peut pas être relue : elle est marquée interrompue (session et worktree conservés).
   for (const task of store.tasks) for (const run of task.runs) if (OPEN_RUN.includes(run.status)) {
     if (!isDirectRun(run)) { run.tracking = 'recovering'; continue; }
+    forgetUnstartedSession(task, run);
     Object.assign(run, { status: 'interrupted', error: `Cockpit a redémarré pendant l’exécution. La session ${LABEL[run.engine]} et le worktree sont conservés : « Relancer » reprend.`, endedAt: now() });
     delete run.tracking; delete run.liveText; event(run, 'interrupted', 'Exécution interrompue par un redémarrage de Cockpit'); task.status = 'blocked';
   }

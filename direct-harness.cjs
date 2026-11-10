@@ -121,10 +121,16 @@ function resolveProgram(command, prefixArgs = [], { platform = process.platform,
   if (/\.[cm]?js$/i.test(command)) return { file: execPath, args: [command, ...prefixArgs] };
   return { file: command, args: prefixArgs };
 }
+// Exécutions simultanées sur le PC, tous moteurs confondus : chacune porte un processus du moteur, ses installations
+// et ses tests (processeur, mémoire) et consomme le quota de l'abonnement. 2 par défaut ; COCKPIT_MAX_PARALLEL=1 à 8.
+function maxParallelFromEnv(env = process.env) {
+  const n = Math.round(Number(env.COCKPIT_MAX_PARALLEL));
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 8) : 2;
+}
 
 // adapter : { name, createCollector(), env(base), cmdRefusal, missing(command) } — ce qui est propre au moteur.
 function createHarness({ adapter, enabled = false, command, prefixArgs = [], baseEnv = process.env, workspacesRoot,
-  worktreeRoot = process.env.COCKPIT_CLAUDE_WORKTREES || (workspacesRoot ? path.join(workspacesRoot, '.cockpit-worktrees') : ''), git = gitRunner, maxParallel = 2, spawnImpl = spawn,
+  worktreeRoot = process.env.COCKPIT_CLAUDE_WORKTREES || (workspacesRoot ? path.join(workspacesRoot, '.cockpit-worktrees') : ''), git = gitRunner, maxParallel = maxParallelFromEnv(), spawnImpl = spawn,
   platform = process.platform, execFileImpl = execFile, execPath = process.execPath }) {
   const active = new Map(); // run id -> processus
   const win = platform === 'win32';
@@ -211,5 +217,5 @@ function createHarness({ adapter, enabled = false, command, prefixArgs = [], bas
     close: () => { for (const child of active.values()) stop(child); } };
 }
 
-module.exports = { createHarness, gitRunner, directSettings, resolveProgram, killTree, insideDir, verdict, redact, childEnv, unavailability, fallbackDecision,
+module.exports = { createHarness, gitRunner, maxParallelFromEnv, directSettings, resolveProgram, killTree, insideDir, verdict, redact, childEnv, unavailability, fallbackDecision,
   clip, DirectError, ENGINES, ENGINE_LABEL, DEFAULTS, DEFAULT_BASH, DEFAULT_MODEL, CODEX_EFFORTS, MARKER };

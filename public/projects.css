@@ -209,9 +209,17 @@ dialog.pj-drawer>.dialog-body{flex:1 0 auto;display:flex;flex-direction:column}
 .pj-chatbox textarea{flex:1;min-width:0;box-sizing:border-box;border:1px solid var(--ui-line);border-radius:12px;background:var(--ui-field);color:var(--ui-text);padding:11px 12px;font:inherit;font-size:14px;line-height:1.5;resize:vertical;min-height:46px;max-height:40dvh}
 .pj-chatbox{flex-wrap:wrap}.pj-chatbox textarea{flex-basis:200px}
 .pj-chatbox .pj-pending{flex:1 1 100%}.pj-chatbox .pj-attach{flex:none;align-self:flex-end}
-.pj-chatbox.is-launch{align-items:center;justify-content:space-between;flex-wrap:wrap}
-.pj-chatbox.is-launch .pj-help{flex:1 1 260px}
+.pj-chatbox.is-launch{align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .pj-send{min-height:46px;padding:0 16px}
+/* Panneau de tâche : une seule bulle, champ sans cadre, trombone et bouton centrés verticalement. */
+.pj-composer .pj-chatbox{align-items:center;padding:8px 8px 8px 10px;border-radius:16px;background:var(--pj-chip);border:1px solid var(--pj-line)}
+.pj-composer .pj-chatbox:focus-within{border-color:var(--text-faint,#555)}
+.pj-composer .pj-chatbox .pj-attach{align-self:center;display:inline-flex;align-items:center;justify-content:center}
+.pj-composer .pj-chatbox .pj-pending:empty{display:none}
+.pj-composer .pj-chatbox textarea{flex:1 1 0;border:0;background:transparent;padding:9px 4px;resize:none;outline:0;min-height:42px;field-sizing:content}
+/* « Lancer » seul : pas de bulle, qui ressemblerait à un champ vide. */
+.pj-composer form.pj-chatbox.is-launch{padding:0;border:0;background:none;box-shadow:none}
+.pj-composer .pj-send{min-height:40px;border-radius:10px}
 .pj-chatbox-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
 .pj-chatbox-foot>.pj-help{flex:0 1 auto}
 .pj-events{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12px}

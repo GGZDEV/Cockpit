@@ -212,15 +212,18 @@ dialog.pj-drawer>.dialog-body{flex:1 0 auto;display:flex;flex-direction:column}
 .pj-chatbox.is-launch{align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .pj-send{min-height:46px;padding:0 16px}
 /* Panneau de tâche : une seule bulle, champ sans cadre, trombone et bouton centrés verticalement. */
-.pj-composer .pj-chatbox{align-items:center;padding:8px 8px 8px 10px;border-radius:16px;background:var(--pj-chip);border:1px solid var(--pj-line)}
+.pj-composer .pj-chatbox{align-items:center;gap:6px;padding:6px 6px 6px 8px;border-radius:16px;background:var(--pj-chip,var(--ui-field));border:1px solid var(--pj-line,var(--ui-line))}
 .pj-composer .pj-chatbox:focus-within{border-color:var(--text-faint,#555)}
-.pj-composer .pj-chatbox .pj-attach{align-self:center;display:inline-flex;align-items:center;justify-content:center}
+.pj-composer .pj-chatbox .pj-attach{flex:none;align-self:center;display:inline-flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:12px}
 .pj-composer .pj-chatbox .pj-pending:empty{display:none}
-.pj-composer .pj-chatbox textarea{flex:1 1 0;border:0;background:transparent;padding:9px 4px;resize:none;outline:0;min-height:42px;field-sizing:content}
+/* Le style générique « .modal textarea » (marge basse, largeur, poignée) décentrerait le champ : on le neutralise ici. */
+.pj-composer .pj-chatbox textarea{flex:1 1 0;align-self:center;width:auto;margin:0;border:0;border-radius:0;box-shadow:none;background:transparent;padding:9px 4px;resize:none;outline:0;min-height:40px;line-height:22px;field-sizing:content}
+.pj-composer .pj-chatbox .pj-send{flex:none;align-self:center;margin:0}
 /* « Lancer » seul : pas de bulle, qui ressemblerait à un champ vide. */
 .pj-composer form.pj-chatbox.is-launch{padding:0;border:0;background:none;box-shadow:none}
 .pj-composer .pj-send{min-height:40px;border-radius:10px}
 .pj-chatbox-foot{display:flex;flex-wrap:wrap;align-items:center;gap:10px}
+.pj-composer .pj-chatbox-foot{padding:0 2px}.pj-composer .pj-chatbox-foot .button{min-height:38px}
 .pj-chatbox-foot>.pj-help{flex:0 1 auto}
 .pj-events{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px;font-size:12px}
 .pj-events li{display:flex;gap:10px;line-height:1.5}
@@ -239,7 +242,8 @@ dialog.pj-drawer>.dialog-body{flex:1 0 auto;display:flex;flex-direction:column}
   .pj-msg{max-width:96%}
   .pj-panel-bar label{width:auto;flex:1 1 160px}
 }
-@media(max-width:550px){.pj-actions{width:100%}.pj-cta{flex:1;justify-content:center}.pj-seg{width:100%}.pj-seg button{flex:1;padding:0 8px}.pj-chatbox textarea{font-size:16px}}
+@media(max-width:550px){.pj-actions{width:100%}.pj-cta{flex:1;justify-content:center}.pj-seg{width:100%}.pj-seg button{flex:1;padding:0 8px}.pj-chatbox textarea{font-size:16px}
+  .pj-composer .pj-chatbox:not(.is-launch) .pj-send.primary{width:40px;min-width:40px;padding:0;font-size:0}}
 
 /* Déploiement et création d'un projet neuf */
 .pj-deploy{display:flex;flex-direction:column;gap:8px;margin-top:6px;padding-top:10px;border-top:1px solid var(--pj-soft,var(--ui-line))}

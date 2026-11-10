@@ -120,10 +120,23 @@ function widgetHTML(widget, detail = false) {
 }
 function fitHomeGrid() {
   const grid = $app.querySelector('.mods'); if (!grid) return;
-  if (matchMedia('(max-width:860px),(max-height:620px)').matches) { grid.style.removeProperty('--row'); return; }
+  if (matchMedia('(max-width:860px),(max-height:620px)').matches) { grid.style.removeProperty('--row'); pageHomeGrid(grid, 0); return; }
   const cs = getComputedStyle(grid), gap = parseFloat(cs.rowGap) || 16;
   const inner = grid.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-  grid.style.setProperty('--row', Math.max(72,(inner - 3*gap)/4).toFixed(2) + 'px');
+  const row = Math.max(72,(inner - 3*gap)/4);
+  grid.style.setProperty('--row', row.toFixed(2) + 'px');
+  pageHomeGrid(grid, 4*(row + gap));
+}
+// Accueil par pages : chaque bloc de quatre rangées forme une page (ajouter des modules dessous en crée une, les retirer la supprime).
+// Un repère invisible en tête de chaque page sert de point d'arrêt au défilement (scroll-snap, styles.css) et étire la zone
+// de défilement jusqu'à une page pleine, pour que la dernière page, même incomplète, se cale en haut de l'écran.
+function pageHomeGrid(grid, step) {
+  const scroll = grid.scrollTop, mods = [...grid.children].filter(el => !el.classList.contains('page-snap'));
+  const top = grid.getBoundingClientRect().top - scroll + (parseFloat(getComputedStyle(grid).paddingTop) || 0);
+  const bottom = Math.max(0, ...mods.map(el => el.getBoundingClientRect().bottom - top));
+  grid.querySelectorAll(':scope>.page-snap').forEach(el => el.remove());
+  if (step > 0) grid.insertAdjacentHTML('beforeend', Array.from({ length: Math.max(1, Math.ceil(bottom / step - .01)) }, (_, i) => `<i class="page-snap" aria-hidden="true" style="top:${(i*step).toFixed(2)}px;height:${grid.clientHeight}px"></i>`).join(''));
+  grid.scrollTop = scroll;
 }
 function render(force = false) {
   if (homeEditor?.busy()) { pendingRender = true; return; }
@@ -142,8 +155,8 @@ function render(force = false) {
     link.href = href;
   } else if (!link.dataset.loading) document.body.dataset.designReady = 'true';
   HD.morph($app,shell({ serverMode, profile, page, pages, profiles, sources, unreadCount: (sources.data.articles || []).filter(a => !read('fm-read',readArticles).includes(a.id) && !hiddenSources.includes(a.source)).length, editing, room:currentRoom(), rooms:roomModel(sources).rooms, list: current(), widgetHTML: w => widgetHTML(w), pageHTML: page === 'projects' ? projectsUI.html() : '' }));
-  const grid = $app.querySelector('.dashboard'); if (grid) grid.scrollTop = scroll;
   fitHomeGrid();
+  const grid = $app.querySelector('.dashboard'); if (grid) grid.scrollTop = scroll;
   if (searchFocused) { const input = document.querySelector('#global-search'); if (input) { input.focus(); input.setSelectionRange(caret, caret); } }
 }
 window.addEventListener('resize', fitHomeGrid);

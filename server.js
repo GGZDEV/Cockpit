@@ -181,7 +181,7 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
         return;
       }
       if (serverMode && process.env.COCKPIT_GODSEYE_PORT && require('./godseye.cjs').handles(url.pathname)) {
-        if (!trusted(req, false, { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
+        if (!trusted(req, !url.pathname.startsWith('/api/') && ['GET', 'HEAD'].includes(req.method), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
         return require('./godseye.cjs').proxy(req, res, url);
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') return json(res, 405, { error: 'Méthode indisponible.' });

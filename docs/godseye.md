@@ -6,7 +6,10 @@ The globe is unloaded when leaving the page, so it does not run in the dashboard
 background. Root-relative assets and API calls are routed by `godseye.cjs` only
 in server mode with `COCKPIT_GODSEYE_PORT` set. Existing Cockpit API routes take
 precedence. Cookies and Authorization are never forwarded to the backend.
-Provider key management is deliberately unavailable through this proxy.
+Provider settings are accessible through the authenticated « Clés API » link.
+Only admitted setup status/keys calls are adapted to upstream loopback;
+Cockpit retains authentication and same-origin checks on API writes.
+Read-only app navigation accepts external links after authentication.
 
 ## Host installation
 

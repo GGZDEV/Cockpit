@@ -10,13 +10,15 @@ function handles(pathname) {
     ['/logo.svg', '/location.svg', '/mic.svg', '/pin.svg', '/visual-presets.svg', '/manifest.webmanifest', '/quebec-cameras.json'].includes(pathname);
 }
 function proxy(req, res, url, { port = Number(process.env.COCKPIT_GODSEYE_PORT || 4173) } = {}) {
-  // Never expose local key management through a remote authenticated proxy.
-  if (url.pathname.startsWith('/api/setup')) {
-    res.writeHead(403, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ error: 'Configurez les fournisseurs sur le serveur.' }));
-  }
+  const setup = ['/api/setup/status', '/api/setup/keys'].includes(url.pathname);
   const headers = { host: req.headers.host, 'x-forwarded-proto': req.headers['x-forwarded-proto'] || 'http', 'x-forwarded-for': req.socket.remoteAddress };
   for (const key of ['origin', 'content-type', 'accept', 'range', 'if-none-match', 'if-modified-since']) if (req.headers[key]) headers[key] = req.headers[key];
+  // Cockpit authenticated and checked the original Host/Origin before this hop.
+  if (setup) {
+    headers.host = '127.0.0.1:' + port;
+    delete headers['x-forwarded-proto']; delete headers['x-forwarded-for'];
+    if (req.headers.origin) headers.origin = 'http://' + headers.host;
+  }
   const upstream = http.request({ hostname: '127.0.0.1', port, method: req.method,
     path: (url.pathname === '/godseye-app.html' ? '/' : url.pathname) + url.search, headers }, response => {
     const output = { ...response.headers };

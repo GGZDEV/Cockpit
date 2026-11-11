@@ -11,5 +11,22 @@ test('proxy preserves path/host/protocol and strips secrets/cookies',async t=>{
  const origin='http://127.0.0.1:'+server.address().port;
  const r=await fetch(origin+'/godseye-app.html?embed=1',{headers:{authorization:'Basic secret',cookie:'session=secret','x-forwarded-proto':'https'}});
  const data=await r.json();assert.equal(data.url,'/?embed=1');assert.equal(data.proto,'https');assert.equal(data.auth,undefined);assert.equal(data.cookie,undefined);assert.equal(r.headers.get('set-cookie'),null);
- assert.equal((await fetch(origin+'/api/setup/keys',{method:'POST'})).status,403);
+ const setup=await (await fetch(origin+'/api/setup/status')).json();
+ assert.equal(setup.host,'127.0.0.1:'+upstream.address().port); assert.equal(setup.proto,undefined);
+ const keys=await (await fetch(origin+'/api/setup/keys',{method:'POST',headers:{origin:'https://cockpit.ggz.ovh','content-type':'application/json'}})).json(); assert.equal(keys.url,'/api/setup/keys');
+});
+test('authenticated cross-site app navigation works, but foreign API writes fail',async t=>{
+ const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
+ const {createServer}=require('../server');
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'gev-nav-'));
+ const backend=http.createServer((req,res)=>res.end('app'));
+ await new Promise(r=>backend.listen(0,'127.0.0.1',r));
+ const old=process.env.COCKPIT_GODSEYE_PORT;process.env.COCKPIT_GODSEYE_PORT=String(backend.address().port);
+ const server=createServer({serverMode:true,allowedHosts:['cockpit.ggz.ovh'],webPassword:'test',stateDir:dir});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>{server.closeAllConnections();server.close();backend.closeAllConnections();backend.close();if(old===undefined)delete process.env.COCKPIT_GODSEYE_PORT;else process.env.COCKPIT_GODSEYE_PORT=old;fs.rmSync(dir,{recursive:true,force:true});});
+ const base='http://127.0.0.1:'+server.address().port;
+ const headers={host:'cockpit.ggz.ovh',authorization:'Basic '+Buffer.from('cockpit:test').toString('base64'),'sec-fetch-site':'cross-site','sec-fetch-mode':'navigate','x-forwarded-proto':'https'};
+ assert.equal((await fetch(base+'/godseye-app.html?setup=1',{headers})).status,200);
+ assert.equal((await fetch(base+'/api/setup/keys',{method:'POST',headers:{...headers,origin:'https://evil.example','content-type':'application/json'},body:'{}'})).status,403);
 });

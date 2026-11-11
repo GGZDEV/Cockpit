@@ -275,7 +275,6 @@ body.pj-resizing{cursor:col-resize;user-select:none}
 .pj-side-proj i,.pj-pick-chip i{width:7px;height:7px;border-radius:50%;flex:none}
 .pj-side-proj select{flex:1;max-width:none!important}
 .pj-side-proj select,.pj-pick-chip select{border:0;outline:0;background:transparent;color:var(--pj-text);font-size:12px;font-weight:500;min-width:0;max-width:180px;padding:6px 2px}
-.pj-side-proj option,.pj-pick-chip option{background:var(--surface-2,#1a1a1c);color:var(--pj-text)}
 .pj-side-tab{min-height:32px;padding:0 10px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--pj-muted);font-size:12px;font-weight:500;display:inline-flex;align-items:center;gap:6px}
 .pj-side-tab .icon{width:14px;height:14px}
 .pj-side-tab[aria-pressed="true"]{border-color:var(--pj-line);background:var(--pj-card);color:var(--pj-text)}
@@ -302,6 +301,7 @@ body.pj-resizing{cursor:col-resize;user-select:none}
 .pj-chat-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px 16px;flex-wrap:wrap;padding:14px 24px;border-bottom:1px solid var(--pj-soft)}
 .pj-crumbs{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--pj-muted)}
 .pj-crumbs b{color:var(--pj-text);font-weight:500}
+.pj-crumbs .pj-status{align-self:center;font-size:11px;padding:2px 8px}
 .pj-chat-menu,.pj-chat-newbtn,.pj-scrim{display:none}
 .pj-chat-title{display:flex;flex-direction:column;gap:6px;min-width:0;flex:1}
 .pj-chat-title>div{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-width:0}

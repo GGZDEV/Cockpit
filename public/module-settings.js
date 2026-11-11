@@ -1,6 +1,6 @@
 // Visual controls adapted from Cockpit's module editor.
 // Choices update form fields only; persistence happens on Enregistrer.
-import { esc, icon } from './core.js';
+import { esc, icon, num } from './core.js';
 import { color, fonts, spanWidth, headerTypes, formatHeaderDate } from './home-display.js';
 
 export const accents = ['#F5C542','#FF9F0A','#0A84FF','#30D158','#BF5AF2','#FF375F','#64D2FF','#AC8E68'];
@@ -16,13 +16,14 @@ const row = (label, controls, extra = '') => `<div class="field-row ${extra}"><s
 export function settingsFooter(id, inHeader, remove = true) {
   return `<footer class="modal-foot">${remove ? `<button type="button" class="btn-glass danger" data-action="${inHeader ? 'header-remove' : 'remove'}" data-id="${esc(id)}">${icon('close')} Retirer</button>` : ''}<span class="grow"></span><button type="button" class="btn-glass" data-action="close-modal">Annuler</button><button class="btn-solid" type="submit">Enregistrer</button></footer>`;
 }
-export function headerSettingsHTML(item, now = new Date()) {
+export function headerSettingsHTML(item, now = new Date(), rooms = []) {
   if (item.type === 'h-fullscreen') return ''; 
   const o = item.options || {}, sample = item.type === 'h-date' ? formatHeaderDate(now,'short') : item.type === 'h-clock' ? now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'}) : 'Aa 21°';
   const fontOptions = `<input type="hidden" name="hFont" value="${esc(o.hFont || '')}"><div class="font-grid" role="group" aria-label="Police">${fonts.map(([id,label,family,weight]) => `<button type="button" class="font-opt ${(o.hFont || '') === id ? 'is-on' : ''}" data-setting="hFont" data-value="${id}" aria-label="Police ${label}" aria-pressed="${(o.hFont || '') === id}"><span class="font-sample" style="${family ? 'font-family:'+family+';' : ''}${weight ? 'font-weight:'+weight : ''}">${esc(sample)}</span><span class="font-name">${label}</span></button>`).join('')}</div>`;
   let format = '';
   if (item.type === 'h-date') format = row('Format',choiceButtons('fmt',o.fmt || 'long',['long','full','short','day','num'].map(f => [f,formatHeaderDate(now,f)]),'Format de la date'));
-  if (item.type === 'h-clock') format = row('Format',choiceButtons('fmt',o.fmt || '',[['',now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})],['s',now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})]],'Format de l’heure'));
+  if (item.type === 'h-temps' && rooms.length) format = `<h3 class="field-h">Pièces prises en compte (Int.)</h3><input type="hidden" name="roomPicker" value="1"><div class="picker">${rooms.map(r=>`<label class="pick-row"><input type="checkbox" name="rooms" value="${esc(r.id)}" ${Array.isArray(o.rooms) ? o.rooms.includes(r.id) ? 'checked' : '' : r.id !== '__autres' || rooms.length === 1 ? 'checked' : ''}>${esc(r.name)}${r.temp == null ? '' : ` <span class="muted">${num(r.temp,1)}°</span>`}</label>`).join('')}</div>`;
+  if (item.type === 'h-clock') format =row('Format',choiceButtons('fmt',o.fmt || '',[['',now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})],['s',now.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})]],'Format de l’heure'));
   return `<form data-form="header" data-id="${esc(item.id)}" class="visual-settings-form"><input type="hidden" name="zone" value="${esc(item.zone)}"><div class="modal-body"><h3 class="field-h">Dans l’en-tête</h3>${row('Couleur',swatches('hColor',o.hColor,'#ffffff',true))}${row('Taille',choiceButtons('hSize',o.hSize || '',[['s','S'],['','M'],['l','L'],['xl','XL']],'Taille du texte'))}${row('Police',fontOptions,'field-top')}${format}${!headerTypes[item.type] ? `<p class="settings-help">Glissé sur la page, cet élément redevient un module complet.</p><button type="button" class="btn-glass" data-action="header-to-page" data-id="${esc(item.id)}">Replacer dans la page</button>` : ''}</div>${settingsFooter(item.id,true)}</form>`;
 }
 // Téléphone : une seule colonne, donc pas de largeur, mais une hauteur jusqu’à 8 rangs.

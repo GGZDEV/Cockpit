@@ -29,3 +29,22 @@ test('fullscreen remains available and removable in edit mode without a cosmetic
   assert.match(html,/data-action="header-config" data-id="header-h-date"/);
   assert.equal(c.headerSettingsHTML({type:'h-fullscreen'}),'');
 });
+
+test('indoor temperature averages only the chosen rooms, leaving « Autres » out by default',()=>{
+  const sensor=(entity_id,state)=>({entity_id,state,attributes:{device_class:'temperature'}});
+  const states=[sensor('sensor.salon','20'),sensor('sensor.chambre','22'),sensor('sensor.frigo','4')];
+  const c={read:()=>null,write:()=>true,esc:String,icon:()=>'',num:(v,d)=>String(v),uid:()=>'',modules:{},document:{},window:{},sources:{states:d=>d==='sensor' ? states : []}};
+  vm.createContext(c);vm.runInContext(source('home-display.js'),c);vm.runInContext(source('module-settings.js'),c);
+  const rooms=[{id:'salon',name:'Salon',ids:['sensor.salon'],temp:20},{id:'chambre',name:'Chambre',ids:['sensor.chambre'],temp:22},{id:'__autres',name:'Autres',ids:['sensor.frigo'],temp:4}];
+  const ids=chosen=>c.indoorSensors(c.sources,rooms,chosen).map(s=>s.entity_id).join();
+  assert.equal(ids(),'sensor.salon,sensor.chambre');
+  assert.equal(ids(['chambre']),'sensor.chambre');
+  assert.equal(ids([]),'');
+  assert.equal(c.indoorSensors(c.sources,[],undefined).length,3);
+  assert.match(c.homeHeader({editing:false,sources:c.sources,nativeTitle:()=>'',rooms}),/Int\.<\/span> 21°/);
+  const form=c.headerSettingsHTML({id:'t',type:'h-temps',zone:'right',options:{rooms:['salon']}},new Date(),rooms);
+  assert.match(form,/name="roomPicker"/);
+  assert.match(form,/value="salon" checked/);
+  assert.doesNotMatch(form,/value="chambre" checked/);
+  assert.deepEqual([...c.sanitizeDisplay({look:2,header:[{id:'t',type:'h-temps',options:{rooms:['salon',3]}}]}).header[0].options.rooms],['salon','3']);
+});

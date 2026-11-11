@@ -72,9 +72,9 @@ test('manual device choices survive save and reload and replace the previous aut
   const empty=new FormData();empty.set('entityPicker','1');c.commitEntityChoice(saved,empty);
   assert.equal(c.statesForWidget(sources,saved,room).length,0);
 });
-test('wide room overview uses the original two-column cards, counters and all-off action instead of a narrow list',()=>{
+test('wide room overview uses the original two-column cards, counters and no all-off action instead of a narrow list',()=>{
   const {c,sources}=setup(),html=c.nativeContent({widget:{id:'rooms',type:'rooms',width:2,height:3},sources,home:true},()=>{throw Error('fallback');});
-  assert.match(html,/rooms-grid is-rows/);assert.match(html,/repeat\(2,minmax\(0,1fr\)\)/);assert.match(html,/1\/1 allumée/);assert.match(html,/Moy\./);assert.match(html,/data-action="all-off"/);
+  assert.match(html,/rooms-grid is-rows/);assert.match(html,/repeat\(2,minmax\(0,1fr\)\)/);assert.match(html,/1\/1 allumée/);assert.match(html,/Moy\./);assert.doesNotMatch(html,/data-action="all-off"|Tout éteindre/);
   assert.doesNotMatch(html,/data-action="room" data-id="__autres"/);
 });
 test('moving a configured module through the header preserves its native room and display settings',()=>{

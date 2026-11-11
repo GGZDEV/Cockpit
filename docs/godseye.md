@@ -37,10 +37,10 @@ Rollback: remove the Cockpit service drop-in and restart Cockpit; stop/disable
 
 ## Other exploration apps (2026-11-11)
 
-- `/worldmonitor.html` embeds the official World Monitor keyless map at
-  `https://www.worldmonitor.app/embed.html?panel=map`. Its CSP explicitly permits
-  embedding. Free layers: conflicts, earthquakes, weather; hourly refresh.
-  The full application is an external link, not a locally hosted backend.
+- `/worldmonitor.html` now opens the full self-hosted application at
+  `https://worldmonitor.ggz.ovh`, protected by Cockpit authentication.
+  The initial limited official embed was rejected by the user and replaced.
+  See `deploy/worldmonitor/README.md` for the full deployment.
 - Radio Garden opens `https://radio.garden/` in a new tab. Do not proxy or strip
   its frame protection / Cloudflare challenge to force an embed.
 - Shell navigation exposes these alongside God's Eye. They run only on navigation;

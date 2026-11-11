@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh free World Monitor data every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=10min
+RandomizedDelaySec=20
+Unit=worldmonitor-seeds.service
+
+[Install]
+WantedBy=timers.target

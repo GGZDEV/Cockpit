@@ -34,3 +34,18 @@ namespaces may change: update the explicit allowlist if necessary.
 
 Rollback: remove the Cockpit service drop-in and restart Cockpit; stop/disable
 `godseye.service`. No project/task data or HA/session files are changed.
+
+## Other exploration apps (2026-11-11)
+
+- `/worldmonitor.html` embeds the official World Monitor keyless map at
+  `https://www.worldmonitor.app/embed.html?panel=map`. Its CSP explicitly permits
+  embedding. Free layers: conflicts, earthquakes, weather; hourly refresh.
+  The full application is an external link, not a locally hosted backend.
+- Radio Garden opens `https://radio.garden/` in a new tab. Do not proxy or strip
+  its frame protection / Cloudflare challenge to force an embed.
+- Shell navigation exposes these alongside God's Eye. They run only on navigation;
+  the main dashboard does not pre-load the map or start radio playback.
+- CT104 rootfs expanded online from 20 GiB to 40 GiB; config backup on Proxmox:
+  `/root/ct104-before-disk-20261111.conf`. CT113 Deployer remains 8 GiB with ~6.7 GiB
+  free at installation. Deployer orchestrates publication; a custom deployment
+  recipe may target another host (Cockpit itself targets CT104).

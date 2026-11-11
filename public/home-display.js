@@ -23,7 +23,7 @@ export function sanitizeDisplay(data) {
   };
   if (Array.isArray(data.header)) base.header = data.header.filter(m => m && /^[\w-]{1,80}$/.test(m.id) && (Object.prototype.hasOwnProperty.call(headerTypes,m.type) || Object.prototype.hasOwnProperty.call(modules,m.type))).slice(0, 20).map(m => ({
     ...m, width: Number.isInteger(m.width) && m.width >= 1 && m.width <= 4 ? m.width : undefined, height: Number.isInteger(m.height) && m.height >= 1 && m.height <= 4 ? m.height : 2, title: String(m.title || '').slice(0, 80), zone: ['left','center','right'].includes(m.zone) ? m.zone : 'right',
-    options: { ...(m.options && typeof m.options==='object' && !Array.isArray(m.options) ? m.options : {}), fmt: ['long','full','short','day','num','s'].includes(m.options?.fmt) ? m.options.fmt : '', hSize: ['s','','l','xl'].includes(m.options?.hSize) ? m.options.hSize : '', hFont: ['','outfit','unbounded','syne','fraunces','dmserif','cormorant','comfortaa','orbitron','righteous','dancing'].includes(m.options?.hFont) ? m.options.hFont : '', hColor: color(m.options?.hColor) }
+    options: { ...(m.options && typeof m.options==='object' && !Array.isArray(m.options) ? m.options : {}), rooms: Array.isArray(m.options?.rooms) ? m.options.rooms.map(String).slice(0, 100) : undefined, fmt: ['long','full','short','day','num','s'].includes(m.options?.fmt) ? m.options.fmt : '', hSize: ['s','','l','xl'].includes(m.options?.hSize) ? m.options.hSize : '', hFont: ['','outfit','unbounded','syne','fraunces','dmserif','cormorant','comfortaa','orbitron','righteous','dancing'].includes(m.options?.hFont) ? m.options.hFont : '', hColor: color(m.options?.hColor) }
   }));
   return base;
 }
@@ -62,9 +62,17 @@ export function formatHeaderDate(date, format = 'long') {
   const options = format === 'short' ? {weekday:'short',day:'numeric',month:'short'} : format === 'day' ? {weekday:'long',day:'numeric'} : {weekday:'long',day:'numeric',month:'long',...(format === 'full' ? {year:'numeric'} : {})};
   const text = date.toLocaleDateString('fr-FR',options); return text.charAt(0).toUpperCase()+text.slice(1);
 }
+// Température intérieure : moyenne des thermomètres des pièces choisies ; par défaut toutes sauf « Autres »,
+// où atterrissent les sondes sans pièce (extérieur, frigo, processeur…).
+export function indoorSensors(sources, rooms = [], chosen) {
+  const ts = sources.states('sensor').filter(s => s.attributes.device_class === 'temperature' && Number.isFinite(Number(s.state)));
+  if (!rooms.length) return ts;
+  const ids = new Set(rooms.filter(r => Array.isArray(chosen) ? chosen.includes(r.id) : r.id !== '__autres' || rooms.length === 1).flatMap(r => r.ids || []));
+  return ts.filter(s => ids.has(s.entity_id));
+}
 // Téléphone : les boutons fixes (crayon, ou Fond · Module · Terminé) quittent la zone droite qui défile pour rester toujours visibles,
 // et la pastille « Plein écran », inutile là où l’écran ne peut pas passer en plein écran (iPhone), n’apparaît qu’en personnalisation.
-export function homeHeader({ editing, sources, title, nativeTitle, phone = false }) {
+export function homeHeader({ editing, sources, title, nativeTitle, phone = false, rooms = [] }) {
   const now = new Date();
   const chip = (glyph, content) => `<span class="hchip">${icon(glyph)}<span class="hchip-text">${content}</span></span>`;
   function item(m) {
@@ -77,7 +85,7 @@ export function homeHeader({ editing, sources, title, nativeTitle, phone = false
     else if (m.type === 'h-fullscreen') body = fullscreenSupported() ? `<button class="card hov round-btn" data-action="fullscreen" aria-label="${fullscreenElement() ? 'Quitter le plein écran' : 'Plein écran'}">${icon('expand')}</button>` : chip('expand','Plein écran');
     else if (m.type === 'h-lights') body = chip('bulb', sources.states('light').filter(s => s.state === 'on').length + ' allumées');
     else if (m.type === 'h-temps') {
-      const ts = sources.states('sensor').filter(s => s.attributes.device_class === 'temperature' && Number.isFinite(Number(s.state)));
+      const ts = indoorSensors(sources, rooms, o.rooms);
       const inside = ts.length ? num(ts.reduce((sum,s) => sum + Number(s.state),0)/ts.length,1) + '°' : '—';
       body = chip('thermo',`<span class="muted">Int.</span> ${inside} <span class="muted">| Ext.</span> ${num(sources.states('weather')[0]?.attributes.temperature)}°`);
     } else body = `<button class="hchip is-btn" data-action="detail" data-id="${esc(m.id)}">${icon('grid')}<span class="hchip-text">${esc(m.title || nativeTitle(m.type))}</span></button>`;

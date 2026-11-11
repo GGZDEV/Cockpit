@@ -224,7 +224,7 @@ function moduleColors(widget) {
 }
 function headerSettings(item) {
   if (item.type === 'h-fullscreen') return;
-  showModuleSettings(headerTypes[item.type] || item.title || nativeTitle(item.type),headerSettingsHTML(item),'header');
+  showModuleSettings(headerTypes[item.type] || item.title || nativeTitle(item.type),headerSettingsHTML(item,new Date(),roomModel(sources).rooms),'header');
 }
 function chatView() {
   const conversations = sources.data.agents?.conversations || [];
@@ -442,7 +442,7 @@ document.addEventListener('submit', async event => {
     if (form.dataset.form === 'rss-options') { const w=findWidget(form.dataset.id); if (w) { w.descriptions=fd.has('descriptions'); persist(); modal.close(); render(true); } }
     if (form.dataset.form === 'background') { homeDisplay.bg = { color: color(fd.get('color')), halo: homeDisplay.bg.halo }; saveDisplay(); render(true); backgroundSettings(); }
     if (form.dataset.form === 'colors') { const w = findWidget(form.dataset.id); if (w) { w.accent = color(fd.get('accent')); persist(); modal.close(); render(true); } }
-    if (form.dataset.form === 'header') { const w = homeDisplay.header.find(m => m.id === form.dataset.id); if (w) { w.zone = String(fd.get('zone')); w.options = {...w.options,...Object.fromEntries(['fmt','hSize','hFont','hColor'].map(k => [k,String(fd.get(k) || '')]))}; importDisplay(homeDisplay); modal.close(); render(true); } }
+    if (form.dataset.form === 'header') { const w = homeDisplay.header.find(m => m.id === form.dataset.id); if (w) { w.zone = String(fd.get('zone')); w.options = {...w.options,...Object.fromEntries(['fmt','hSize','hFont','hColor'].map(k => [k,String(fd.get(k) || '')]))}; if (fd.has('roomPicker')) w.options.rooms = fd.getAll('rooms').map(String); importDisplay(homeDisplay); modal.close(); render(true); } }
     if (form.dataset.form === 'feed-add') { const button = form.querySelector('button'); button.disabled = true; try { sources.data.feeds = await sources.api('feeds',{method:'POST',body:JSON.stringify({url:String(fd.get('url')).trim(),category:String(fd.get('category')).trim()})}); sources.data.articles = await sources.api('articles'); delete sources.errors.feeds; sources.emit(); settings(); toast('Flux ajouté.'); } finally { if (button.isConnected) button.disabled = false; } }
     if (form.dataset.form === 'chat') { const text = String(fd.get('text')).trim(); if (text) await sendMessage(text); }
     if (form.dataset.form === 'ha') {

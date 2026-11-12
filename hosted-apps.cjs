@@ -46,7 +46,9 @@ function proxy(req, res, url, { name, upstream }) {
       response.on('data', chunk => { bytes += chunk.length; if (bytes > 2 * 1024 * 1024) return request.destroy(new Error('HTML shell too large')); chunks.push(chunk); });
       response.on('error', () => res.destroy());
       response.on('end', () => {
-        const html = Buffer.concat(chunks).toString('utf8').replace(/<head(?:\s[^>]*)?>/i, '$&<script src="/hosted-auth.js"></script>');
+        const nonce = /'nonce-([a-zA-Z0-9+/_=-]+)'/.exec(csp)?.[1];
+        const script = `<script${nonce ? ` nonce="${nonce}"` : ''} src="/hosted-auth.js"></script>`;
+        const html = Buffer.concat(chunks).toString('utf8').replace(/<head(?:\s[^>]*)?>/i, '$&' + script);
         delete output['content-length'];
         res.writeHead(response.statusCode, output); res.end(html);
       });

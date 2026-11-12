@@ -251,10 +251,11 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   // Une tâche sans résultat (manuelle, question restée ouverte…) peut aussi être close.
   // Si la tâche a des commits dans sa branche, ils sont d'abord fusionnés dans la branche de production de la copie locale puis poussés sur GitHub
   // (un programme, sans agent). Le déploiement suit ensuite les réglages du projet : automatique, ou bouton « Déployer ».
-  async function accept(tid) {
+  // { publish: false } : « Clore » sans fusion ni envoi (rien à livrer, ex. une simple question) ; la branche reste telle quelle.
+  async function accept(tid, body = {}) {
     const task = findTask(tid);
     if (openRun(task)) throw new HttpError(409, 'Une exécution est en cours : attendez son résultat.');
-    const published = await publishTask(task);
+    const published = body.publish === false ? null : await publishTask(task);
     const run = task.runs.at(-1);
     if (run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted) run.accepted = now();
     Object.assign(task, { status: task.status === 'deployed' && !published ? 'deployed' : 'done', acceptedAt: now(), question: '', updatedAt: now() });
@@ -1258,7 +1259,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         case 'PATCH tasks/:id': return json(res, 200, updateTask(a, body));
         case 'DELETE tasks/:id': deleteTask(a); return json(res, 200, { ok: true });
         case 'POST tasks/:id/launch': { const result = await launch(a, body); return json(res, result.repeated ? 200 : 202, result); }
-        case 'POST tasks/:id/accept': return json(res, 200, await accept(a));
+        case 'POST tasks/:id/accept': return json(res, 200, await accept(a, body || {}));
         default: return json(res, 405, { error: 'Opération indisponible.' });
       }
     } catch (error) {

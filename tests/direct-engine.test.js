@@ -309,6 +309,21 @@ test('closing a task publishes its branch: merged into main and pushed to GitHub
   assert.equal(again.status, 200); assert.equal(again.body.published.commit, closed.body.published.commit);
 });
 
+test('« Clore » without deploying: the task is done, its branch is neither merged nor pushed', async t => {
+  const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
+  const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git');
+  require('node:child_process').execFileSync('git', ['clone', '-q', '--bare', local, origin]);
+  git(local, 'remote', 'add', 'origin', origin); git(local, 'fetch', '-q', 'origin');
+  const p = await project('alpha'), task = await create(p.id), head = git(origin, 'rev-parse', 'main');
+  await launch(task.id); const done = await lastDone(task.id);
+  assert.ok(done.direct.branch);
+  const closed = await ui('tasks/' + task.id + '/accept', 'POST', { publish: false });
+  assert.equal(closed.status, 200, JSON.stringify(closed.body)); assert.equal(closed.body.status, 'done');
+  assert.equal(closed.body.published, undefined);
+  assert.equal(git(origin, 'rev-parse', 'main'), head, 'nothing pushed');
+  assert.equal(git(local, 'rev-parse', 'main'), head, 'nothing merged');
+});
+
 test('closing several tasks at once publishes them one after the other: nothing lost, even if GitHub moved meanwhile', async t => {
   const { project, create, launch, lastDone, ui, root, dir } = await setup(t);
   const local = path.join(root, 'alpha'), origin = path.join(dir, 'origin-alpha.git'), other = path.join(dir, 'autre-poste');

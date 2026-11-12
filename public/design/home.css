@@ -182,9 +182,10 @@ h2 { font-size: 17px; font-weight: 600; }
 .pill.is-on { background: var(--accent); color: var(--ink); box-shadow: none; }
 
 /* ---------- module grid ---------- */
+/* Grille fine : huit colonnes (home-grid.js), chaque module placé librement par app.js. */
 .mods {
   flex: 1; min-height: 0; overflow-y: auto;
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: grid; grid-template-columns: repeat(8, minmax(0, 1fr));
   grid-auto-rows: var(--row); grid-auto-flow: row dense; gap: 16px;
   scrollbar-width: none; padding: 2px; margin: -2px;
 }
@@ -1051,9 +1052,11 @@ button.ag-cell:hover { background: rgba(255, 255, 255, 0.08); }
 .trn.is-narrow .trn-soon { font-size: 12.5px; }
 .trn.is-narrow .trn-quai { width: 32px; font-size: 17px; }
 .trn.is-narrow.is-first .trn-min b { font-size: 22px; }
-/* 1×1: three one-line rows sharing the height */
-.trn-list.is-compact { overflow: hidden; gap: 4px; }
-.trn.is-compact { flex: 1 1 0; min-height: 26px; border-radius: 8px; }
+/* Small tile: one-line rows of a fixed height, from the top. Rows that do not fit wrap into a second
+   column pushed outside the tile and hidden, so only whole rows show and a smaller tile never gets taller rows. */
+.trn-list.is-compact { overflow: hidden; gap: 4px; flex-wrap: wrap; align-content: flex-start; column-gap: 24px; }
+.trn.is-compact { flex: none; width: 100%; height: 34px; border-radius: 8px; }
+body[data-profile="phone"] .trn.is-compact:nth-child(n+4) { display: none; }
 .trn.is-compact .trn-body { min-height: 0; padding: 0 8px; }
 .trn.is-compact .trn-main { gap: 7px; }
 .trn.is-compact .trn-line { width: 18px; height: 18px; font-size: 10px; }

@@ -13,6 +13,7 @@ import { createProjectsUI } from './projects.js';
 import { usesGrid, selectedTheme, visibleTabs, tabPreferences, setTabs, importTabs, isPhoneScreen, defaultProfile, phoneWidgets, maxHeight } from './preferences.js';
 import { attachHomeEditor } from './home-editor.js';
 import { sanitizeDock, defaultDock, moveDockItem, iconLibrary, dockIcon, validIcon, validHref } from './dock.js';
+import { gridCols, gridRows, placeCells, placeModule, halfCells } from './home-grid.js';
 import { headerSettingsHTML, moduleSettingsHTML, colorSettingsHTML, updateSettingControl, commitEntityChoice } from './module-settings.js';
 import { homeDisplay, saveDisplay, importDisplay, spanWidth, color, homeHeader, headerTypes, addHeader, backgrounds, haloParts, haloDefaults, applyDisplay, fonts, fullscreenSupported, fullscreenElement, enterFullscreen, toggleFullscreen } from './home-display.js';
 
@@ -41,7 +42,7 @@ let readArticles = read('mb.read.v1', []), savedArticles = read('mb.saved.v1', [
 if (!Array.isArray(readArticles)) readArticles=[]; if (!Array.isArray(savedArticles)) savedArticles=[]; if (!Array.isArray(hiddenSources)) hiddenSources=[];
 let favorites = read('mb.favorites.v1', []); if (!Array.isArray(favorites)) favorites = [];
 const chat = { id: null, messages: [], loading: false, sending: false, error: '', controller: null, revision: 0 };
-let pendingRender, dragged, lastFocus, homeEditor;
+let pendingRender, dragged, lastFocus, homeEditor, homeCells = new Map();
 const projectsUI = createProjectsUI({ sources, modal, showModal: (...a) => showModal(...a), toast: m => toast(m), render: () => render(true), isActive: () => page === 'projects' });
 
 const syncAccount=accountSync(sources,()=>({layouts,notes,todos,homeDisplay,feedmePreferences:feedmePreferences(),rooms:sources.roomPreferences,tabs:tabPreferences,dock,theme:selectedTheme()}),data=>{
@@ -58,14 +59,20 @@ function cleanLayouts(data) {
   for (const p of Object.keys(profiles)) for (const key of Object.keys(data[p] || {}).filter(key => Object.prototype.hasOwnProperty.call(presets,key) || key.startsWith('room:'))) {
     const entries = data[p]?.[key]; if (!Array.isArray(entries)) continue;
     result[p] ||= {};
-    result[p][key] = entries.filter(w => w && Object.prototype.hasOwnProperty.call(modules, w.type)).slice(0, 40).map(w => ({ id: typeof w.id === 'string' && /^[\w-]{1,80}$/.test(w.id) ? w.id : uid(), type: p === 'tablet' && w.type === 'todos' && w.id === 'native-tablet-overview-todos' ? 'ha-todos' : w.type, scope: w.scope === 'all' ? 'all' : 'room', ...(Array.isArray(w.entities) ? {entities:w.entities.filter(id=>typeof id==='string' && /^[a-z_]+\.[\w-]+$/.test(id))} : {}), options:w.options && typeof w.options==='object' && !Array.isArray(w.options) ? w.options : {}, size: ['normal', 'wide', 'full'].includes(w.size) ? w.size : 'normal', ...(Number.isInteger(w.width) && w.width >= 1 && w.width <= 4 ? { width: w.width } : {}), title: typeof w.title === 'string' ? w.title.slice(0,80) : '', accent: color(w.accent), collapsed: !!w.collapsed, height: Number.isInteger(Number(w.height)) && Number(w.height) >= 1 && Number(w.height) <= maxHeight(p) ? Number(w.height) : 2, category: typeof w.category === 'string' ? w.category.slice(0, 150) : '', sort: w.sort === 'trending' ? 'trending' : 'date', showDisks: w.showDisks !== false, bigArt: !!w.bigArt, descriptions: w.descriptions !== false, ...(Array.isArray(w.metrics) ? {metrics:w.metrics.filter(k => ['cpu','ram','gpu','vram'].includes(k))} : {}), ...(typeof w.entity === 'string' && /^[a-z_]+\.[\w-]+$/.test(w.entity) ? { entity: w.entity } : {}) }));
+    result[p][key] = entries.filter(w => w && Object.prototype.hasOwnProperty.call(modules, w.type)).slice(0, 40).map(w => ({ id: typeof w.id === 'string' && /^[\w-]{1,80}$/.test(w.id) ? w.id : uid(), type: p === 'tablet' && w.type === 'todos' && w.id === 'native-tablet-overview-todos' ? 'ha-todos' : w.type, scope: w.scope === 'all' ? 'all' : 'room', ...(Array.isArray(w.entities) ? {entities:w.entities.filter(id=>typeof id==='string' && /^[a-z_]+\.[\w-]+$/.test(id))} : {}), options:w.options && typeof w.options==='object' && !Array.isArray(w.options) ? w.options : {}, size: ['normal', 'wide', 'full'].includes(w.size) ? w.size : 'normal', ...(Number.isInteger(w.width) && w.width >= 1 && w.width <= gridCols ? { width: w.width } : {}), ...(w.half === true ? { half: true } : {}), ...(Number.isInteger(w.x) && w.x >= 0 && w.x < gridCols && Number.isInteger(w.y) && w.y >= 0 && w.y < 1000 ? { x: w.x, y: w.y } : {}),title: typeof w.title === 'string' ? w.title.slice(0,80) : '', accent: color(w.accent), collapsed: !!w.collapsed, height: Number.isInteger(Number(w.height)) && Number(w.height) >= 1 && Number(w.height) <= maxHeight(p) ? Number(w.height) : 2, category: typeof w.category === 'string' ? w.category.slice(0, 150) : '', sort: w.sort === 'trending' ? 'trending' : 'date', showDisks: w.showDisks !== false, bigArt: !!w.bigArt, descriptions: w.descriptions !== false, ...(Array.isArray(w.metrics) ? {metrics:w.metrics.filter(k => ['cpu','ram','gpu','vram'].includes(k))} : {}), ...(typeof w.entity === 'string' && /^[a-z_]+\.[\w-]+$/.test(w.entity) ? { entity: w.entity } : {}) }));
   }
   return result;
 }
 function newWidget(type) { return { id: uid(), type, size: modules[type].size || 'normal', scope:page === 'home' ? 'room' : 'all' }; }
 function currentRoom() { return page === 'home' ? activeRoom(sources,selectedRoomId) : null; }
 function layoutKey() { const room=currentRoom(); return page === 'home' && room ? roomLayoutKey(sources,room) : page; }
+// La tablette passe à la grille fine (home-grid.js) : un module encore en cellules 4 × 4 garde sa taille à l'écran.
 function current() {
+  const list = layoutList();
+  if (profile === 'tablet' && halfCells(list)) write('mb.layouts.native.v1', layouts);
+  return list;
+}
+function layoutList() {
   if (page === 'projects') return [];
   layouts[profile] ||= {};
   const room=currentRoom();
@@ -99,7 +106,9 @@ function sourceLabel(provider) {
   const connected = provider === 'both' ? sources.status.ha === 'connected' || sources.status.feedme === 'connected' : sources.status[provider] === 'connected';
   return `<span class="source-chip ${connected ? 'connected' : 'disconnected'}"><i></i>${provider === 'ha' ? 'Home Assistant' : provider === 'both' ? 'Calendriers' : 'Cockpit'}${connected ? '' : ' · hors ligne'}</span>`;
 }
-function context(widget, detail = false) { return { widget: profile === 'phone' ? { ...widget, width: 1, size: 'normal' } : widget, sources, query, todos, note: String(notes[widget.id] ?? ''), detail, home: usesGrid(profile), room:currentRoom(), favorites, readArticles, savedArticles, hiddenSources }; }
+// Les modules adaptent leur contenu à l'ancienne grille 4 × 4 : sur la grille fine, deux cellules en font une.
+const coarse = widget => widget.half ? { ...widget, width: Math.max(1, Math.floor(spanWidth(widget) / 2)), height: Math.max(1, Math.floor((widget.height || 4) / 2)) } : widget;
+function context(widget, detail = false) { return { widget: profile === 'phone' ? { ...widget, width: 1, size: 'normal' } : coarse(widget), sources, query, todos, note: String(notes[widget.id] ?? ''), detail, home: usesGrid(profile), room:currentRoom(), favorites, readArticles, savedArticles, hiddenSources }; }
 function widgetHTML(widget, detail = false) {
   const m = modules[widget.type], home = usesGrid(profile), title = widget.title || nativeTitle(widget.type);
   let content;
@@ -110,26 +119,29 @@ function widgetHTML(widget, detail = false) {
   const embedded=content.includes('data-native-feedme');
   const width = profile === 'phone' ? 1 : spanWidth(widget);
   const height = widget.height || 2;
+  // Grille fine de la tablette : classes w/h et --h restent en cellules de l'ancienne grille (styles des modules).
+  const cell = profile === 'tablet' ? homeCells.get(widget.id) : null;
   const clock = new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' }).replace('/', '.') + ' · ' + new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
   const center = widget.type === 'quotas' ? (sources.data.quotas?.stale || sources.data.quotas?.sources?.some(s => s.stale || s.providers?.some(p => p.stale)) ? '<span class="usage-stale">valeurs anciennes</span>' : '') : widget.type === 'system' ? `<span class="widget-clock mono" data-system-clock>${clock}</span>` : widget.type === 'rss' ? `<div class="segmented"><button class="seg ${widget.sort !== 'trending' ? 'active' : ''}" data-action="rss-sort" data-widget-id="${esc(widget.id)}" data-id="date">Récent</button><button class="seg ${widget.sort === 'trending' ? 'active' : ''}" data-action="rss-sort" data-widget-id="${esc(widget.id)}" data-id="trending">Tendances</button></div>` : '';
   const generic = `<button class="widget-btn" data-action="configure" data-id="${esc(widget.id)}" title="Réglages du module" aria-label="Configurer ${esc(title)}">${icon('settings')}</button>`;
   const buttons = widget.type === 'rss' ? generic : widget.type === 'system' ? `${generic}<button class="widget-btn" data-action="disks" data-id="${esc(widget.id)}" aria-label="Afficher ou masquer les disques" aria-pressed="${widget.showDisks !== false}">${icon('folder')}</button>` : widget.type === 'quotas' ? `<button class="widget-btn" data-action="refresh" aria-label="Actualiser les quotas">${icon('refresh')}</button>${generic}` : widget.type === 'spotify' && sources.status.ha === 'connected' ? generic : widget.type === 'spotify' ? `<button class="widget-btn" data-action="spotify-settings" aria-label="Informations Spotify">${icon('note')}</button><button class="widget-btn" data-action="spotify-settings" aria-label="Appareils Spotify">${icon('monitor')}</button><button class="widget-btn" data-action="spotify-settings" aria-label="Historique Spotify">${icon('clock')}</button><button class="widget-btn" data-action="spotify-art" data-id="${esc(widget.id)}" aria-label="Agrandir la pochette">${icon('expand')}</button>${generic}` : generic;
   const header = home ? `<div class="native-home-tools">${buttons}</div>` : `<header class="widget-head"><span class="widget-grip">${icon('grip')}</span><h2 class="widget-name">${esc(title)}</h2><span class="widget-center">${center}</span><span class="widget-tools">${buttons}</span><button class="widget-btn widget-fold" data-action="collapse" data-id="${esc(widget.id)}" aria-label="${widget.collapsed ? 'Déplier' : 'Replier'} ${esc(title)}">${icon('down')}</button></header>`;
   const embeddedTools = `<div class="embedded-module-tools"><span>${esc(title)}</span>${generic}</div>`;
-  const homeTools = editing ? `<div class="mod-tools"><button class="mod-grip" data-grip aria-label="Déplacer ${esc(title)} (flèches gauche / droite)">${icon('grip')}<span data-size>${width}×${height}</span></button><span class="mod-tools-btns"><button data-action="colors" data-id="${esc(widget.id)}" aria-label="Couleurs du module ${esc(title)}">${icon('sun')}</button><button data-action="configure" data-id="${esc(widget.id)}" aria-label="Paramétrer le module ${esc(title)}">${icon('settings')}</button><button data-action="remove" data-id="${esc(widget.id)}" aria-label="Supprimer le module ${esc(title)}">${icon('close')}</button></span></div>${(profile === 'phone' ? [['s','Hauteur']] : [['e','Largeur'],['s','Hauteur'],['se','Taille']]).map(([dir,label]) => `<button class="rz rz-${dir}" data-rz="${dir}" aria-label="${label} de ${esc(title)} : ${width} × ${height} (flèches)" title="Étirer pour redimensionner"></button>`).join('')}` : '';
+  const homeTools = editing ? `<div class="mod-tools"><button class="mod-grip" data-grip aria-label="Déplacer ${esc(title)} (${cell ? 'flèches' : 'flèches gauche / droite'})">${icon('grip')}<span data-size>${width}×${height}</span></button><span class="mod-tools-btns"><button data-action="colors" data-id="${esc(widget.id)}" aria-label="Couleurs du module ${esc(title)}">${icon('sun')}</button><button data-action="configure" data-id="${esc(widget.id)}" aria-label="Paramétrer le module ${esc(title)}">${icon('settings')}</button><button data-action="remove" data-id="${esc(widget.id)}" aria-label="Supprimer le module ${esc(title)}">${icon('close')}</button></span></div>${(profile === 'phone' ? [['s','Hauteur']] : [['e','Largeur'],['s','Hauteur'],['se','Taille']]).map(([dir,label]) => `<button class="rz rz-${dir}" data-rz="${dir}" aria-label="${label} de ${esc(title)} : ${width} × ${height} (flèches)" title="Étirer pour redimensionner"></button>`).join('')}` : '';
   const tools = home ? homeTools : editing ? `<footer class="edit-tools"><button data-action="move-up" data-id="${esc(widget.id)}" aria-label="Déplacer avant">←</button><span>${icon('grip')}</span><button data-action="remove" data-id="${esc(widget.id)}" aria-label="Retirer le module">${icon('close')}</button><button data-action="move-down" data-id="${esc(widget.id)}" aria-label="Déplacer après">→</button></footer>` : '';
-  return `<section class="widget native-widget ${embedded ? 'embedded-widget' : ''} ${feedmeOverlayOpen(widget.id) ? 'frame-overlay' : ''} type-${widget.type} ${home ? 'mod '+(page === 'home' && widget.type === 'devices' ? 'bare ' : 'card ')+'w' + width + ' h' + height : ''} ${widget.collapsed && !home && !embedded ? 'collapsed' : ''} ${editing ? 'is-editing' : ''}" data-widget="${esc(widget.id)}" ${home ? `data-mod="${esc(widget.id)}"` : ''} data-type="${widget.type}" ${home ? `style="grid-column:span ${width};grid-row:span ${height};--h:${height};${color(widget.accent) ? '--accent:' + color(widget.accent) : ''}"` : ''} ${editing && !home ? 'draggable="true"' : ''} aria-label="${esc(title)}">${home ? '' : embedded ? embeddedTools : header}<div class="widget-content ${home ? 'mod-body' : 'widget-body'}" ${home && editing ? 'inert' : ''}>${content}</div>${tools}</section>`;
+  return `<section class="widget native-widget ${embedded ? 'embedded-widget' : ''} ${feedmeOverlayOpen(widget.id) ? 'frame-overlay' : ''} type-${widget.type} ${home ? 'mod '+(page === 'home' && widget.type === 'devices' ? 'bare ' : 'card ')+'w' + (cell ? Math.max(1, Math.floor(width / 2)) : width) + ' h' + (cell ? Math.max(1, Math.floor(height / 2)) : height) : ''} ${widget.collapsed && !home && !embedded ? 'collapsed' : ''} ${editing ? 'is-editing' : ''}" data-widget="${esc(widget.id)}" ${home ? `data-mod="${esc(widget.id)}"` : ''} data-type="${widget.type}" ${home ? `style="grid-column:${cell ? cell.x + 1 + ' / ' : ''}span ${width};grid-row:${cell ? cell.y + 1 + ' / ' : ''}span ${height};--h:${cell ? height / 2 : height};${color(widget.accent) ? '--accent:' + color(widget.accent) : ''}"` : ''} ${editing && !home ? 'draggable="true"' : ''} aria-label="${esc(title)}">${home ? '' : embedded ? embeddedTools : header}<div class="widget-content ${home ? 'mod-body' : 'widget-body'}" ${home && editing ? 'inert' : ''}>${content}</div>${tools}</section>`;
 }
 function fitHomeGrid() {
   const grid = $app.querySelector('.mods'); if (!grid) return;
   if (matchMedia('(max-width:860px),(max-height:620px)').matches) { grid.style.removeProperty('--row'); pageHomeGrid(grid, 0); return; }
   const cs = getComputedStyle(grid), gap = parseFloat(cs.rowGap) || 16;
   const inner = grid.clientHeight - (parseFloat(cs.paddingTop) || 0) - (parseFloat(cs.paddingBottom) || 0);
-  const row = Math.max(72,(inner - 3*gap)/4);
+  const row = Math.max(36,(inner - (gridRows - 1)*gap)/gridRows);
   grid.style.setProperty('--row', row.toFixed(2) + 'px');
-  pageHomeGrid(grid, 4*(row + gap));
+  pageHomeGrid(grid, gridRows*(row + gap));
 }
-// Accueil par pages : chaque bloc de quatre rangées forme une page (ajouter des modules dessous en crée une, les retirer la supprime).
+// Accueil par pages : chaque bloc de huit rangées fines forme une page (ajouter des modules dessous en crée une, les retirer la supprime).
+// Pendant la personnalisation, une page vide de plus attend en bas, pour y poser un module.
 // Un repère invisible en tête de chaque page sert de point d'arrêt au défilement (scroll-snap, styles.css) et étire la zone
 // de défilement jusqu'à une page pleine, pour que la dernière page, même incomplète, se cale en haut de l'écran.
 function pageHomeGrid(grid, step) {
@@ -137,8 +149,16 @@ function pageHomeGrid(grid, step) {
   const top = grid.getBoundingClientRect().top - scroll + (parseFloat(getComputedStyle(grid).paddingTop) || 0);
   const bottom = Math.max(0, ...mods.map(el => el.getBoundingClientRect().bottom - top));
   grid.querySelectorAll(':scope>.page-snap').forEach(el => el.remove());
-  if (step > 0) grid.insertAdjacentHTML('beforeend', Array.from({ length: Math.max(1, Math.ceil(bottom / step - .01)) }, (_, i) => `<i class="page-snap" aria-hidden="true" style="top:${(i*step).toFixed(2)}px;height:${grid.clientHeight}px"></i>`).join(''));
+  if (step > 0) grid.insertAdjacentHTML('beforeend', Array.from({ length: Math.max(1, Math.ceil(bottom / step - .01)) + (editing ? 1 : 0) },(_, i) => `<i class="page-snap" aria-hidden="true" style="top:${(i*step).toFixed(2)}px;height:${grid.clientHeight}px"></i>`).join(''));
   grid.scrollTop = scroll;
+}
+// Tablette : chaque module à sa place sur la grille libre, dans l'ordre de lecture (haut gauche → bas droite).
+function homeList() {
+  const list = current();
+  if (profile !== 'tablet') return list;
+  homeCells = placeCells(list);
+  const at = id => homeCells.get(id);
+  return [...list].sort((a, b) => at(a.id).y - at(b.id).y || at(a.id).x - at(b.id).x);
 }
 function render(force = false) {
   if (homeEditor?.busy()) { pendingRender = true; return; }
@@ -156,7 +176,7 @@ function render(force = false) {
     link.onerror = () => { delete link.dataset.loading; document.body.dataset.designReady = 'true'; toast('Le style n’a pas pu se charger. Rechargez la page.'); };
     link.href = href;
   } else if (!link.dataset.loading) document.body.dataset.designReady = 'true';
-  HD.morph($app,shell({ serverMode, profile, page, pages, profiles, dock, sources, unreadCount: (sources.data.articles || []).filter(a => !read('fm-read',readArticles).includes(a.id) && !hiddenSources.includes(a.source)).length, editing, room:currentRoom(), rooms:roomModel(sources).rooms, list: current(), widgetHTML: w => widgetHTML(w), pageHTML: page === 'projects' ? projectsUI.html() : '' }));
+  HD.morph($app,shell({ serverMode, profile, page, pages, profiles, dock, sources, unreadCount: (sources.data.articles || []).filter(a => !read('fm-read',readArticles).includes(a.id) && !hiddenSources.includes(a.source)).length, editing, room:currentRoom(), rooms:roomModel(sources).rooms, list: homeList(), widgetHTML: w => widgetHTML(w), pageHTML: page === 'projects' ? projectsUI.html() : '' }));
   fitHomeGrid();
   const grid = $app.querySelector('.dashboard'); if (grid) grid.scrollTop = scroll;
   if (searchFocused) { const input = document.querySelector('#global-search'); if (input) { input.focus(); input.setSelectionRange(caret, caret); } }
@@ -481,7 +501,7 @@ document.addEventListener('submit', async event => {
     if (form.dataset.form === 'ha-todo') { await sources.action('todo','add_item',form.dataset.entity,{item:String(fd.get('title')).trim()}); form.reset(); const state=sources.states('todo').find(s=>s.entity_id===form.dataset.entity); if (state && sources.todoCache?.[state.entity_id]) { const items=await sources.ha.listTodo(state.entity_id); sources.todoCache[state.entity_id].items=items; sources.emit(); } }
     if (form.dataset.form === 'rooms') { const order=[...form.querySelectorAll('[data-room-pref]')].map(e=>e.dataset.roomPref),visible=fd.getAll('visibleRoom'),hidden=Object.fromEntries(order.map(id=>[id,!visible.includes(id)])),names=Object.fromEntries([...fd].filter(([k,v])=>k.startsWith('name:') && String(v).trim()).map(([k,v])=>[k.slice(5),String(v).trim().slice(0,80)])); sources.roomPreferences={order,hidden,names}; write('mb.rooms.v1',sources.roomPreferences); syncAccount(); modal.close(); sources.emit(); }
     if (form.dataset.form === 'todo') { const title = String(fd.get('title')).trim(); if (!title) return; todos.push({ id: uid(), title: title.slice(0, 200), done: false }); write('mb.todos.v1', todos); syncAccount(); form.reset(); render(true); if (modal.open && dialogType === 'detail') { const w = current().find(w => w.id === detailId); if (w) detail(w); } }
-    if (form.dataset.form === 'configure') { const w = findWidget(form.dataset.id); if (!w) return; if (w.type === 'system') w.metrics = fd.getAll('metric').filter(k=>['cpu','ram','gpu','vram'].includes(k)); if (fd.has('accent')) w.accent = color(fd.get('accent')); if (fd.has('title')) w.title = String(fd.get('title')).trim().slice(0,80); if (fd.has('width')) { w.width = Math.max(1,Math.min(4,Number(fd.get('width')) || 1)); w.size = w.width >= 4 ? 'full' : w.width >= 2 ? 'wide' : 'normal'; } if (fd.has('size')) w.size = String(fd.get('size')); commitEntityChoice(w,fd); w.options ||= {}; for (const k of ['group','view','mode','fit','direction','device','kind']) if (fd.has(k)) w.options[k]=String(fd.get(k)); for (const k of ['tLo','tHi','tHot','days']) if (fd.has(k) && Number.isFinite(Number(fd.get(k)))) w.options[k]=Number(fd.get(k)); if (form.querySelector('[name=tempColors]')) w.options.tempColors=fd.has('tempColors'); if (form.querySelector('[name=traffic]')) w.options.traffic=fd.has('traffic'); if (fd.has('roomPicker')) w.options.rooms=fd.getAll('rooms'); if (fd.has('scope')) w.scope=fd.get('scope') === 'all' ? 'all' : 'room'; if (fd.has('height')) w.height = Math.max(1,Math.min(maxHeight(profile),Math.round(Number(fd.get('height'))) || 2)); persist(); modal.close(); render(true); }
+    if (form.dataset.form === 'configure') { const w = findWidget(form.dataset.id); if (!w) return; if (w.type === 'system') w.metrics = fd.getAll('metric').filter(k=>['cpu','ram','gpu','vram'].includes(k)); if (fd.has('accent')) w.accent = color(fd.get('accent')); if (fd.has('title')) w.title = String(fd.get('title')).trim().slice(0,80); if (fd.has('width')) { w.width = Math.max(1,Math.min(gridCols,Number(fd.get('width')) || 1)); w.size = w.width >= 8 ? 'full' : w.width >= 4 ? 'wide' : 'normal'; } if (fd.has('size')) w.size = String(fd.get('size')); commitEntityChoice(w,fd); w.options ||= {}; for (const k of ['group','view','mode','fit','direction','device','kind']) if (fd.has(k)) w.options[k]=String(fd.get(k)); for (const k of ['tLo','tHi','tHot','days']) if (fd.has(k) && Number.isFinite(Number(fd.get(k)))) w.options[k]=Number(fd.get(k)); if (form.querySelector('[name=tempColors]')) w.options.tempColors=fd.has('tempColors'); if (form.querySelector('[name=traffic]')) w.options.traffic=fd.has('traffic'); if (fd.has('roomPicker')) w.options.rooms=fd.getAll('rooms'); if (fd.has('scope')) w.scope=fd.get('scope') === 'all' ? 'all' : 'room'; if (fd.has('height')) w.height = Math.max(1,Math.min(maxHeight(profile),Math.round(Number(fd.get('height'))) || 2)); if (profile === 'tablet' && current().includes(w)) placeModule(current(), w.id); persist(); modal.close(); render(true); }
     if (form.dataset.form === 'rss-options') { const w=findWidget(form.dataset.id); if (w) { w.descriptions=fd.has('descriptions'); persist(); modal.close(); render(true); } }
     if (form.dataset.form === 'background') { homeDisplay.bg = { color: color(fd.get('color')), halo: homeDisplay.bg.halo }; saveDisplay(); render(true); backgroundSettings(); }
     if (form.dataset.form === 'colors') { const w = findWidget(form.dataset.id); if (w) { w.accent = color(fd.get('accent')); persist(); modal.close(); render(true); } }
@@ -511,7 +531,7 @@ modal.addEventListener('drop', event => { if (!dockDragged) return; event.preven
 modal.addEventListener('dragend', () => { dockDragged = null; modal.querySelectorAll('.dock-row.dragging,.dock-row.drop-target').forEach(r => r.classList.remove('dragging', 'drop-target')); });
 modal.addEventListener('close', () => { dialogType = ''; lastFocus?.isConnected && lastFocus.focus(); });
 sources.addEventListener('change', () => { render(); if (modal.open && dialogType === 'detail' && !modal.contains(document.activeElement.closest?.('input,textarea,select'))) { const w = current().find(w => w.id === detailId); if (w) modal.querySelector('.detail-content').innerHTML = widgetHTML(w, true); } });
-homeEditor = attachHomeEditor({ root: $app, isEditing: () => editing, isHome: () => usesGrid(profile), maxHeight: () => maxHeight(profile), getWidgets: current, getHeaderItems: () => homeDisplay.header, persist, render, toast });
+homeEditor = attachHomeEditor({ root: $app, isEditing: () => editing, isHome: () => usesGrid(profile), maxHeight: () => maxHeight(profile), cells: () => profile === 'tablet' ? { placeCells, placeModule, halfCells } : null, getWidgets: current, getHeaderItems: () => homeDisplay.header, persist, render, toast });
 render(); window.MB_BOOT?.ready(); if (!sources.demo) sources.refresh(); if (page === 'projects') projectsUI.enter();
 if (window.parent !== window && params.get('surface') === 'compact') window.parent.postMessage({ type: 'metaboard:ready' }, '*');
 // Connexion Home Assistant mémorisée par le serveur Cockpit (partagée par tous les appareils) ; sans serveur (export statique), rien.

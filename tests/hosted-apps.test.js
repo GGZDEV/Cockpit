@@ -4,7 +4,7 @@ const http=require('node:http');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
 const {createServer}=require('../server');
 test('World Monitor full app uses isolated authenticated origin and strips Cockpit credentials',async t=>{
- const backend=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/'?'text/html':'application/json');res.setHeader('Content-Security-Policy',"default-src 'self'; frame-ancestors 'self'");res.setHeader('Set-Cookie',['wm_session=abc; Path=/','cockpit_session=bad; Path=/']);res.end(req.url==='/'?'<html><head></head><body>World Monitor</body></html>':JSON.stringify({url:req.url,auth:req.headers.authorization,cookie:req.headers.cookie}));});
+ const backend=http.createServer((req,res)=>{res.setHeader('Content-Type',req.url==='/'?'text/html':'application/json');res.setHeader('Content-Security-Policy',"default-src 'self'; script-src 'nonce-test-bootstrap' 'strict-dynamic'; frame-ancestors 'self'");res.setHeader('Set-Cookie',['wm_session=abc; Path=/','cockpit_session=bad; Path=/']);res.end(req.url==='/'?'<html><head></head><body>World Monitor</body></html>':JSON.stringify({url:req.url,auth:req.headers.authorization,cookie:req.headers.cookie}));});
  await new Promise(r=>backend.listen(0,'127.0.0.1',r));
  const original=[process.env.COCKPIT_WORLDMONITOR_HOST,process.env.COCKPIT_WORLDMONITOR_UPSTREAM];
  process.env.COCKPIT_WORLDMONITOR_HOST='worldmonitor.ggz.ovh';process.env.COCKPIT_WORLDMONITOR_UPSTREAM='http://127.0.0.1:'+backend.address().port;
@@ -21,7 +21,7 @@ test('World Monitor full app uses isolated authenticated origin and strips Cockp
  assert.equal(r.status,200);const data=await r.json();assert.equal(data.url,'/api/bootstrap?view=full');assert.equal(data.auth,undefined);assert.equal(data.cookie.trim(),'wm_session=ok');
  assert.match(r.headers.get('content-security-policy'),/frame-ancestors 'self' https:\/\/cockpit.ggz.ovh/);
  assert.doesNotMatch(r.headers.get('set-cookie'),/cockpit_session/);
- assert.match(await (await send(base+'/',{headers})).text(),/<head><script src="\/hosted-auth.js"><\/script>/);
+ assert.match(await (await send(base+'/',{headers})).text(),/<head><script nonce="test-bootstrap" src="\/hosted-auth.js"><\/script>/);
  const shim=await send(base+'/hosted-auth.js',{headers});assert.equal(shim.status,200);assert.match(await shim.text(),/url.origin === window.location.origin/);
  assert.equal((await send(base+'/api/bootstrap',{method:'POST',headers:{...headers,origin:'https://evil.example'},body:'{}'})).status,403);
  const isolated=await send(base+'/api/status',{headers:{...headers,host:'cockpit.ggz.ovh'}});assert.equal((await isolated.json()).app,'metaboard');

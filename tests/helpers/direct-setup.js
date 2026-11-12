@@ -93,8 +93,15 @@ async function setup(t, { engine: engineOptions = {}, codexEnabled = false, code
   const lastDone = tid => until(tid, x => x.runs.length && !x.runs.some(r => ['pending', 'started'].includes(r.status)));
   const project = async (name, extra = {}) => {
     const p = (await ui('projects', 'POST', { name, context: { repository: 'https://github.com/ggzdev/' + name, objective: 'Objectif ' + name }, ...extra })).body;
-    await new Promise(r => setTimeout(r, 30)); // clonage simulé puis préparation du CLAUDE.md
-    return (await ui('state')).body.projects.find(x => x.id === p.id);
+    // Cloning and CLAUDE.md preparation are asynchronous; a fixed 30ms races
+    // under concurrent builds/browser checks on the Applications container.
+    const end = Date.now() + 10000;
+    for (;;) {
+      const saved = (await ui('state')).body.projects.find(x => x.id === p.id);
+      if (saved?.workspace?.status === 'ready' && saved.claudeMd) return saved;
+      if (saved?.workspace?.status === 'failed' || Date.now() > end) throw new Error('Préparation du projet de test : ' + JSON.stringify(saved));
+      await new Promise(r => setTimeout(r, 20));
+    }
   };
   let n = 0;
   const create = async (pid, extra = {}) => (await ui('tasks', 'POST', { projectId: pid, title: 'Tâche ' + (++n), instructions: 'Ajoute feature.txt', ...extra })).body;

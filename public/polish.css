@@ -1,6 +1,6 @@
 /* Thème Verre, écrans en grille : verre sombre façon Apple sur fond à halos (maquette « polish Apple »).
    Accent et fond viennent des réglages (--accent, --accent-soft, --accent-glow posés par applyDisplay). */
-[data-theme="home"][data-design="home"]{--glass-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08),0 20px 44px rgba(0,0,0,.35);--glass-blur:blur(30px) saturate(170%);--chip-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.09)}
+[data-theme="home"][data-design="home"]{--glass-shadow:inset 0 1px 0 rgba(255,255,255,.18),inset 0 0 0 1px rgba(255,255,255,.08);--glass-blur:blur(30px) saturate(170%);--chip-shadow:inset 0 1px 0 rgba(255,255,255,.20),inset 0 0 0 1px rgba(255,255,255,.09)}
 [data-theme="home"][data-design="home"]:not([data-profile="phone"]) #app{padding:16px;gap:16px;box-sizing:border-box}
 
 /* Rail : logo en haut à gauche (centré sur l’axe du rail et sur la ligne d’en-tête de 48px), pilule de verre centrée verticalement, réglages après un séparateur, pastille de connexion en bas. */

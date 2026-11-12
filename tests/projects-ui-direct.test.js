@@ -68,3 +68,16 @@ test('Projects tab: the default view is a chat — tasks as conversations, new t
   await click('task-details', task.id); assert.match(shown(), /data-pj-form="edit-task"/);
   await click('chat-new'); assert.match(ui.html(), /data-pj-form="new-chat"/);
 });
+
+test('Projects tab: a task with a work branch offers « Clore » and « Clore et déployer »; « Clore » publishes nothing', async t => {
+  const { ui: api, project, create, launch, lastDone, task: get } = await setup(t);
+  const p = await project('alpha'), task = await create(p.id);
+  await launch(task.id); assert.ok((await lastDone(task.id)).direct.branch);
+  const { ui, click } = loadUI(api);
+  ui.html(); await new Promise(r => setImmediate(r)); await new Promise(r => setImmediate(r));
+  await click('open-task', task.id); const page = ui.html();
+  assert.match(page, /data-pj="close-task" data-publish="0"[^>]*>[^<]*<svg[^]*?Clore<\/button>/); assert.match(page, /Clore et déployer/);
+  await click('close-task', task.id, { publish: '0' });
+  const closed = await get(task.id);
+  assert.equal(closed.status, 'done'); assert.equal(closed.published, undefined);
+});

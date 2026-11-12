@@ -300,7 +300,7 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     const run = lastRun(task);
     if (task.status !== 'review' || run?.status !== 'succeeded' || run.outcome !== 'result' || run.accepted) return '';
     return `<div class="pj-review"><p>${esc(assignee(task)?.name || 'L’agent')} a terminé. Validez pour passer la tâche en Terminé, ou répondez ci-dessous pour la relancer.</p>
-      <button class="button primary" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}>${G.done} Valider et terminer</button></div>`;
+      ${task.direct?.branch ? `<div class="pj-panel-actions">${closeButtons(task, 'button', 'button primary', 'Accepter le résultat et passer la tâche en Terminé')}</div>` : `<button class="button primary" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}>${G.done} Valider et terminer</button>`}</div>`;
   }
   function contextHTML(task, p) {
     const repo = p?.context?.repository, d = p && deployOf(p), files = lastRun(task)?.summary?.files || [];
@@ -657,8 +657,15 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
   function closeHTML(task) {
     if (isClosed(task)) return `${deployFailed(task) ? `<span class="pj-help is-bad">Déploiement échoué : ${esc(task.deployError.message)}</span>` : ''}<span class="pj-closed">${icon('check')} ${task.status === 'deployed' ? 'Tâche déployée' : 'Tâche close'}</span><button class="button" data-pj="reopen" data-id="${esc(task.id)}">Rouvrir</button>`;
     const run = lastRun(task), pendingResult = run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted;
-    return `<button class="button pj-close" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'}
-      title="${!canClose(task) ? 'Attendez la réponse de l’agent' : pendingResult ? 'Accepter le résultat de l’agent et passer la tâche en Terminé' : 'Passer la tâche en Terminé'}">${icon('check')} Clore la tâche</button>`;
+    const title = !canClose(task) ? 'Attendez la réponse de l’agent' : pendingResult ? 'Accepter le résultat de l’agent et passer la tâche en Terminé' : 'Passer la tâche en Terminé';
+    if (!task.direct?.branch) return `<button class="button pj-close" data-pj="close-task" data-id="${esc(task.id)}" ${canClose(task) ? '' : 'disabled'} title="${title}">${icon('check')} Clore la tâche</button>`;
+    return closeButtons(task, 'button', 'button pj-close', title);
+  }
+  // Tâche avec une branche de travail : « Clore » sans rien livrer (pas de code utile), ou « Clore et déployer » (fusion, GitHub, déploiement).
+  function closeButtons(task, plain, main, title = '') {
+    const off = canClose(task) ? '' : 'disabled', id = esc(task.id);
+    return `<button class="${plain}" data-pj="close-task" data-publish="0" data-id="${id}" ${off} title="${esc(canClose(task) ? title + ', sans fusionner ni déployer sa branche' : title)}">${icon('check')} Clore</button>
+      <button class="${main}" data-pj="close-task" data-id="${id}" ${off} title="${esc(canClose(task) ? title + ', fusionner sa branche, l’envoyer sur GitHub et déployer' : title)}">${G.launch} Clore et déployer</button>`;
   }
   async function openPanel(taskId) {
     const task = st.tasks.find(t => t.id === taskId); if (!task) return;
@@ -754,14 +761,18 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
         case 'open-task': if (st.view === 'chat') { st.chat = idv; st.drawer = false; renderChat(true); } else await openPanel(idv); break;
         // Clore : accepte le résultat en attente s'il y en a un, puis passe la tâche en Terminé.
         // Une tâche avec une branche de travail est fusionnée dans la branche de production et poussée sur GitHub par Cockpit (sans agent).
+        // « Clore » seul (data-publish="0") : ni fusion, ni envoi, ni déploiement. « Clore et déployer » lance aussi le déploiement manuel du projet.
         case 'close-task': {
           const t = st.tasks.find(x => x.id === idv), p = t && st.projects.find(x => x.id === t.projectId), dp = p ? deployOf(p) : { branch: 'main' };
-          if (t?.direct?.branch && !confirm(`Clore « ${t.title} » ?\n\nSon travail (branche ${t.direct.branch}) sera fusionné dans ${dp.branch} et envoyé sur GitHub.${dp.auto ? `\nLe déploiement automatique publiera ensuite ${dp.url}.` : ''}`)) break;
+          const publish = el.dataset.publish !== '0', manual = publish && t?.direct?.branch && p && !dp.auto && dp.url;
+          if (publish && t?.direct?.branch && !confirm(`Clore et déployer « ${t.title} » ?\n\nSon travail (branche ${t.direct.branch}) sera fusionné dans ${dp.branch} et envoyé sur GitHub.${dp.auto ? `\nLe déploiement automatique publiera ensuite ${dp.url}.` : manual ? `\n${dp.url} sera ensuite déployé en production.` : ''}`)) break;
           const before = t?.published?.commit; el.disabled = true;
-          const saved = await api('tasks/' + idv + '/accept', 'POST', {}); upsert(saved);
+          const saved = await api('tasks/' + idv + '/accept', 'POST', publish ? {} : { publish: false }); upsert(saved);
           const pushed = saved.published?.commit && saved.published.commit !== before;
-          toast(pushed ? `Tâche close et envoyée sur GitHub (${saved.published.branch} · ${saved.published.commit.slice(0, 7)}).${dp.auto ? ' Déploiement automatique d’ici une minute.' : dp.url ? ' Utilisez « Déployer » pour publier.' : ''}${saved.published.leftOut?.length ? ` Non committé, laissé de côté : ${saved.published.leftOut.join(', ')}.` : ''}` : 'Tâche close.');
-          render(); updatePanel(); break;
+          toast(pushed ? `Tâche close et envoyée sur GitHub (${saved.published.branch} · ${saved.published.commit.slice(0, 7)}).${dp.auto ? ' Déploiement automatique d’ici une minute.' : manual ? ' Déploiement lancé.' : ''}${saved.published.leftOut?.length ? ` Non committé, laissé de côté : ${saved.published.leftOut.join(', ')}.` : ''}` : manual ? 'Tâche close. Déploiement lancé.' : 'Tâche close.');
+          render(); updatePanel();
+          if (manual) { setProject(await api('projects/' + p.id + '/deploy', 'POST', {})); refresh(); }
+          break;
         }
         case 'reopen': await move(idv, 'todo'); break;
         case 'stop-run': { el.disabled = true; upsert(await api('tasks/' + idv + '/stop', 'POST', {})); toast('Arrêt demandé : la session et le dossier de travail sont conservés.'); updatePanel(); break; }

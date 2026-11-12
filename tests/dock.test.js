@@ -22,10 +22,10 @@ test('the default dock lists the pages, plus the server links only in server mod
 // CO-40 : OpenRadio remplace Radio Garden, y compris dans les docks déjà enregistrés.
 test('the radio link opens OpenRadio and a saved Radio Garden entry is migrated', () => {
   const api = dock();
-  assert.equal(api.builtinLinks.radio.href, 'https://openradio.space/');
+  assert.equal(api.builtinLinks.radio.href, '/openradio.html');
   const saved = [{ kind: 'link', id: 'radio', label: 'Radio Garden', href: 'https://radio.garden/', icon: 'e:📻', newTab: true }, { kind: 'link', id: 'mine', label: 'Garden', href: 'https://radio.garden/', newTab: true }];
   const out = plain(api.sanitizeDock(saved, pages, true));
-  assert.deepEqual(out.find(i => i.id === 'radio'), { kind: 'link', id: 'radio', label: 'OpenRadio', href: 'https://openradio.space/', icon: 'e:📻', newTab: true });
+  assert.deepEqual(out.find(i => i.id === 'radio'), { kind: 'link', id: 'radio', label: 'OpenRadio', href: '/openradio.html', icon: 'e:📻', newTab: false });
   assert.equal(out.find(i => i.id === 'mine').href, 'https://radio.garden/');
 });
 

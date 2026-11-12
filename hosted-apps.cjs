@@ -1,18 +1,25 @@
 'use strict';
 const http = require('node:http');
 
+// Self-hosted full apps, each on its own hostname (see deploy/<app>/README.md).
+const APPS = [
+  { name: 'World Monitor', host: 'COCKPIT_WORLDMONITOR_HOST', upstream: 'COCKPIT_WORLDMONITOR_UPSTREAM' },
+  { name: 'OpenRadio', host: 'COCKPIT_OPENRADIO_HOST', upstream: 'COCKPIT_OPENRADIO_UPSTREAM' },
+];
+
 function matches(req) {
-  const host = process.env.COCKPIT_WORLDMONITOR_HOST;
-  return !!host && new URL('http://' + req.headers.host).hostname === host;
+  const hostname = new URL('http://' + req.headers.host).hostname;
+  const app = APPS.find(a => process.env[a.host] && process.env[a.host] === hostname);
+  return app ? { name: app.name, upstream: process.env[app.upstream] } : null;
 }
 
 // Called only after Cockpit authentication and Host/Origin admission.
 // A separate hostname keeps the full app's root-relative assets/API isolated
 // from Cockpit and God's Eye. The destination is operator-owned, never a URL
 // supplied in an incoming request.
-function proxy(req, res, url, { upstream = process.env.COCKPIT_WORLDMONITOR_UPSTREAM } = {}) {
+function proxy(req, res, url, { name, upstream }) {
   const destination = new URL(upstream);
-  if (destination.protocol !== 'http:') throw new Error('World Monitor upstream must be local HTTP.');
+  if (destination.protocol !== 'http:') throw new Error(name + ' upstream must be local HTTP.');
   const headers = { ...req.headers };
   delete headers.authorization; delete headers.connection; delete headers['proxy-authorization'];
   delete headers['x-forwarded-for']; delete headers['x-real-ip'];
@@ -35,7 +42,7 @@ function proxy(req, res, url, { upstream = process.env.COCKPIT_WORLDMONITOR_UPST
   request.on('error', () => {
     if (res.headersSent) return res.destroy();
     res.writeHead(502, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-    res.end(JSON.stringify({ error: 'World Monitor est momentanément indisponible.' }));
+    res.end(JSON.stringify({ error: name + ' est momentanément indisponible.' }));
   });
   res.on('close', () => request.destroy()); req.pipe(request);
 }

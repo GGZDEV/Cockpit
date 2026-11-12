@@ -102,7 +102,7 @@ export function dockIcon(ref) {
 export const builtinLinks = {
   godseye: { label: 'God’s Eye View', href: '/godseye.html', icon: 'e:🌐', newTab: false },
   worldmonitor: { label: 'World Monitor', href: '/worldmonitor.html', icon: 'e:🛰️', newTab: false },
-  radio: { label: 'OpenRadio', href: 'https://openradio.space/', icon: 'e:📻', newTab: true },
+  radio: { label: 'OpenRadio', href: '/openradio.html', icon: 'e:📻', newTab: false },
 };
 // Anciennes adresses d’un lien d’origine, remplacées dans les docks déjà enregistrés.
 const legacyLinks = { radio: 'https://radio.garden/' };

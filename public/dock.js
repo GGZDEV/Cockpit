@@ -105,20 +105,25 @@ export const builtinLinks = {
   radio: { label: 'Radio Garden', href: 'https://radio.garden/', icon: 'e:📻', newTab: true },
 };
 export const validHref = href => typeof href === 'string' && href.length <= 500 && !/[\s<>"']/.test(href) && (/^https?:\/\/[^/]/i.test(href) || /^\/(?!\/)/.test(href));
-export const defaultDock = (pageIds, serverMode = false) => [...pageIds.map(id => ({ kind: 'page', id })), ...(serverMode ? Object.entries(builtinLinks).map(([id, l]) => ({ kind: 'link', id, ...l })) : [])];
+// L’entrée Paramètres fait partie du dock : déplaçable et d’icône réglable, mais jamais retirée.
+const settingsEntries = () => [{ kind: 'sep', id: 'sep-settings' }, { kind: 'settings', id: 'settings' }];
+export const defaultDock = (pageIds, serverMode = false) => [...pageIds.map(id => ({ kind: 'page', id })), ...(serverMode ? Object.entries(builtinLinks).map(([id, l]) => ({ kind: 'link', id, ...l })) : []), ...settingsEntries()];
 export function sanitizeDock(value, pageIds, serverMode = false) {
   if (!Array.isArray(value)) return defaultDock(pageIds, serverMode);
   const out = [], seen = new Set(), text = v => typeof v === 'string' ? v.trim().slice(0, 60) : '';
   for (const item of value.slice(0, 80)) {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !/^[\w-]{1,60}$/.test(item.id) || seen.has(item.id)) continue;
     const ico = validIcon(item.icon) ? { icon: item.icon } : {}, label = text(item.label);
-    if (item.kind === 'page' && pageIds.includes(item.id)) out.push({ kind: 'page', id: item.id, ...ico, ...(label ? { label } : {}) });
+    if (item.kind === 'settings' && item.id === 'settings') out.push({ kind: 'settings', id: 'settings', ...ico, ...(label ? { label } : {}) });
+    else if (item.id === 'settings') continue;
+    else if (item.kind === 'page' && pageIds.includes(item.id)) out.push({ kind: 'page', id: item.id, ...ico, ...(label ? { label } : {}) });
     else if (item.kind === 'sep' && !pageIds.includes(item.id)) out.push({ kind: 'sep', id: item.id });
     else if (item.kind === 'link' && !pageIds.includes(item.id) && validHref(item.href) && (serverMode || !builtinLinks[item.id])) out.push({ kind: 'link', id: item.id, label: label || 'Lien', href: item.href, icon: ico.icon || 'link', newTab: item.newTab === true });
     else continue;
     seen.add(item.id);
   }
   for (const id of pageIds) if (!seen.has(id)) out.push({ kind: 'page', id });
+  if (!seen.has('settings')) out.push(...settingsEntries().filter(e => !seen.has(e.id)));
   return out;
 }
 // Entrées affichées sur un écran : pages visibles seulement, sans séparateur en tête, en fin ni doublé.

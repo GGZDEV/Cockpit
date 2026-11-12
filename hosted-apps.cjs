@@ -32,7 +32,10 @@ function proxy(req, res, url, { name, upstream }) {
     const output = { ...response.headers };
     delete output.connection; delete output['transfer-encoding']; delete output['x-frame-options'];
     const ancestors = "frame-ancestors 'self' https://cockpit.ggz.ovh";
-    const csp = output['content-security-policy'] || "default-src 'self'; connect-src 'self' https: wss: blob:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; media-src 'self' https: blob:;";
+    // Next.js bootstraps OpenRadio with inline scripts. Origins stay isolated;
+    // do not relax Cockpit's own CSP or World Monitor's policy.
+    const scripts = name === 'OpenRadio' ? "'self' 'unsafe-inline'" : "'self' 'wasm-unsafe-eval'";
+    const csp = output['content-security-policy'] || `default-src 'self'; connect-src 'self' https: wss: blob:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src ${scripts}; worker-src 'self' blob:; media-src 'self' https: blob:;`;
     output['content-security-policy'] = /frame-ancestors\s+[^;]+/i.test(csp) ? csp.replace(/frame-ancestors\s+[^;]+/i, ancestors) : csp + '; ' + ancestors;
     if (output['set-cookie']) output['set-cookie'] = output['set-cookie'].filter(v => !/^cockpit_session=/i.test(v));
     res.writeHead(response.statusCode, output);

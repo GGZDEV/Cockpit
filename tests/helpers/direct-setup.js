@@ -35,7 +35,7 @@ function fakeFeedMe() {
 // codexEnabled : Codex direct (activé comme Claude par défaut dans les tests qui le demandent).
 // Préparation des worktrees (npm ci, tests de départ) neutre par défaut : les tests qui la vérifient fournissent la leur.
 const NO_PREPARATION = { plan: () => null, install: async () => null, testScript: () => false, baseline: async () => null };
-async function setup(t, { engine: engineOptions = {}, codexEnabled = false, codexEngine: codexOptions = {}, repos = {}, taskEnv = NO_PREPARATION } = {}) {
+async function setup(t, { engine: engineOptions = {}, codexEnabled = false, codexEngine: codexOptions = {}, repos = {}, taskEnv = NO_PREPARATION, deployer } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mb-direct-'));
   const root = path.join(dir, 'dev'), log = path.join(dir, 'fake', 'calls.log'), codexLog = path.join(dir, 'fake-codex', 'calls.log');
   fs.mkdirSync(path.dirname(log), { recursive: true }); fs.mkdirSync(path.dirname(codexLog), { recursive: true });
@@ -49,7 +49,7 @@ async function setup(t, { engine: engineOptions = {}, codexEnabled = false, code
   const worktreeRoot = path.join(dir, 'worktrees');
   const engine = claude.createEngine({ enabled: true, command: process.execPath, prefixArgs: [FAKE], workspacesRoot: root, worktreeRoot, baseEnv, ...engineOptions });
   const codexEng = codex.createEngine({ enabled: codexEnabled, command: FAKE_CODEX, codexHome: path.join(dir, 'codex-home'), workspacesRoot: root, worktreeRoot, baseEnv, ...codexOptions });
-  const make = () => createProjects({ dataDir: path.join(dir, 'data'), discover: async () => feed.origin, reconcileEvery: 3600000, workspaces, claudeEngine: engine, codexEngine: codexEng, taskEnv });
+  const make = () => createProjects({ dataDir: path.join(dir, 'data'), discover: async () => feed.origin, reconcileEvery: 3600000, workspaces, claudeEngine: engine, codexEngine: codexEng, taskEnv, ...(deployer ? { deployer } : {}) });
   const services = [make()];
   t.after(async () => {
     services.forEach(s => s.close()); feed.server.closeAllConnections(); feed.server.close();

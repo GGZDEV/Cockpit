@@ -1,11 +1,11 @@
 # Copied to /opt/openradio-host/docker-compose.yml on the host.
 services:
   openradio:
-    image: openradio:local
+    image: ${APP_IMAGE:-openradio:local}
     container_name: openradio
     restart: unless-stopped
     ports:
-      - "3100:3000"
+      - "192.168.1.236:3100:3000"
     # No AI key or analytics. To pin a Radio Browser mirror, add:
     # environment: { RADIO_BROWSER_BASE_URL: "https://…" }
     mem_limit: 512m

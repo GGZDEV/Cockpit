@@ -27,7 +27,7 @@ test('World Monitor full app uses isolated authenticated origin and strips Cockp
 
 // CO-40 : OpenRadio auto-hébergé sur son propre hôte, même isolation que World Monitor.
 test('OpenRadio is proxied on its own authenticated host and /openradio.html opens it',async t=>{
- const backend=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('X-Frame-Options','DENY');res.setHeader('Content-Security-Policy',"default-src 'self'; frame-ancestors 'none'");res.end(JSON.stringify({url:req.url,auth:req.headers.authorization,host:req.headers.host}));});
+ const backend=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('X-Frame-Options','DENY');if(req.url!='/')res.setHeader('Content-Security-Policy',"default-src 'self'; frame-ancestors 'none'");res.end(JSON.stringify({url:req.url,auth:req.headers.authorization,host:req.headers.host}));});
  await new Promise(r=>backend.listen(0,'127.0.0.1',r));
  const keys=['COCKPIT_OPENRADIO_HOST','COCKPIT_OPENRADIO_UPSTREAM'],original=keys.map(k=>process.env[k]);
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cockpit-or-'));
@@ -46,6 +46,7 @@ test('OpenRadio is proxied on its own authenticated host and /openradio.html ope
  assert.equal(r.status,200);const data=JSON.parse(r.body);
  assert.equal(data.url,'/api/stations?country=FR');assert.equal(data.auth,undefined);assert.equal(data.host,'openradio.ggz.ovh');
  assert.equal(r.headers['x-frame-options'],undefined);assert.match(r.headers['content-security-policy'],/frame-ancestors 'self' https:\/\/cockpit.ggz.ovh/);
+ assert.match((await send('/',{...auth,host:'openradio.ggz.ovh'})).headers['content-security-policy'],/script-src 'self' 'unsafe-inline'/);
  backend.close();backend.closeAllConnections();
  const down=await send('/',{...auth,host:'openradio.ggz.ovh'});
  assert.equal(down.status,502);assert.match(JSON.parse(down.body).error,/OpenRadio/);

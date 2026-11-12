@@ -81,6 +81,15 @@ function cleanSettings(body, previous) {
   if ('config' in body || 'type' in body) out.config = cleanConfig(out.type, body.config, out.config);
   if ('buildCmd' in body) out.buildCmd = cleanCommand(body.buildCmd, 'Commande de construction');
   if ('testCmd' in body) out.testCmd = cleanCommand(body.testCmd, 'Commande de tests');
+  if ('health' in body && body.health === null) out.health = null;
+  else if ('health' in body) {
+    const h = body.health;
+    if (!h || typeof h !== 'object' || Array.isArray(h)) throw new InputError('Contrôle de santé invalide.');
+    if (!Number.isInteger(h.expect_status) || h.expect_status < 100 || h.expect_status > 599) throw new InputError('Statut HTTP de santé invalide.');
+    let url; try { url = new URL(h.url); } catch { throw new InputError('URL de santé invalide.'); }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) throw new InputError('URL de santé invalide.');
+    out.health = { url: url.href, expect_status: h.expect_status, expect_contains: String(h.expect_contains || '').slice(0, 200), retries: 8, retry_delay_s: 3 };
+  }
   if ('publicDomain' in body) {
     const name = String(body.publicDomain ?? '').trim().toLowerCase();
     if (name && (!DOMAIN.test(name) || !name.endsWith(PUBLIC_SUFFIX()) || name === PUBLIC_SUFFIX().slice(1))) throw new InputError(`Le nom public doit être un nom de domaine en « ${PUBLIC_SUFFIX()} » (ex. mon-site${PUBLIC_SUFFIX()}).`);

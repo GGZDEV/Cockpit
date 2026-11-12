@@ -35,6 +35,7 @@ const paths = {
   panel: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M14 3v18"/>',
   bolt: '<path d="m13 2-9 12h7l-1 8 10-13h-7z"/>',
   bulb: '<path d="M9 18h6m-6 3h6M8 14a7 7 0 1 1 8 0l-1 2H9z"/>',
+  drop: '<path d="M12 2.7 6.3 9.1a7.5 7.5 0 1 0 11.4 0Z"/>',
   thermo: '<path d="M9 14V5a3 3 0 0 1 6 0v9a5 5 0 1 1-6 0Z"/><path d="M12 7v11"/>',
   music: '<path d="M9 18V5l12-3v13M9 9l12-3"/><ellipse cx="6" cy="18" rx="3" ry="3"/><ellipse cx="18" cy="15" rx="3" ry="3"/>',
   play: '<path d="m9 5 11 7-11 7z"/>', pause: '<path d="M8 5v14M16 5v14"/>',

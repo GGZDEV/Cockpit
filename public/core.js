@@ -51,6 +51,7 @@ const paths = {
   link: '<path d="m10 13 4-4m-6 6-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 3 2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 1)"/>',
   logout: '<path d="M9 3H3v18h6m6-16 7 7-7 7m7-7H9"/>', download: '<path d="M12 3v12m-5-5 5 5 5-5M3 16v5h18v-5"/>',
 };
+export const iconNames = Object.keys(paths);
 export function icon(name, cls = '') { return `<svg class="icon ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.grid}</svg>`; }
 export function spark(values, color = '#e87548', filled = true) {
   if (!values.length) return '';

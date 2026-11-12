@@ -12,6 +12,7 @@ import { shell } from './shell.js';
 import { createProjectsUI } from './projects.js';
 import { usesGrid, selectedTheme, visibleTabs, tabPreferences, setTabs, importTabs, isPhoneScreen, defaultProfile, phoneWidgets, maxHeight } from './preferences.js';
 import { attachHomeEditor } from './home-editor.js';
+import { sanitizeDock, defaultDock, moveDockItem, iconLibrary, dockIcon, validIcon, validHref } from './dock.js';
 import { headerSettingsHTML, moduleSettingsHTML, colorSettingsHTML, updateSettingControl, commitEntityChoice } from './module-settings.js';
 import { homeDisplay, saveDisplay, importDisplay, spanWidth, color, homeHeader, headerTypes, addHeader, backgrounds, haloParts, haloDefaults, applyDisplay, fonts, fullscreenSupported, fullscreenElement, enterFullscreen, toggleFullscreen } from './home-display.js';
 
@@ -29,6 +30,7 @@ let profile = profiles[params.get('surface')] ? params.get('surface') : read('mb
 if (!profiles[profile]) profile = 'desktop';
 let selectedRoomId = read('mb.room', read('hd.room',null));
 let page = read('mb.page', 'overview'); if (!pages[page]) page = 'overview';
+let dock = sanitizeDock(read('mb.dock.v1', null), Object.keys(pages), serverMode), dockSelected = '', dockQuery = '';
 let layouts = cleanLayouts(read('mb.layouts.native.v1', {})), editing = false, query = '', dialogType = '', detailId, libraryCategory = 'Tous';
 let todos = read('mb.todos.v1', []);
 if (!Array.isArray(todos)) todos = [];
@@ -42,12 +44,12 @@ const chat = { id: null, messages: [], loading: false, sending: false, error: ''
 let pendingRender, dragged, lastFocus, homeEditor;
 const projectsUI = createProjectsUI({ sources, modal, showModal: (...a) => showModal(...a), toast: m => toast(m), render: () => render(true), isActive: () => page === 'projects' });
 
-const syncAccount=accountSync(sources,()=>({layouts,notes,todos,homeDisplay,feedmePreferences:feedmePreferences(),rooms:sources.roomPreferences,tabs:tabPreferences,theme:selectedTheme()}),data=>{
+const syncAccount=accountSync(sources,()=>({layouts,notes,todos,homeDisplay,feedmePreferences:feedmePreferences(),rooms:sources.roomPreferences,tabs:tabPreferences,dock,theme:selectedTheme()}),data=>{
   if (data.feedmePreferences) importFeedmePreferences(data.feedmePreferences);
   sources.roomPreferences=data.rooms || null; write('mb.rooms.v1',sources.roomPreferences);
   layouts=cleanLayouts(data.layouts); notes={}; for (const [id,value] of Object.entries(data.notes || {})) if (/^[\w-]{1,80}$/.test(id) && typeof value==='string') notes[id]=value.slice(0,20000);
   todos=Array.isArray(data.todos) ? data.todos.filter(t=>typeof t?.id==='string' && typeof t.title==='string').slice(0,1000) : [];
-  if (data.homeDisplay) importDisplay(data.homeDisplay); if (data.tabs) importTabs(data.tabs); if (['home','feedme'].includes(data.theme)) write('mb.theme',data.theme);
+  if (data.homeDisplay) importDisplay(data.homeDisplay); if (data.tabs) importTabs(data.tabs); if (Array.isArray(data.dock)) { dock=sanitizeDock(data.dock,Object.keys(pages),serverMode); write('mb.dock.v1',dock); } if (['home','feedme'].includes(data.theme)) write('mb.theme',data.theme);
   write('mb.layouts.native.v1',layouts); write('mb.notes.v1',notes); write('mb.todos.v1',todos);
 },message=>toast(message));
 function cleanLayouts(data) {
@@ -154,7 +156,7 @@ function render(force = false) {
     link.onerror = () => { delete link.dataset.loading; document.body.dataset.designReady = 'true'; toast('Le style n’a pas pu se charger. Rechargez la page.'); };
     link.href = href;
   } else if (!link.dataset.loading) document.body.dataset.designReady = 'true';
-  HD.morph($app,shell({ serverMode, profile, page, pages, profiles, sources, unreadCount: (sources.data.articles || []).filter(a => !read('fm-read',readArticles).includes(a.id) && !hiddenSources.includes(a.source)).length, editing, room:currentRoom(), rooms:roomModel(sources).rooms, list: current(), widgetHTML: w => widgetHTML(w), pageHTML: page === 'projects' ? projectsUI.html() : '' }));
+  HD.morph($app,shell({ serverMode, profile, page, pages, profiles, dock, sources, unreadCount: (sources.data.articles || []).filter(a => !read('fm-read',readArticles).includes(a.id) && !hiddenSources.includes(a.source)).length, editing, room:currentRoom(), rooms:roomModel(sources).rooms, list: current(), widgetHTML: w => widgetHTML(w), pageHTML: page === 'projects' ? projectsUI.html() : '' }));
   fitHomeGrid();
   const grid = $app.querySelector('.dashboard'); if (grid) grid.scrollTop = scroll;
   if (searchFocused) { const input = document.querySelector('#global-search'); if (input) { input.focus(); input.setSelectionRange(caret, caret); } }
@@ -183,6 +185,33 @@ function roomSettings() {
   const rooms=[...model.index.rooms].sort((a,b)=>(prefs.order.includes(a.id) ? prefs.order.indexOf(a.id) : 1000+model.index.rooms.indexOf(a))-(prefs.order.includes(b.id) ? prefs.order.indexOf(b.id) : 1000+model.index.rooms.indexOf(b)));
   showModal('Pièces et appareils','Ordre, visibilité et noms dans Cockpit',`<form data-form="rooms" class="connection-form"><div class="room-preferences">${rooms.map(r=>`<div class="room-pref" data-room-pref="${esc(r.id)}"><label><input type="checkbox" name="visibleRoom" value="${esc(r.id)}" ${prefs.hidden[r.id] ? '' : 'checked'}>${esc(r.name)}</label><button type="button" class="button" data-action="room-order" data-id="${esc(r.id)}" data-step="-1" aria-label="Monter ${esc(r.name)}">↑</button><button type="button" class="button" data-action="room-order" data-id="${esc(r.id)}" data-step="1" aria-label="Descendre ${esc(r.name)}">↓</button></div>`).join('')}</div><details><summary>Noms des appareils</summary>${[...model.index.visible].map(id=>{const st=model.states.get(id);return `<label>${esc(st.attributes.friendly_name || id)}<input name="name:${esc(id)}" maxlength="80" value="${esc(prefs.names?.[id] || '')}" placeholder="Nom d’origine"></label>`;}).join('')}</details><button class="button primary">Enregistrer</button></form>`,'rooms',true);
 }
+// Dock : ordre, icônes, liens et séparateurs du rail ; chaque changement s’applique tout de suite.
+const pageNames = { overview: 'Mon bureau', home: 'Pièces', news: 'Veille', agents: 'Agents', projects: 'Projets', system: 'Système' };
+const pageIcon = id => id === 'overview' ? 'home' : id === 'home' ? 'grid' : pages[id]?.[2];
+const dockName = item => item.kind === 'sep' ? 'Séparateur' : item.label || pageNames[item.id] || 'Lien';
+function saveDock() { write('mb.dock.v1', dock); syncAccount(); render(true); }
+function dockRows() {
+  const shown = visibleTabs(profile);
+  return dock.map((item, i) => `<li class="dock-row ${dockSelected === item.id ? 'is-on' : ''}" draggable="true" data-dock-item="${esc(item.id)}"><span class="dock-grip" aria-hidden="true">${icon('grip')}</span><button type="button" class="dock-row-main" data-action="dock-select" data-id="${esc(item.id)}" aria-pressed="${dockSelected === item.id}">${item.kind === 'sep' ? '<span class="dock-row-icon"><span class="dock-row-sep"></span></span>' : `<span class="dock-row-icon">${dockIcon(item.icon || pageIcon(item.id))}</span>`}<span class="dock-row-name">${esc(dockName(item))}${item.kind === 'page' && !shown.includes(item.id) ? '<small>Masqué sur cet écran</small>' : item.kind === 'link' ? `<small>${esc(item.href || 'Adresse à saisir')}</small>` : ''}</span></button><button type="button" class="button" data-action="dock-move" data-id="${esc(item.id)}" data-step="-1" aria-label="Monter ${esc(dockName(item))}" ${i === 0 ? 'disabled' : ''}>↑</button><button type="button" class="button" data-action="dock-move" data-id="${esc(item.id)}" data-step="1" aria-label="Descendre ${esc(dockName(item))}" ${i === dock.length - 1 ? 'disabled' : ''}>↓</button>${item.kind === 'page' ? '' : `<button type="button" class="button" data-action="dock-remove" data-id="${esc(item.id)}" aria-label="Retirer ${esc(dockName(item))}" title="Retirer">${icon('trash')}</button>`}</li>`).join('');
+}
+function filterDockIcons() {
+  const q = dockQuery.trim().toLowerCase();
+  modal.querySelectorAll('.dock-icon-choice').forEach(b => b.hidden = !!q && !b.dataset.search.includes(q));
+  modal.querySelectorAll('.dock-icon-group').forEach(g => g.hidden = !g.querySelector('.dock-icon-choice:not([hidden])'));
+}
+function dockSettings(selected = dockSelected) {
+  dockSelected = dock.some(i => i.id === selected) ? selected : '';
+  const reopen = modal.open && dialogType === 'dock', scroll = reopen ? modal.querySelector('.dialog-body')?.scrollTop : 0, gridScroll = reopen ? modal.querySelector('.dock-icon-grid')?.scrollTop : 0;
+  const item = dock.find(i => i.id === dockSelected), current = item && (item.icon || pageIcon(item.id));
+  const groups = {}; for (const entry of iconLibrary()) (groups[entry.group] ||= []).push(entry);
+  const choices = Object.entries(groups).map(([group, list]) => `<section class="dock-icon-group"><h4>${esc(group)}</h4><div>${list.map(e => `<button type="button" class="dock-icon-choice ${current === e.ref ? 'is-on' : ''}" data-action="dock-icon" data-id="${esc(e.ref)}" data-search="${esc(e.search + ' ' + e.ref.toLowerCase())}" aria-label="Icône ${esc(e.ref.replace(/^[xhe]:/, ''))}" title="${esc(e.ref.replace(/^[xhe]:/, ''))}" aria-pressed="${current === e.ref}">${dockIcon(e.ref)}</button>`).join('')}</div></section>`).join('');
+  const editor = !item ? '<p class="settings-help">Choisissez une entrée pour changer son nom ou son icône. Glissez les lignes, ou utilisez ↑ ↓, pour changer l’ordre.</p>'
+    : item.kind === 'sep' ? '<p class="settings-help">Un séparateur trace un trait entre deux groupes d’entrées du dock.</p>'
+    : `<div class="connection-form dock-fields"><label>Nom<input data-dock-field="label" maxlength="60" value="${esc(item.label || '')}" placeholder="${esc(pageNames[item.id] || 'Lien')}"></label>${item.kind === 'link' ? `<label>Adresse<input data-dock-field="href" inputmode="url" maxlength="500" value="${esc(item.href)}" placeholder="https://… ou /page.html"></label><label class="dock-check"><input type="checkbox" data-dock-field="newTab" ${item.newTab ? 'checked' : ''}> Ouvrir dans un nouvel onglet</label>` : ''}</div><div class="dock-icon-head"><h3>Icône</h3>${item.kind === 'page' && item.icon ? '<button type="button" class="button" data-action="dock-icon-reset">Icône d’origine</button>' : ''}</div><label class="library-search">${icon('search')}<input id="dock-icon-search" aria-label="Chercher une icône" placeholder="Maison, musique, météo…" value="${esc(dockQuery)}"></label><div class="dock-icon-grid">${choices}</div>`;
+  showModal('Dock', 'Ordre, icônes, liens et séparateurs du rail', `<div class="dock-editor"><div class="dock-side"><ol class="dock-list">${dockRows()}</ol><div class="settings-buttons"><button type="button" class="button" data-action="dock-add-sep">${icon('plus')} Séparateur</button><button type="button" class="button" data-action="dock-add-link">${icon('link')} Lien</button><button type="button" class="button" data-action="dock-reset">${icon('refresh')} Dock d’origine</button></div></div><section class="dock-item-editor" aria-label="${item ? esc(dockName(item)) : 'Entrée du dock'}">${item ? `<h3>${esc(dockName(item))}</h3>` : ''}${editor}</section></div>`, 'dock', true);
+  filterDockIcons();
+  if (reopen) { modal.querySelector('.dialog-body').scrollTop = scroll || 0; const grid = modal.querySelector('.dock-icon-grid'); if (grid) grid.scrollTop = gridScroll || 0; }
+}
 function settings() {
   const theme = selectedTheme(), autofs = read('mb.autofs',false), bg = homeDisplay.bg, tabNames = {overview:'Mon bureau',home:'Pièces',news:'Veille',agents:'Agents',projects:'Projets',system:'Système'};
   const bgName = bg.image ? 'Photo' : bg.color ? 'Couleur' : (backgrounds.find(([id]) => id === bg.preset) || backgrounds[0])[1];
@@ -190,7 +219,7 @@ function settings() {
   const device = `<section class="settings-card"><h3>Sur cet appareil</h3><div class="settings-list"><label class="settings-row"><span>Disposition</span><span class="settings-value settings-select"><select data-layout-profile aria-label="Disposition par écran">${Object.entries(profiles).map(([id,p]) => `<option value="${id}" ${profile === id ? 'selected' : ''}>${p[0]}</option>`).join('')}</select>${icon('down')}</span></label>${profile === 'phone' && !fullscreenSupported() ? '' : `<div class="settings-row"><span><span>Plein écran automatique</span><small>Le premier toucher passe en plein écran.</small></span><button class="settings-switch" role="switch" aria-checked="${autofs}" aria-label="Plein écran automatique" data-action="auto-fullscreen" ${fullscreenSupported() ? '' : 'disabled'}></button></div>`}${usesGrid(profile) ? `<button class="settings-row" data-action="background"><span>Fond d’écran</span><span class="settings-value">${esc(bgName)} ${icon('chevron')}</span></button><label class="settings-row"><span>Accent</span><span class="settings-value"><input id="home-accent" type="color" value="${esc(homeDisplay.accent)}" aria-label="Couleur d’accent par défaut"><span class="settings-dot" style="background:${esc(homeDisplay.accent)}"></span>${icon('chevron')}</span></label>` : ''}</div></section>`;
   const looks = `<section class="settings-card"><h3>Apparence</h3><p class="settings-help">Un seul look pour toute l’application. Seuls les couleurs, polices et fond changent.</p><div class="theme-options" role="group" aria-label="Thème de l’application">${[['feedme', 'Graphite', 'Cartes sombres · accent vert'], ['home', 'Verre', 'Fond à halos · réglable']].map(([id, title, description]) => `<button class="theme-option ${theme === id ? 'selected' : ''}" data-action="theme" data-id="${id}" aria-pressed="${theme === id}"><span class="theme-preview theme-preview-${id}" aria-hidden="true"><i></i><i></i><i></i></span><strong>${title}</strong><span>${description}</span>${theme === id ? `<em class="theme-check">${icon('check')}</em>` : ''}</button>`).join('')}</div>${theme === 'home' ? `<button class="button settings-pill" data-action="background">${icon('sun')} Couleurs et fond</button>` : ''}</section>`;
   const desktop = window.metaDesktop ? `<section class="settings-card"><h3>Fenêtre Windows</h3><p class="settings-help">Fermer la fenêtre la range dans la zone de notification. Les notifications des agents sont désactivées par défaut.</p><div class="settings-pills">${[['window','Fenêtre libre'],['dock-left','Panneau gauche'],['dock-right','Panneau droit'],['reserve','Ancrer / détacher du bureau'],['autohide','Masquage automatique'],['pin','Toujours au premier plan'],['notifications','Notifications des agents'],['quit','Quitter Cockpit']].map(([cmd,label])=>`<button class="button settings-pill" data-action="desktop" data-id="${cmd}">${label}</button>`).join('')}</div></section>` : '';
-  const tabs = `<section class="settings-card"><h3>Onglets par écran</h3><p class="settings-help">Masquer un onglet conserve ses modules et ses données.</p><div class="tab-screen-settings"><table><thead><tr><th></th>${Object.values(profiles).map(p => `<th scope="col">${icon(p[1])}<span>${p[0]}</span></th>`).join('')}</tr></thead><tbody>${Object.keys(pages).map(id => `<tr><th scope="row">${esc(tabNames[id])}</th>${Object.entries(profiles).map(([screen,p]) => `<td><input type="checkbox" data-tab-screen="${screen}" data-tab-page="${id}" aria-label="${esc(tabNames[id])} · ${p[0]}" ${visibleTabs(screen).includes(id) ? 'checked' : ''} ${visibleTabs(screen).length === 1 && visibleTabs(screen).includes(id) ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')}</tbody></table></div><button class="button settings-pill" data-action="edit">${icon('edit')} Personnaliser la disposition</button></section>`;
+  const tabs = `<section class="settings-card"><h3>Onglets par écran</h3><p class="settings-help">Masquer un onglet conserve ses modules et ses données.</p><div class="tab-screen-settings"><table><thead><tr><th></th>${Object.values(profiles).map(p => `<th scope="col">${icon(p[1])}<span>${p[0]}</span></th>`).join('')}</tr></thead><tbody>${Object.keys(pages).map(id => `<tr><th scope="row">${esc(tabNames[id])}</th>${Object.entries(profiles).map(([screen,p]) => `<td><input type="checkbox" data-tab-screen="${screen}" data-tab-page="${id}" aria-label="${esc(tabNames[id])} · ${p[0]}" ${visibleTabs(screen).includes(id) ? 'checked' : ''} ${visibleTabs(screen).length === 1 && visibleTabs(screen).includes(id) ? 'disabled' : ''}></td>`).join('')}</tr>`).join('')}</tbody></table></div><button class="button settings-pill" data-action="edit">${icon('edit')} Personnaliser la disposition</button><button class="button settings-pill" data-action="dock-edit">${icon('panel')} Modifier le dock</button></section>`;
   const layout = `<section class="settings-card"><h3>Votre disposition</h3><p class="settings-help">Un agencement par écran. Dispositions, notes et tâches Cockpit sont synchronisées dans votre compte Home Assistant une fois connecté.</p><div class="settings-buttons"><button class="button settings-pill" data-action="export">${icon('download')} Exporter</button><label class="button settings-pill file-button">Importer<input type="file" id="import-layout" accept="application/json,.json" hidden></label><button class="button settings-pill" data-action="reset">Réinitialiser cette vue</button></div></section>`;
   const ha = `<section class="settings-card"><div class="settings-service"><span class="settings-service-icon">${icon('home')}</span><div><h4>Home Assistant</h4><p>Pièces, capteurs, éclairage, scènes.</p></div>${tag(sources.status.ha === 'connected', sources.demo ? 'Mode démo' : sources.status.ha === 'connected' ? 'Connecté' : 'Non connecté')}</div><form data-form="ha" class="settings-ha-form"><div class="settings-list"><label class="settings-field">Adresse<input name="url" type="url" required value="${esc(read('mb.ha.url', sources.suggestedHA || 'http://192.168.1.251:8123'))}" placeholder="http://homeassistant.local:8123"></label><label class="settings-field">Jeton d’accès longue durée<input name="token" type="password" ${read('mb.ha.token', null) ? '' : 'required'} autocomplete="off" placeholder="${read('mb.ha.token', null) ? 'Jeton enregistré sur cet appareil' : 'Collez votre jeton'}"></label><label class="settings-row"><span>Se souvenir du jeton</span><input class="settings-switch" name="remember" type="checkbox" role="switch" checked></label></div><p class="settings-help">Mémorisé, le jeton est aussi gardé par le serveur Cockpit (protégé par le mot de passe du site) : vos autres appareils se connectent sans le redemander. « Déconnecter » l’efface partout.</p><div class="settings-pills"><button type="button" class="button settings-pill" data-action="room-settings">Pièces et appareils</button><button type="button" class="button settings-pill" data-action="legacy-pages">Reprendre une page du dashboard</button></div><div class="form-status" role="status"></div><button class="button primary settings-cta" ${sources.demo ? 'disabled' : ''}>Connecter la maison ${icon('arrow')}</button>${sources.ha ? '<button type="button" class="button settings-pill" data-action="disconnect-ha">Déconnecter</button>' : ''}</form></section>`;
   const feeds = Array.isArray(sources.data.feeds) ? sources.data.feeds : null, feedError = sources.errors.feeds || sources.errors.articles || '';
@@ -273,7 +302,7 @@ async function sendMessage(text) {
   finally { chat.sending = false; chat.controller = null; if (dialogType === 'chat' && modal.open) { chatView(); updateChat(); } else toast(chat.error || 'La réponse de votre agent est arrivée.'); }
 }
 function exportLayout() {
-  const blob = new Blob([JSON.stringify({ version: 1, theme: selectedTheme(), tabs: tabPreferences, homeDisplay, feedmePreferences:feedmePreferences(), layouts, notes, todos }, null, 2)], { type: 'application/json' });
+  const blob = new Blob([JSON.stringify({ version: 1, theme: selectedTheme(), tabs: tabPreferences, dock, homeDisplay, feedmePreferences:feedmePreferences(), layouts, notes, todos }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = 'metaboard-mon-espace.json'; a.click(); setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 async function action(button) {
@@ -286,6 +315,13 @@ async function action(button) {
     case 'library': library(); break;
     case 'category': libraryCategory = id; library(); break;
     case 'settings': settings(); break;
+    case 'dock-edit': dockQuery = ''; dockSettings(id || ''); break;
+    case 'dock-select': dockSettings(dockSelected === id ? '' : id); break;
+    case 'dock-move': { const i = dock.findIndex(x => x.id === id); if (i < 0) return; dock = moveDockItem(dock, id, i + Number(button.dataset.step)); saveDock(); dockSettings(); break; }
+    case 'dock-remove': dock = dock.filter(x => x.id !== id || x.kind === 'page'); saveDock(); dockSettings(); break;
+    case 'dock-add-sep': case 'dock-add-link': { const item = act === 'dock-add-sep' ? { kind: 'sep', id: 'sep-' + uid().slice(0, 8) } : { kind: 'link', id: 'link-' + uid().slice(0, 8), label: 'Nouveau lien', href: '', icon: 'link', newTab: true }; const at = dock.findIndex(x => x.id === dockSelected); dock = at < 0 ? [...dock, item] : [...dock.slice(0, at + 1), item, ...dock.slice(at + 1)]; saveDock(); dockSettings(item.id); if (item.kind === 'link') modal.querySelector('[data-dock-field="href"]')?.focus(); break; }
+    case 'dock-icon': case 'dock-icon-reset': { const item = dock.find(x => x.id === dockSelected); if (!item || item.kind === 'sep' || (act === 'dock-icon' && !validIcon(id))) return; if (act === 'dock-icon') item.icon = id; else delete item.icon; saveDock(); dockSettings(); break; }
+    case 'dock-reset': if (confirm('Rétablir le dock d’origine ? Vos liens, séparateurs et icônes choisies seront retirés.')) { dock = defaultDock(Object.keys(pages), serverMode); saveDock(); dockSettings(''); } break;
     case 'desktop': if (window.metaDesktop) { const state=await window.metaDesktop.command(id); toast('Fenêtre mise à jour · ancrage '+(state.reserved?'actif':'inactif')+' · notifications '+(state.notifications?'activées':'désactivées')); } break;
     case 'legacy-pages': {
       const keys=Object.keys(sources.originalLayout?.pages || {}).filter(key=>!key.startsWith('room:'));
@@ -390,11 +426,19 @@ document.addEventListener('input', event => {
   }
   if (el.id === 'global-search') { query = el.value; render(true); }
   if (el.id === 'detail-search') { query = el.value; const widget = current().find(w => w.id === detailId); if (widget) { modal.querySelector('.detail-content').innerHTML = widgetHTML(widget, true); const input = modal.querySelector('#detail-search'); input?.focus(); input?.setSelectionRange(query.length, query.length); } }
+  if (el.id === 'dock-icon-search') { dockQuery = el.value; filterDockIcons(); }
   if (el.id === 'library-search') { const q = el.value.toLowerCase(); modal.querySelectorAll('.library-item').forEach(item => item.hidden = !item.dataset.search.includes(q)); }
   if (el.dataset.note) { syncAccount(); const footer=el.parentElement.querySelector('.note-foot span'); if (footer) footer.textContent=el.value.split('\n').filter(l=>l.trim()).length+' ligne(s) · '+el.value.length+' caractère(s)'; notes[el.dataset.note] = el.value; if (!write('mb.notes.v1', notes)) toast('La note ne peut pas être enregistrée.'); }
 });
 document.addEventListener('change', async event => {
   const el = event.target;
+  if (el.dataset.dockField) {
+    const item = dock.find(x => x.id === dockSelected), field = el.dataset.dockField, value = el.value.trim(); if (!item) return;
+    if (field === 'href') { if (!validHref(value)) { toast('Adresse invalide : commencez par https://, http:// ou /.'); return; } item.href = value; }
+    else if (field === 'newTab') item.newTab = el.checked;
+    else if (value) item.label = value.slice(0, 60); else if (item.kind === 'link') item.label = 'Lien'; else delete item.label;
+    saveDock(); modal.querySelector('.dock-list').innerHTML = dockRows(); return;
+  }
   if (el.matches('[name=entities]')) { const automatic=el.closest('form')?.querySelector('[name=automatic]'); if (automatic) automatic.checked=false; }
   if (el.dataset.settingColor && el.closest('.visual-settings-form')) updateSettingControl(el.closest('form'),el.dataset.settingColor,el.value);
   if (el.matches('[data-spotify-volume]')) { const volume=Math.max(0,Math.min(100,Number(el.value))); try { if (sources.demo) { sources.data.spotify.device.volume=volume; } else await sources.api('spotify/volume',{method:'POST',body:JSON.stringify({volume})}); } catch(e) { toast(e.message); } }
@@ -422,7 +466,7 @@ document.addEventListener('change', async event => {
       layouts = imported; notes = {};
       if (data.feedmePreferences) importFeedmePreferences(data.feedmePreferences);
       if (data.homeDisplay) importDisplay(data.homeDisplay);
-      if (data.tabs) importTabs(data.tabs);
+      if (data.tabs) importTabs(data.tabs); if (Array.isArray(data.dock)) { dock=sanitizeDock(data.dock,Object.keys(pages),serverMode); write('mb.dock.v1',dock); }
       if (['feedme', 'home'].includes(data.theme)) write('mb.theme', data.theme);
       for (const [k, v] of Object.entries(data.notes || {})) if (/^[\w-]{1,80}$/.test(k) && typeof v === 'string') notes[k] = v.slice(0, 20000);
       todos = Array.isArray(data.todos) ? data.todos.filter(t => typeof t?.title === 'string').slice(0, 1000).map(t => ({ id: uid(), title: t.title.slice(0, 200), done: !!t.done })) : [];
@@ -459,6 +503,12 @@ $app.addEventListener('dragend', () => { dragged = null; document.querySelectorA
 document.addEventListener('focusout', () => { if (pendingRender) setTimeout(() => { if (pendingRender) render(); }, 0); });
 document.addEventListener('keydown', event => { if ((event.key === '/' || (event.key.toLowerCase() === 'k' && (event.ctrlKey || event.metaKey))) && !modal.open && !event.target.matches('input,textarea,select')) { event.preventDefault(); document.querySelector('#global-search')?.focus(); } });
 modal.addEventListener('click', event => { if (event.target === modal) { const r = modal.getBoundingClientRect(); if (event.clientX < r.left || event.clientX > r.right || event.clientY < r.top || event.clientY > r.bottom) modal.close(); } });
+// Dock : glisser une ligne de la liste sur une autre la place à cet endroit.
+let dockDragged = null;
+modal.addEventListener('dragstart', event => { const row = event.target.closest?.('[data-dock-item]'); if (!row) return; dockDragged = row.dataset.dockItem; event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', dockDragged); row.classList.add('dragging'); });
+modal.addEventListener('dragover', event => { const row = dockDragged && event.target.closest('[data-dock-item]'); if (!row) return; event.preventDefault(); modal.querySelectorAll('.dock-row.drop-target').forEach(r => r.classList.remove('drop-target')); row.classList.add('drop-target'); });
+modal.addEventListener('drop', event => { if (!dockDragged) return; event.preventDefault(); const target = event.target.closest('[data-dock-item]')?.dataset.dockItem, to = dock.findIndex(x => x.id === target); if (to >= 0 && target !== dockDragged) { dock = moveDockItem(dock, dockDragged, to); saveDock(); } dockDragged = null; dockSettings(); });
+modal.addEventListener('dragend', () => { dockDragged = null; modal.querySelectorAll('.dock-row.dragging,.dock-row.drop-target').forEach(r => r.classList.remove('dragging', 'drop-target')); });
 modal.addEventListener('close', () => { dialogType = ''; lastFocus?.isConnected && lastFocus.focus(); });
 sources.addEventListener('change', () => { render(); if (modal.open && dialogType === 'detail' && !modal.contains(document.activeElement.closest?.('input,textarea,select'))) { const w = current().find(w => w.id === detailId); if (w) modal.querySelector('.detail-content').innerHTML = widgetHTML(w, true); } });
 homeEditor = attachHomeEditor({ root: $app, isEditing: () => editing, isHome: () => usesGrid(profile), maxHeight: () => maxHeight(profile), getWidgets: current, getHeaderItems: () => homeDisplay.header, persist, render, toast });

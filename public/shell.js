@@ -1,10 +1,11 @@
 import { cockpitSymbol, cockpitWordmark } from './brand.js';
 import { esc, icon, num, read } from './core.js';
+import { defaultDock, dockIcon, visibleDock } from './dock.js';
 import { homeHeader, fullscreenSupported } from './home-display.js';
 import { nativeTitle } from './native-renderers.js';
 import { usesGrid, visibleTabs } from './preferences.js';
 
-export function shell({ serverMode = false, profile, page, pages, profiles, sources, unreadCount, editing, room, rooms, list, widgetHTML, pageHTML = '' }) {
+export function shell({ serverMode = false, profile, page, pages, profiles, dock = defaultDock(Object.keys(pages), serverMode), sources, unreadCount, editing, room, rooms, list, widgetHTML, pageHTML = '' }) {
   const now = new Date(), home = usesGrid(profile);
   const date = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const clock = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
@@ -12,10 +13,19 @@ export function shell({ serverMode = false, profile, page, pages, profiles, sour
   const surfaces = `<div class="surface-switch" aria-label="Disposition par écran">${Object.entries(profiles).map(([id, p]) => `<button class="${profile === id ? 'active' : ''}" data-action="profile" data-id="${id}" aria-label="Disposition ${p[0]}" title="${p[0]}" aria-pressed="${profile === id}">${icon(p[1])}</button>`).join('')}</div>`;
   const tools = `${home && !editing && (profile !== 'phone' || fullscreenSupported()) ? `<button class="card hov round-btn" data-action="fullscreen" aria-label="Plein écran" title="Plein écran">${icon('expand')}</button>` : ''}<button class="${home ? 'card hov round-btn' : 'icon-btn'} ${editing ? 'active' : ''}" data-action="edit" aria-label="${editing ? 'Terminer' : 'Personnaliser'}" title="${editing ? 'Terminer' : 'Personnaliser'}">${icon(editing ? 'check' : 'edit')}</button>${!home || editing ? `<button class="${home ? 'card hov round-btn' : 'icon-btn'}" data-action="library" aria-label="Ajouter un module" title="Ajouter un module">${icon('grid')}</button>` : ''}`;
   const label = { overview: 'Mon bureau', home: 'Pièces', news: 'Veille', agents: 'Agents', projects: 'Projets', system: 'Système' };
+  const pageIcon = id => id === 'overview' ? 'home' : id === 'home' ? 'grid' : pages[id]?.[2];
   const roomTabs=page === 'home' ? `<div class="room-tabs" role="tablist" aria-label="Pièces de la maison">${rooms.map(r=>`<button role="tab" class="pill ${room?.id === r.id ? 'is-on' : ''}" aria-selected="${room?.id === r.id}" data-action="room" data-id="${esc(r.id)}">${esc(r.name)}</button>`).join('')}</div>` : '';
   const cards = page === 'home' && !room ? `<div class="dashboard-empty"><h2>Aucune pièce disponible</h2><p>Connectez Home Assistant pour retrouver vos pièces et leurs appareils.</p><button class="button primary" data-action="settings">Connexions</button></div>` : list.map(widgetHTML).join('') || `<div class="dashboard-empty"><h2>Aucun module</h2><button class="button primary" data-action="library">${icon('plus')} Ajouter un module</button></div>`;
-  const globeLink = serverMode ? '<a class="rail-btn" href="/godseye.html" aria-label="God’s Eye View" title="God’s Eye View" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none">🌐</a><a class="rail-btn" href="/worldmonitor.html" aria-label="World Monitor" title="World Monitor" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none">🛰️</a><a class="rail-btn" href="https://radio.garden/" target="_blank" rel="noopener noreferrer" aria-label="Radio Garden — nouvel onglet" title="Radio Garden — nouvel onglet" style="display:inline-flex;align-items:center;justify-content:center;text-decoration:none">📻</a>' : '';
-  const rail = () => `<nav class="rail" aria-label="Navigation principale"><span class="cockpit-rail-brand" role="img" aria-label="Cockpit" title="Cockpit">${cockpitSymbol}</span>${Object.entries(pages).filter(([id]) => visibleTabs(profile).includes(id)).map(([id, p]) => `<button class="rail-btn ${page === id ? 'is-on' : ''}" data-action="page" data-id="${id}" aria-label="${esc(label[id])}" title="${esc(label[id])}" ${page === id ? 'aria-current="page"' : ''}>${icon(id === 'overview' ? 'home' : id === 'home' ? 'grid' : p[2])}</button>`).join('')}${globeLink}<span class="rail-spacer"></span><span class="native-rail-mode">${mode}</span><button class="rail-btn" data-action="settings" aria-label="Paramètres" title="Paramètres">${icon('settings')}</button></nav>`;
+  const dockLabel = item => item.label || (item.kind === 'page' ? label[item.id] : '');
+  const dockLink = (item, cls) => `<a class="${cls}" href="${esc(item.href)}"${item.newTab ? ' target="_blank" rel="noopener noreferrer"' : ''} aria-label="${esc(item.label + (item.newTab ? ' — nouvel onglet' : ''))}" title="${esc(item.label + (item.newTab ? ' — nouvel onglet' : ''))}">${dockIcon(item.icon)}</a>`;
+  const shown = visibleDock(dock, visibleTabs(profile));
+  const globeLink = shown.filter(item => item.kind === 'link').map(item => dockLink(item, 'rail-btn dock-link')).join('');
+  // En mode édition, chaque entrée du dock ouvre son réglage au lieu de naviguer.
+  const dockEntry = item => item.kind === 'sep' ? `<span class="rail-sep" role="separator"></span>`
+    : editing ? `<button class="rail-btn ${item.kind === 'page' && page === item.id ? 'is-on' : ''}" data-action="dock-edit" data-id="${esc(item.id)}" aria-label="Modifier ${esc(dockLabel(item))}" title="Modifier ${esc(dockLabel(item))}">${dockIcon(item.icon || pageIcon(item.id))}</button>`
+    : item.kind === 'link' ? dockLink(item, 'rail-btn dock-link')
+    : `<button class="rail-btn ${page === item.id ? 'is-on' : ''}" data-action="page" data-id="${item.id}" aria-label="${esc(dockLabel(item))}" title="${esc(dockLabel(item))}" ${page === item.id ? 'aria-current="page"' : ''}>${dockIcon(item.icon || pageIcon(item.id))}</button>`;
+  const rail = () => `<nav class="rail${editing ? ' is-editing' : ''}" aria-label="Navigation principale"><span class="cockpit-rail-brand" role="img" aria-label="Cockpit" title="Cockpit">${cockpitSymbol}</span>${shown.map(dockEntry).join('')}${editing ? `<button class="rail-btn dock-edit-btn" data-action="dock-edit" aria-label="Modifier le dock" title="Modifier le dock">${icon('edit')}</button>` : ''}<span class="rail-spacer"></span><span class="native-rail-mode">${mode}</span><button class="rail-btn" data-action="settings" aria-label="Paramètres" title="Paramètres">${icon('settings')}</button></nav>`;
   if (page === 'projects' && home) return `${rail()}<main class="panel native-home-panel projects-panel">${pageHTML}</main>`;
   if (home) {
     const temperatures = sources.states('sensor').filter(s => s.attributes.device_class === 'temperature' && Number.isFinite(Number(s.state)));

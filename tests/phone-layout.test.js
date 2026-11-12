@@ -17,7 +17,7 @@ test('the settings offer a Téléphone layout next to Bureau, Tablette and Compa
 
 test('on the phone every module is one column wide and only its height can be stretched', () => {
   const app = read('app.js');
-  assert.match(app, /widget: profile === 'phone' \? \{ \.\.\.widget, width: 1, size: 'normal' \} : widget/);
+  assert.match(app, /widget: profile === 'phone' \? \{ \.\.\.widget, width: 1, size: 'normal' \} : coarse\(widget\)/);
   assert.match(app, /const width = profile === 'phone' \? 1 : spanWidth\(widget\);/);
   assert.match(app, /profile === 'phone' \? \[\['s','Hauteur'\]\]/);
   assert.match(app, /profile === 'phone' && layouts\.tablet\?\.\[page\]\) layouts\[profile\]\[page\] = phoneWidgets\(layouts\.tablet\[page\]\)/);
@@ -72,10 +72,10 @@ test('the phone header is a fixed grid, so an empty centre zone can no longer pu
   assert.doesNotMatch(read('phone.css'), /hz-right\{flex:1 0 100%/, 'l’ancienne règle (passage à la ligne annulé par la marge négative) a disparu');
 });
 
-test('phone modules go up to eight rows high; the other layouts keep four', () => {
+test('phone modules go up to eight rows high, like the fine tablet grid; the other layouts keep four', () => {
   const c = { read: () => null, write: () => true, location: { pathname: '/' }, globalThis: {} };
   vm.createContext(c); vm.runInContext(source('preferences.js') + '\nthis.maxHeight = maxHeight;', c);
-  assert.equal(c.maxHeight('phone'), 8); assert.equal(c.maxHeight('tablet'), 4); assert.equal(c.maxHeight('desktop'), 4);
+  assert.equal(c.maxHeight('phone'), 8); assert.equal(c.maxHeight('tablet'), 8); assert.equal(c.maxHeight('desktop'), 4);
   const app = read('app.js');
   assert.match(app, /Number\(w\.height\) <= maxHeight\(p\) \? Number\(w\.height\) : 2/, 'une hauteur de 8 enregistrée sur le téléphone survit au rechargement');
   assert.match(app, /maxHeight: \(\) => maxHeight\(profile\)/, 'l’étirement suit la limite de la disposition');
@@ -86,7 +86,7 @@ test('phone modules go up to eight rows high; the other layouts keep four', () =
   const phone = m.moduleSettingsHTML({ height: 6 }, {}, [], true, '', null, [], { phone: true }), tablet = m.moduleSettingsHTML({ height: 2 }, {}, [], true, '');
   assert.equal((phone.match(/data-setting="height"/g) || []).length, 8); assert.match(phone, /data-value="6" class="is-on"/);
   assert.doesNotMatch(phone, /data-setting="width"/, 'une seule colonne : pas de largeur à choisir');
-  assert.equal((tablet.match(/data-setting="height"/g) || []).length, 4); assert.match(tablet, /data-setting="width"/);
+  assert.equal((tablet.match(/data-setting="height"/g) || []).length, 8); assert.equal((tablet.match(/data-setting="width"/g) || []).length, 8, 'huit colonnes fines');
 });
 
 test('on the phone the Kanban is a swipeable carousel of full columns and the project filters scroll on one line', () => {

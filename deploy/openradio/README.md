@@ -16,7 +16,7 @@ node scripts/applicationctl.cjs status openradio
 
 Deployer récupère la recette publiée sur GitHub, construit l'image et vérifie le service. Son retour arrière relance la recette au commit précédent en conservant les volumes. La source ne doit être mise à jour qu'en changeant explicitement le commit épinglé après essais.
 
-Cockpit sert le nom dédié via `COCKPIT_OPENRADIO_HOST=openradio.ggz.ovh` et `COCKPIT_OPENRADIO_UPSTREAM=http://192.168.1.236:3100` ; ce nom figure dans `COCKPIT_ALLOWED_HOSTS`. La page `/openradio.html` du dock ouvre l'installation. Les identifiants Cockpit ne sont jamais transmis à OpenRadio.
+Cockpit sert le nom dédié via `COCKPIT_OPENRADIO_HOST=openradio.ggz.ovh` et `COCKPIT_OPENRADIO_UPSTREAM=http://192.168.1.236:3100` ; ce nom figure dans `COCKPIT_ALLOWED_HOSTS`. La page `/openradio.html` du dock affiche OpenRadio dans Cockpit (bandeau + cadre, comme God's Eye) ; l'application reste sur son origine dédiée pour que ses scripts inline n'aient jamais accès à Cockpit. Le cadre charge `/openradio-frame`, qui redirige vers `https://openradio.ggz.ovh/__cockpit/handoff?t=…` : jeton à usage unique, 60 s, lié à cet hôte, qui y ouvre la session Cockpit (la page de connexion ne peut pas s'afficher dans un cadre). Les identifiants Cockpit ne sont jamais transmis à OpenRadio.
 
 La santé HTTP ne suffit pas : vérifier aussi recherche, liste de stations et tentative de lecture. Certaines stations peuvent être indisponibles ou utiliser des flux HTTP bloqués depuis une page HTTPS ; ne pas confondre cela avec une panne du lecteur.
 

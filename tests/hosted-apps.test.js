@@ -42,7 +42,19 @@ test('OpenRadio is proxied on its own authenticated host and /openradio.html ope
  delete process.env.COCKPIT_OPENRADIO_HOST;
  assert.equal((await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'})).headers.location,'https://openradio.space/');
  process.env.COCKPIT_OPENRADIO_HOST='openradio.ggz.ovh';process.env.COCKPIT_OPENRADIO_UPSTREAM='http://127.0.0.1:'+backend.address().port;
- assert.equal((await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'})).headers.location,'https://openradio.ggz.ovh/');
+ const page=await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'});
+ assert.equal(page.status,200);assert.match(page.body,/<iframe[^>]+src="\/openradio-frame"/);
+ // Le cadre ouvre la session sur l’hôte OpenRadio par un jeton à usage unique, lié à cet hôte.
+ assert.equal((await send('/openradio-frame',{host:'cockpit.ggz.ovh'})).status,401);
+ const frame=new URL((await send('/openradio-frame',{...auth,host:'cockpit.ggz.ovh'})).headers.location);
+ assert.equal(frame.origin+frame.pathname,'https://openradio.ggz.ovh/__cockpit/handoff');
+ assert.equal((await send(frame.pathname+frame.search,{host:'worldmonitor.ggz.ovh'})).status,401);
+ const handoff=await send(frame.pathname+frame.search,{host:'openradio.ggz.ovh','x-forwarded-proto':'https'});
+ assert.equal(handoff.status,303);assert.equal(handoff.headers.location,'/');
+ const cookie=handoff.headers['set-cookie'][0].split(';')[0];assert.match(cookie,/^cockpit_session=/);
+ assert.equal((await send('/api/stations',{host:'openradio.ggz.ovh',cookie})).status,200);
+ assert.equal((await send(frame.pathname+frame.search,{host:'openradio.ggz.ovh'})).status,403);
+ assert.equal((await send('/__cockpit/handoff?t=forged',{host:'openradio.ggz.ovh'})).status,403);
  assert.equal((await send('/',{host:'openradio.ggz.ovh'})).status,401);
  const loginIcon=await send('/brand/icon-192.png',{host:'openradio.ggz.ovh'});
  assert.equal(loginIcon.status,200);assert.match(loginIcon.headers['content-type'],/image\/png/);

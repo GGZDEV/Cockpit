@@ -42,7 +42,8 @@ Rollback: remove the Cockpit service drop-in and restart Cockpit; stop/disable
   The initial limited official embed was rejected by the user and replaced.
   See `deploy/worldmonitor/README.md` for the full deployment.
 - Radio opens OpenRadio via `/openradio.html` (CO-40, replaces Radio Garden):
-  self-hosted origin when `COCKPIT_OPENRADIO_HOST` is set, otherwise the public
+  embedded in a Cockpit page framing the self-hosted origin when
+  `COCKPIT_OPENRADIO_HOST` is set, otherwise a redirect to the public
   `https://openradio.space/`. See `deploy/openradio/README.md`. Saved docks still
   pointing to `https://radio.garden/` are migrated.
 - Shell navigation exposes these alongside God's Eye. They run only on navigation;

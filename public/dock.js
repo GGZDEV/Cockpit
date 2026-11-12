@@ -102,8 +102,10 @@ export function dockIcon(ref) {
 export const builtinLinks = {
   godseye: { label: 'God’s Eye View', href: '/godseye.html', icon: 'e:🌐', newTab: false },
   worldmonitor: { label: 'World Monitor', href: '/worldmonitor.html', icon: 'e:🛰️', newTab: false },
-  radio: { label: 'Radio Garden', href: 'https://radio.garden/', icon: 'e:📻', newTab: true },
+  radio: { label: 'OpenRadio', href: 'https://openradio.space/', icon: 'e:📻', newTab: true },
 };
+// Anciennes adresses d’un lien d’origine, remplacées dans les docks déjà enregistrés.
+const legacyLinks = { radio: 'https://radio.garden/' };
 export const validHref = href => typeof href === 'string' && href.length <= 500 && !/[\s<>"']/.test(href) && (/^https?:\/\/[^/]/i.test(href) || /^\/(?!\/)/.test(href));
 // L’entrée Paramètres fait partie du dock : déplaçable et d’icône réglable, mais jamais retirée.
 const settingsEntries = () => [{ kind: 'sep', id: 'sep-settings' }, { kind: 'settings', id: 'settings' }];
@@ -111,8 +113,9 @@ export const defaultDock = (pageIds, serverMode = false) => [...pageIds.map(id =
 export function sanitizeDock(value, pageIds, serverMode = false) {
   if (!Array.isArray(value)) return defaultDock(pageIds, serverMode);
   const out = [], seen = new Set(), text = v => typeof v === 'string' ? v.trim().slice(0, 60) : '';
-  for (const item of value.slice(0, 80)) {
+  for (let item of value.slice(0, 80)) {
     if (!item || typeof item !== 'object' || typeof item.id !== 'string' || !/^[\w-]{1,60}$/.test(item.id) || seen.has(item.id)) continue;
+    if (item.kind === 'link' && legacyLinks[item.id] === item.href) item = { ...item, ...builtinLinks[item.id] };
     const ico = validIcon(item.icon) ? { icon: item.icon } : {}, label = text(item.label);
     if (item.kind === 'settings' && item.id === 'settings') out.push({ kind: 'settings', id: 'settings', ...ico, ...(label ? { label } : {}) });
     else if (item.id === 'settings') continue;

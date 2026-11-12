@@ -41,8 +41,9 @@ Rollback: remove the Cockpit service drop-in and restart Cockpit; stop/disable
   `https://worldmonitor.ggz.ovh`, protected by Cockpit authentication.
   The initial limited official embed was rejected by the user and replaced.
   See `deploy/worldmonitor/README.md` for the full deployment.
-- Radio Garden opens `https://radio.garden/` in a new tab. Do not proxy or strip
-  its frame protection / Cloudflare challenge to force an embed.
+- Radio opens OpenRadio (`https://openradio.space/`, source
+  https://github.com/raj-khan/openradio) in a new tab; it replaced Radio Garden
+  (CO-40), and saved docks still pointing to `https://radio.garden/` are migrated.
 - Shell navigation exposes these alongside God's Eye. They run only on navigation;
   the main dashboard does not pre-load the map or start radio playback.
 - CT104 rootfs expanded online from 20 GiB to 40 GiB; config backup on Proxmox:

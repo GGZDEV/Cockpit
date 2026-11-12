@@ -6,6 +6,7 @@
 const path = require('node:path'), os = require('node:os'), fs = require('node:fs');
 const { execFile } = require('node:child_process');
 const h = require('./direct-harness.cjs');
+const applications = require('./applications-runtime.cjs');
 
 // Interdits quelles que soient les autorisations du projet : rien ne sort de la machine sans validation.
 const DENY_BASH = ['git push', 'git remote', 'gh', 'npm publish', 'npm run deploy', 'npm run publish', 'curl', 'wget', 'ssh', 'scp', 'rsync'];
@@ -49,13 +50,14 @@ function buildArgs({ mode = 'work', sessionId, fresh, settings, model, addDirs =
   if (has('--settings')) args.push('--settings', LEAN_SETTINGS);
   args.push('--tools', tools.join(','), '--permission-mode', mode === 'plan' ? 'plan' : 'acceptEdits');
   if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule), ...(s.allowedBash.includes('*') ? [] : [rule('node ' + VISUAL_CHECK)]), 'WebFetch', 'WebSearch');
-  args.push('--disallowedTools', ...DENY_BASH.map(rule));
+  const denied = applications.enabled() ? ['git push', 'npm publish'] : DENY_BASH;
+  args.push('--disallowedTools', ...denied.map(rule));
   // Dossier temporaire du système : scripts jetables (décoder une pièce jointe, essais) sans salir le worktree.
   const dirs = mode === 'plan' ? addDirs : [...addDirs, os.tmpdir()];
   if (dirs.length) args.push('--add-dir', ...dirs);
   if (has('--max-budget-usd')) args.push('--max-budget-usd', String(budgetUsd ?? s.maxBudgetUsd));
   if (has('--exclude-dynamic-system-prompt-sections')) args.push('--exclude-dynamic-system-prompt-sections');
-  args.push('--append-system-prompt', CAVEMAN, '--model', h.directSettings({ model: model || s.model }).model);
+  args.push('--append-system-prompt', [CAVEMAN, applications.instructions()].filter(Boolean).join('\n\n'), '--model', h.directSettings({ model: model || s.model }).model);
   if (s.effort && has('--effort')) args.push('--effort', s.effort);
   args.push(fresh ? '--session-id' : '--resume', sessionId);
   return args;

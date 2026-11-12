@@ -24,3 +24,30 @@ test('World Monitor full app uses isolated authenticated origin and strips Cockp
  assert.equal((await send(base+'/api/bootstrap',{method:'POST',headers:{...headers,origin:'https://evil.example'},body:'{}'})).status,403);
  const isolated=await send(base+'/api/status',{headers:{...headers,host:'cockpit.ggz.ovh'}});assert.equal((await isolated.json()).app,'metaboard');
 });
+
+// CO-40 : OpenRadio auto-hébergé sur son propre hôte, même isolation que World Monitor.
+test('OpenRadio is proxied on its own authenticated host and /openradio.html opens it',async t=>{
+ const backend=http.createServer((req,res)=>{res.setHeader('Content-Type','application/json');res.setHeader('X-Frame-Options','DENY');if(req.url!='/')res.setHeader('Content-Security-Policy',"default-src 'self'; frame-ancestors 'none'");res.end(JSON.stringify({url:req.url,auth:req.headers.authorization,host:req.headers.host}));});
+ await new Promise(r=>backend.listen(0,'127.0.0.1',r));
+ const keys=['COCKPIT_OPENRADIO_HOST','COCKPIT_OPENRADIO_UPSTREAM'],original=keys.map(k=>process.env[k]);
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'cockpit-or-'));
+ const server=createServer({serverMode:true,allowedHosts:['openradio.ggz.ovh','cockpit.ggz.ovh'],webPassword:'test',stateDir:dir});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ t.after(()=>{server.closeAllConnections();server.close();backend.closeAllConnections();backend.close();fs.rmSync(dir,{recursive:true,force:true});keys.forEach((k,i)=>{if(original[i]===undefined)delete process.env[k];else process.env[k]=original[i];});});
+ const base='http://127.0.0.1:'+server.address().port;
+ const send=(p,headers)=>new Promise((resolve,reject)=>{const q=http.request(base+p,{headers},r=>{let body='';r.on('data',c=>body+=c);r.on('end',()=>resolve({status:r.statusCode,headers:r.headers,body}));});q.on('error',reject);q.end();});
+ const auth={authorization:'Basic '+Buffer.from('cockpit:test').toString('base64'),'x-forwarded-proto':'https'};
+ delete process.env.COCKPIT_OPENRADIO_HOST;
+ assert.equal((await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'})).headers.location,'https://openradio.space/');
+ process.env.COCKPIT_OPENRADIO_HOST='openradio.ggz.ovh';process.env.COCKPIT_OPENRADIO_UPSTREAM='http://127.0.0.1:'+backend.address().port;
+ assert.equal((await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'})).headers.location,'https://openradio.ggz.ovh/');
+ assert.equal((await send('/',{host:'openradio.ggz.ovh'})).status,401);
+ const r=await send('/api/stations?country=FR',{...auth,host:'openradio.ggz.ovh'});
+ assert.equal(r.status,200);const data=JSON.parse(r.body);
+ assert.equal(data.url,'/api/stations?country=FR');assert.equal(data.auth,undefined);assert.equal(data.host,'openradio.ggz.ovh');
+ assert.equal(r.headers['x-frame-options'],undefined);assert.match(r.headers['content-security-policy'],/frame-ancestors 'self' https:\/\/cockpit.ggz.ovh/);
+ assert.match((await send('/',{...auth,host:'openradio.ggz.ovh'})).headers['content-security-policy'],/script-src 'self' 'unsafe-inline'/);
+ backend.close();backend.closeAllConnections();
+ const down=await send('/',{...auth,host:'openradio.ggz.ovh'});
+ assert.equal(down.status,502);assert.match(JSON.parse(down.body).error,/OpenRadio/);
+});

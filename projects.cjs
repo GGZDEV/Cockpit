@@ -259,7 +259,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const run = task.runs.at(-1);
     if (run?.status === 'succeeded' && run.outcome === 'result' && !run.accepted) run.accepted = now();
     Object.assign(task, { status: task.status === 'deployed' && !published ? 'deployed' : 'done', acceptedAt: now(), question: '', updatedAt: now() });
-    if (published) { task.published = published; delete task.deployError; delete task.deployCheck; }
+    if (published) { task.published = published; if (published.recipeError) task.deployError = published.recipeError; else delete task.deployError; delete task.deployCheck; }
     save(); return task;
   }
   // File d'attente par copie locale : plusieurs tâches closes coup sur coup sont publiées l'une après l'autre,
@@ -314,8 +314,26 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     try { await push().catch(async error => { if (!/rejected|non-fast-forward|fetch first/i.test(String(error.message || '') + String(error.stderr || ''))) throw error; await syncOrigin(); await push(); }); }
     catch (error) { if (error instanceof HttpError) throw error; throw new HttpError(502, `La tâche est fusionnée dans ${prod} en local, mais l’envoi sur GitHub a échoué (${text(String(error.message || ''), 200)}). La tâche reste ouverte : recommencez une fois l’accès rétabli.`); }
     const commit = await git('rev-parse', 'HEAD');
+    let recipeError = '';
+    // A task can deliver its first Compose recipe. Adopt only the accepted main
+    // copy, after the push: never let a worktree reconfigure a live deployment.
+    if (process.env.COCKPIT_APPLICATIONS === '1') {
+      const manifest = path.join(dir, 'deploy', 'application.json');
+      if (fs.existsSync(manifest) && !deploy.settingsOf(project).type) {
+        try {
+          if (fs.statSync(manifest).size > 65536) throw new Error('recette trop volumineuse');
+          const body = JSON.parse(fs.readFileSync(manifest, 'utf8'));
+          if (!body.compose || !/^http:\/\/(127\.0\.0\.1|192\.168\.1\.236):\d{2,5}\//.test(body.healthUrl || '')) throw new Error('compose et healthUrl local obligatoires');
+          const d = deploy.settingsOf(project), key = await claimSlug(project);
+          const payload = require('./scripts/applicationctl.cjs').recipe(key, body, { repo: githubRepo(project.context.repository).owner + '/' + githubRepo(project.context.repository).name, branch: d.branch, auto: d.auto, public_url: d.url });
+          project.deployment = deploy.cleanSettings({ type: 'custom', config: payload.deploy, health: payload.health }, project.deployment);
+          const registered = await queueRegistration(project);
+          if (registered?.status !== 'ok') throw new Error(registered?.error || 'enregistrement impossible');
+        } catch (error) { recipeError = 'Recette Applications : ' + text(error.message, 300); log(recipeError); }
+      }
+    }
     log(`Tâche ${task.code} publiée sur GitHub (${prod} · ${commit.slice(0, 7)})`);
-    return { at: now(), branch: prod, commit, ...(leftOut.length ? { leftOut } : {}) };
+    return { at: now(), branch: prod, commit, ...(leftOut.length ? { leftOut } : {}), ...(recipeError ? { recipeError } : {}) };
   }
 
   // ----- Lancement explicite ----------------------------------------------------------------

@@ -1,0 +1,12 @@
+{
+  "repository": "GGZDEV/Cockpit",
+  "url": "https://openradio.ggz.ovh",
+  "recipe": "deploy/openradio/application.json",
+  "compose": "deploy/openradio/docker-compose.yml",
+  "dockerfile": "deploy/openradio/Dockerfile",
+  "source": { "repository": "https://github.com/raj-khan/openradio", "commit": "ed1f398fdc5b0eeba7c591d25856f6f2c9af6695" },
+  "healthUrl": "http://192.168.1.236:3100/",
+  "expect": "OpenRadio",
+  "domain": "openradio.ggz.ovh",
+  "upstream": "http://192.168.1.236:3888"
+}

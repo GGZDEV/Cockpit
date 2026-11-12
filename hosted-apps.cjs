@@ -1,5 +1,6 @@
 'use strict';
 const http = require('node:http');
+const crypto = require('node:crypto');
 
 // Self-hosted full apps, each on its own hostname (see deploy/<app>/README.md).
 const APPS = [
@@ -11,6 +12,24 @@ function matches(req) {
   const hostname = new URL('http://' + req.headers.host).hostname;
   const app = APPS.find(a => process.env[a.host] && process.env[a.host] === hostname);
   return app ? { name: app.name, upstream: process.env[app.upstream] } : null;
+}
+
+// Framed apps cannot show Cockpit's login page (frame-ancestors 'none') and the
+// session cookie is host-only. An authenticated Cockpit page therefore hands the
+// frame a one-time, 60-second token bound to the app's exact hostname.
+const HANDOFF_PATH = '/__cockpit/handoff', handoffs = new Map();
+function issueHandoff(host) {
+  const now = Date.now();
+  for (const [token, h] of handoffs) if (h.expires < now) handoffs.delete(token);
+  if (handoffs.size > 200) handoffs.clear();
+  const token = crypto.randomBytes(24).toString('base64url');
+  handoffs.set(token, { host, expires: now + 60000 });
+  return `https://${host}${HANDOFF_PATH}?t=${token}`;
+}
+function redeemHandoff(token, host) {
+  const h = typeof token === 'string' && handoffs.get(token);
+  if (h) handoffs.delete(token);
+  return !!h && h.host === host && h.expires >= Date.now();
 }
 
 // Called only after Cockpit authentication and Host/Origin admission.
@@ -65,4 +84,4 @@ function proxy(req, res, url, { name, upstream }) {
   });
   res.on('close', () => request.destroy()); req.pipe(request);
 }
-module.exports = { matches, proxy };
+module.exports = { matches, proxy, HANDOFF_PATH, issueHandoff, redeemHandoff };

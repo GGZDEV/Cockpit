@@ -139,6 +139,11 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
       const url = new URL(req.url, 'http://localhost');
       const secure = serverMode && req.headers['x-forwarded-proto'] === 'https';
       // iOS fetches the manifest and home screen icons without credentials.
+      // Cadre d’une application hébergée : session ouverte par un jeton à usage unique émis par Cockpit.
+      if (session && url.pathname === require('./hosted-apps.cjs').HANDOFF_PATH && require('./hosted-apps.cjs').matches(req) && trusted(req, true, { serverMode, allowedHosts })) {
+        if (req.method === 'GET' && require('./hosted-apps.cjs').redeemHandoff(url.searchParams.get('t'), new URL('http://' + req.headers.host).hostname)) return redirect(res, '/', session.issue(secure));
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' }); return res.end('Lien expiré : recharger la page dans Cockpit.');
+      }
       if (session && !PWA_PUBLIC.has(url.pathname)) {
         if (url.pathname === '/login' || url.pathname === '/logout') return await account(req, res, url, session, secure, { serverMode, allowedHosts });
         if (!authorize(req, res, session, secure)) return;
@@ -147,8 +152,10 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
       if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
       const hostedApp = serverMode && require('./hosted-apps.cjs').matches(req);
       if (hostedApp && !url.pathname.startsWith('/brand/') && url.pathname !== '/hosted-auth.js') return require('./hosted-apps.cjs').proxy(req, res, url, hostedApp);
-      // OpenRadio s’ouvre sur son hôte auto-hébergé ; le site public tant qu’il n’est pas configuré.
-      if (url.pathname === '/openradio.html') { res.writeHead(302, { Location: process.env.COCKPIT_OPENRADIO_HOST ? 'https://' + process.env.COCKPIT_OPENRADIO_HOST + '/' : 'https://openradio.space/', 'Cache-Control': 'no-store' }); return res.end(); }
+      // OpenRadio s’affiche dans Cockpit (cadre vers son hôte auto-hébergé) ; le site public tant qu’il n’est pas configuré.
+      const radioHost = serverMode && process.env.COCKPIT_OPENRADIO_HOST;
+      if (url.pathname === '/openradio.html' && !radioHost) { res.writeHead(302, { Location: 'https://openradio.space/', 'Cache-Control': 'no-store' }); return res.end(); }
+      if (url.pathname === '/openradio-frame') { res.writeHead(302, { Location: radioHost ? require('./hosted-apps.cjs').issueHandoff(radioHost) : 'https://openradio.space/', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); return res.end(); }
       if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }
       if (url.pathname === '/api/status') return json(res, 200, { app: 'metaboard', serverMode, rss: true, feedme: serverMode ? false : !!await discoverFeedMe(), haSuggestedUrl: serverMode ? '' : 'http://192.168.1.251:8123' });
       if (url.pathname === '/api/ha-session') return await haSession(req, res, haSessionFile, legacyHaSessionFile);

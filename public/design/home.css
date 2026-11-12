@@ -866,28 +866,71 @@ span.h2 { font-size: 15px; font-weight: 600; }
 .cam-full { display: block; width: 100%; max-height: 72vh; object-fit: contain; border-radius: 14px; background: #000; }
 /* ----- Pièces ----- */
 .hero-rooms { flex: 1; }
-.rt { min-width: 0; min-height: 0; display: flex; flex-direction: column; justify-content: space-between; gap: 6px; padding: 14px 14px 14px 16px; border-radius: 16px;
-  background: rgba(255, 255, 255, 0.05); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
-.rt.is-on { background: rgba(255, 255, 255, 0.11); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
-.rt-top { display: flex; align-items: flex-start; gap: 10px; min-width: 0; }
-.rt-open { flex: 1; min-width: 0; border: none; background: none; padding: 0; color: inherit; font: inherit; text-align: left; display: flex; flex-direction: column; gap: 3px; }
-.rt-name { font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.rt-bottom { display: flex; align-items: baseline; gap: 8px; }
-.rt-temp { font-size: var(--rt-temp, 24px); line-height: 1; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+/* One markup for every width: the module is a size container, so the layout follows its own width, not the window's.
+   < 260px: one room per line — name, temperature, bulb. 260–519px: two columns of tiles. 520–899px: three columns of tiles.
+   ≥ 900px: three columns of wide tiles back on one line. */
+.rooms-mod { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; container-type: inline-size; }
+.rm-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title pill" "avg avg"; align-items: center; gap: 4px 8px; padding: 0 4px; }
+.rm-head h2 { grid-area: title; font-size: 18px; font-weight: 700; letter-spacing: -0.01em; }
+.rm-avg { grid-area: avg; min-width: 0; font-size: 12px; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+.rm-pill { grid-area: pill; display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(255, 255, 255, 0.06); font-size: 12px; font-weight: 500; color: rgba(246, 241, 236, 0.85); white-space: nowrap; }
+.rm-pill i { width: 6px; height: 6px; border-radius: 50%; background: rgba(246, 241, 236, 0.3); }
+.rm-pill.is-on i { background: var(--accent); }
+.rm-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-auto-rows: minmax(64px, 1fr); gap: 8px; overflow-y: auto; scrollbar-width: none; }
+.rm-grid::-webkit-scrollbar { display: none; }
+.rt { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "open vals bulb"; align-items: center; gap: 8px; padding: 10px 10px 10px 12px; border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08); }
+.rt.is-on { background: linear-gradient(150deg, color-mix(in srgb, var(--accent) 24%, transparent), rgba(255, 255, 255, 0.04)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 22%, transparent); }
+.rt-open { grid-area: open; min-width: 0; border: none; background: none; padding: 0; color: inherit; font: inherit; text-align: left; display: flex; flex-direction: column; gap: 3px; }
+.rt-name { font-size: 14px; line-height: 1.25; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt-sub { font-size: 12px; color: rgba(246, 241, 236, 0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rt.is-on .rt-sub { color: color-mix(in srgb, var(--accent) 70%, #fff); }
+.rt-vals { grid-area: vals; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.rt-temp { font-size: 18px; line-height: 1; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .rt-temp.is-hot, .is-hot { color: var(--warm); }
 .rt-temp.is-none { color: rgba(246, 241, 236, 0.55); }
+.rt-hum { display: inline-flex; align-items: center; gap: 3px; font-size: 12px; color: var(--fg-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rt-hum .icon { width: 10px; height: 10px; stroke-width: 2.2; }
+.rt .bulb { grid-area: bulb; }
+.rt .bulb .icon { width: 18px; height: 18px; }
+@container (min-width: 260px) {
+  .rm-head h2 { font-size: 20px; }
+  .rm-avg { font-size: 13px; }
+  .rm-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(120px, 1fr); gap: 10px; }
+  .rt { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "open open" "vals bulb"; align-items: end; gap: 10px 6px; padding: 14px 12px 12px 14px; border-radius: 18px; }
+  .rt-open { align-self: start; }
+  .rt-vals { align-items: flex-start; }
+  .rt-name { font-size: 15px; }
+  .rt-temp { font-size: 24px; }
+  .rt-hum .icon { width: 11px; height: 11px; }
+}
+@container (min-width: 520px) {
+  .rm-head { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "title avg pill"; gap: 10px; }
+  .rm-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-rows: minmax(128px, 1fr); gap: 12px; }
+  .rt { gap: 12px 8px; padding: 16px 14px 14px 16px; }
+  .rt-name { font-size: 16px; }
+  .rt-sub, .rt-hum { font-size: 13px; }
+  .rt-vals { gap: 5px; }
+  .rt-temp { font-size: 28px; }
+  .rt-hum { gap: 4px; }
+  .rt-hum .icon { width: 12px; height: 12px; }
+  .rt .bulb { width: 48px; height: 48px; }
+  .rt .bulb .icon { width: 20px; height: 20px; }
+}
+@container (min-width: 900px) {
+  .rm-head { gap: 12px; }
+  .rm-grid { grid-auto-rows: minmax(96px, 1fr); gap: 14px; }
+  .rt { grid-template-columns: minmax(0, 1fr) auto auto; grid-template-areas: "open vals bulb"; align-items: center; gap: 16px; padding: 18px 18px 18px 20px; }
+  .rt-open { align-self: center; gap: 4px; }
+  .rt-vals { align-items: flex-end; }
+  .rt-temp { font-size: 30px; }
+  .rt .bulb { width: 52px; height: 52px; }
+}
 .rt-hot { font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--warm); }
-.rooms-grid { flex: 1; min-height: 0; display: grid; grid-auto-rows: minmax(84px, 1fr); gap: 12px; overflow-y: auto; scrollbar-width: none; }
-.rooms-grid::-webkit-scrollbar, .rooms-list::-webkit-scrollbar { display: none; }
 .rooms-sum { flex: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .rooms-sum > span { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 12px 14px; border-radius: 14px; background: var(--well); }
 .rooms-sum b { font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .rooms-sum.is-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-radius: 14px; background: var(--well); }
-.rooms-list { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; scrollbar-width: none; }
-.rt.is-row { flex: 1 0 auto; min-height: 52px; max-height: 96px; flex-direction: row; align-items: center; justify-content: flex-start; gap: 10px; padding: 4px 4px 4px 14px; border-radius: 14px; }
-.rt.is-row .rt-open { gap: 2px; }
-.rt.is-row .rt-name { font-size: 14px; }
-.rt.is-row .rt-temp { font-size: 13px; }
 .rooms-strip { flex: 1; min-height: 0; display: flex; gap: 10px; }
 .rooms-strip .rt { flex: 1; padding: 12px 12px 12px 14px; }
 .rooms-strip .rt-top { gap: 8px; }
@@ -899,20 +942,6 @@ span.h2 { font-size: 15px; font-weight: 600; }
 .rooms-more b { font-size: 18px; font-weight: 600; }
 .rooms-count { flex: 1; display: flex; align-items: center; gap: 12px; font-size: 14px; line-height: 1.3; font-weight: 500; }
 .rc-n { font-size: 48px; line-height: 1; font-weight: 600; letter-spacing: -0.03em; color: var(--accent); font-variant-numeric: tabular-nums; }
-
-/* Short room grids (tablets): each room on one line — name, temperature, bulb — as on the 16:9 design. */
-.rooms-grid.is-rows { grid-auto-rows: minmax(58px, 1fr); gap: 10px; }
-.rooms-grid.is-rows .rt { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: 12px; padding: 6px 8px 6px 14px; }
-.rooms-grid.is-rows .rt-top { display: contents; }
-.rooms-grid.is-rows .rt-open { order: 1; gap: 2px; }
-.rooms-grid.is-rows .rt-name { font-size: 15px; }
-.rooms-grid.is-rows .rt-bottom { order: 2; flex-direction: column; align-items: flex-end; gap: 2px; }
-.rooms-grid.is-rows .rt-temp { font-size: 18px; }
-.rooms-grid.is-rows .bulb { order: 3; }
-/* Big tiles: the temperature sits at the bottom and never runs past the tile. */
-.rooms-grid .rt { overflow: hidden; }
-.rooms-grid:not(.is-rows) .rt-top { flex: 1 1 auto; min-height: 0; }
-.rt-bottom { flex: none; }
 
 /* ----- Agenda ----- */
 .hero-agenda { flex: 1; }

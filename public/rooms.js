@@ -19,8 +19,9 @@ export function roomModel(sources) {
     const list = room.ids.map(id => byState.get(id)).filter(Boolean);
     const temperatures = list.filter(s => HD.Model.isTemp(s) && HD.Model.isAvail(s)).map(s => Number(s.state)).filter(Number.isFinite);
     const climate = list.find(s => s.entity_id.startsWith('climate.') && s.attributes.current_temperature != null);
+    const humidities = list.filter(s => HD.Model.isHumidity(s) && HD.Model.isAvail(s)).map(s => Number(s.state)).filter(Number.isFinite);
     const devices = list.filter(HD.Model.isGridEntity).map(s => HD.Model.describe(s,room.name));
-    return {...room,temp:temperatures.length ? temperatures.reduce((a,b)=>a+b,0)/temperatures.length : climate ? Number(climate.attributes.current_temperature) : null,active:devices.filter(d => d.on && d.action).length,total:devices.length,lightTotal:list.filter(s=>s.entity_id.startsWith('light.')).length,lights:list.filter(s=>s.entity_id.startsWith('light.') && s.state === 'on').length};
+    return {...room,hum:humidities.length ? humidities.reduce((a,b)=>a+b,0)/humidities.length : climate?.attributes.current_humidity != null ? Number(climate.attributes.current_humidity) : null,temp:temperatures.length ? temperatures.reduce((a,b)=>a+b,0)/temperatures.length : climate ? Number(climate.attributes.current_temperature) : null,active:devices.filter(d => d.on && d.action).length,total:devices.length,lightTotal:list.filter(s=>s.entity_id.startsWith('light.')).length,lights:list.filter(s=>s.entity_id.startsWith('light.') && s.state === 'on').length};
   });
   HD.Model.setNames({...sources.originalLayout?.names,...sources.roomPreferences?.names});
   const value = {index,states:byState,rooms:summaries};

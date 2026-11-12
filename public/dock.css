@@ -3,8 +3,9 @@
 .dock-emoji{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:19px;line-height:1}
 .rail>.rail-sep{display:block;flex:none;width:24px;height:1px;margin:4px auto;background:rgba(255,255,255,.12)}
 .rail.is-editing{outline:1.5px dashed color-mix(in srgb,var(--accent,#0a84ff) 70%,transparent);outline-offset:3px}
-.rail.is-editing>.rail-btn[data-action="dock-edit"]:not(.dock-edit-btn):hover{outline:1.5px solid var(--accent,#0a84ff)}
-.rail>.dock-edit-btn{color:var(--accent,#0a84ff)}
+.rail.is-editing>.rail-btn[data-action="dock-edit"]:hover{outline:1.5px solid var(--accent,#0a84ff)}
+/* Paramètres est une entrée du dock, précédée de son propre séparateur : le trait fixe du rail de verre disparaît. */
+[data-theme="home"][data-design="home"]:not([data-profile="phone"]) .rail>.rail-spacer{display:none}
 /* Barre basse des petits écrans : un dock trop long défile au lieu de déborder de l’écran. */
 @media (max-width:860px),(max-height:620px){
   [data-design="home"] .rail>.rail-sep{width:1px;height:24px;margin:0 4px}

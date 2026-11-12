@@ -14,8 +14,8 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 test('the default dock lists the pages, plus the server links only in server mode', () => {
   const api = dock();
-  assert.deepEqual(plain(api.defaultDock(pages)).map(i => i.id), pages);
-  assert.deepEqual(plain(api.defaultDock(pages, true)).map(i => i.id), [...pages, 'godseye', 'worldmonitor', 'radio']);
+  assert.deepEqual(plain(api.defaultDock(pages)).map(i => i.id), [...pages, 'sep-settings', 'settings']);
+  assert.deepEqual(plain(api.defaultDock(pages, true)).map(i => i.id), [...pages, 'godseye', 'worldmonitor', 'radio', 'sep-settings', 'settings']);
   assert.deepEqual(plain(api.sanitizeDock(null, pages, true)), plain(api.defaultDock(pages, true)));
 });
 
@@ -31,11 +31,21 @@ test('a saved dock keeps its order, icons and separators, drops invalid entries 
     { kind: 'link', id: 'godseye', label: 'God', href: '/godseye.html' },
   ];
   const out = plain(api.sanitizeDock(saved, pages, false));
-  assert.deepEqual(out.map(i => i.id), ['news', 'sep-1', 'overview', 'link-1', 'home', 'agents', 'projects']);
+  assert.deepEqual(out.map(i => i.id), ['news', 'sep-1', 'overview', 'link-1', 'home', 'agents', 'projects', 'sep-settings', 'settings']);
   assert.deepEqual(out[0], { kind: 'page', id: 'news', icon: 'e:🚀', label: 'Actus' });
   assert.equal(out[2].icon, undefined);
   assert.deepEqual(out[3], { kind: 'link', id: 'link-1', label: 'Wiki', href: 'https://wiki.example/', icon: 'x:globe', newTab: true });
   assert.ok(plain(api.sanitizeDock(saved, pages, true)).some(i => i.id === 'godseye'));
+});
+
+test('the settings entry is part of the dock: it keeps its place and icon, and cannot be lost or impersonated', () => {
+  const api = dock();
+  const saved = [{ kind: 'link', id: 'settings', label: 'Faux', href: '/x' }, { kind: 'settings', id: 'settings', icon: 'x:wrench' }, { kind: 'page', id: 'news' }];
+  const out = plain(api.sanitizeDock(saved, pages, false));
+  assert.deepEqual(out[0], { kind: 'settings', id: 'settings', icon: 'x:wrench' });
+  assert.equal(out.filter(i => i.id === 'settings').length, 1);
+  assert.ok(!out.some(i => i.id === 'sep-settings'), 'pas de séparateur ajouté quand l’entrée est déjà placée');
+  assert.deepEqual(plain(api.visibleDock(out, ['news'])).map(i => i.id), ['settings', 'news']);
 });
 
 test('hidden pages, empty links and stray separators do not show in the rail', () => {

@@ -21,6 +21,9 @@ function proxy(req, res, url, { name, upstream }) {
   const destination = new URL(upstream);
   if (destination.protocol !== 'http:') throw new Error(name + ' upstream must be local HTTP.');
   const headers = { ...req.headers };
+  // The World Monitor shell gets a small same-origin auth compatibility shim.
+  // Ask for identity so the HTML can be amended without touching compressed bytes.
+  if (name === 'World Monitor' && url.pathname === '/') headers['accept-encoding'] = 'identity';
   delete headers.authorization; delete headers.connection; delete headers['proxy-authorization'];
   delete headers['x-forwarded-for']; delete headers['x-real-ip'];
   headers['x-forwarded-for'] = req.socket.remoteAddress;
@@ -38,8 +41,19 @@ function proxy(req, res, url, { name, upstream }) {
     const csp = output['content-security-policy'] || `default-src 'self'; connect-src 'self' https: wss: blob:; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline'; script-src ${scripts}; worker-src 'self' blob:; media-src 'self' https: blob:;`;
     output['content-security-policy'] = /frame-ancestors\s+[^;]+/i.test(csp) ? csp.replace(/frame-ancestors\s+[^;]+/i, ancestors) : csp + '; ' + ancestors;
     if (output['set-cookie']) output['set-cookie'] = output['set-cookie'].filter(v => !/^cockpit_session=/i.test(v));
-    res.writeHead(response.statusCode, output);
-    response.on('error', () => res.destroy()); response.pipe(res);
+    if (name === 'World Monitor' && url.pathname === '/' && /text\/html/i.test(output['content-type'] || '') && response.statusCode === 200) {
+      const chunks = []; let bytes = 0;
+      response.on('data', chunk => { bytes += chunk.length; if (bytes > 2 * 1024 * 1024) return request.destroy(new Error('HTML shell too large')); chunks.push(chunk); });
+      response.on('error', () => res.destroy());
+      response.on('end', () => {
+        const html = Buffer.concat(chunks).toString('utf8').replace(/<head(?:\s[^>]*)?>/i, '$&<script src="/hosted-auth.js"></script>');
+        delete output['content-length'];
+        res.writeHead(response.statusCode, output); res.end(html);
+      });
+    } else {
+      res.writeHead(response.statusCode, output);
+      response.on('error', () => res.destroy()); response.pipe(res);
+    }
   });
   request.setTimeout(120000, () => request.destroy());
   request.on('error', () => {

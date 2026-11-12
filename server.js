@@ -146,7 +146,7 @@ function createServer({ projects, rss, serverMode = SERVER_MODE, allowedHosts = 
       // The extension may frame public assets; API requests must originate inside our app.
       if (!trusted(req, !url.pathname.startsWith('/api/'), { serverMode, allowedHosts })) return json(res, 403, { error: 'Hôte ou origine refusé.' });
       const hostedApp = serverMode && require('./hosted-apps.cjs').matches(req);
-      if (hostedApp && !url.pathname.startsWith('/brand/')) return require('./hosted-apps.cjs').proxy(req, res, url, hostedApp);
+      if (hostedApp && !url.pathname.startsWith('/brand/') && url.pathname !== '/hosted-auth.js') return require('./hosted-apps.cjs').proxy(req, res, url, hostedApp);
       // OpenRadio s’ouvre sur son hôte auto-hébergé ; le site public tant qu’il n’est pas configuré.
       if (url.pathname === '/openradio.html') { res.writeHead(302, { Location: process.env.COCKPIT_OPENRADIO_HOST ? 'https://' + process.env.COCKPIT_OPENRADIO_HOST + '/' : 'https://openradio.space/', 'Cache-Control': 'no-store' }); return res.end(); }
       if (url.pathname === '/server-config.js') { res.writeHead(200, { 'Content-Type': TYPES['.js'], 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }); return res.end('globalThis.COCKPIT_SERVER_MODE=' + JSON.stringify(serverMode) + ';'); }

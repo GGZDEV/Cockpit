@@ -42,6 +42,8 @@ test('OpenRadio is proxied on its own authenticated host and /openradio.html ope
  process.env.COCKPIT_OPENRADIO_HOST='openradio.ggz.ovh';process.env.COCKPIT_OPENRADIO_UPSTREAM='http://127.0.0.1:'+backend.address().port;
  assert.equal((await send('/openradio.html',{...auth,host:'cockpit.ggz.ovh'})).headers.location,'https://openradio.ggz.ovh/');
  assert.equal((await send('/',{host:'openradio.ggz.ovh'})).status,401);
+ const loginIcon=await send('/brand/icon-192.png',{host:'openradio.ggz.ovh'});
+ assert.equal(loginIcon.status,200);assert.match(loginIcon.headers['content-type'],/image\/png/);
  const r=await send('/api/stations?country=FR',{...auth,host:'openradio.ggz.ovh'});
  assert.equal(r.status,200);const data=JSON.parse(r.body);
  assert.equal(data.url,'/api/stations?country=FR');assert.equal(data.auth,undefined);assert.equal(data.host,'openradio.ggz.ovh');

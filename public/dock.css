@@ -1,0 +1,47 @@
+/* Dock (rail) : séparateurs, liens, icônes emoji et mode édition. */
+.rail-btn.dock-link{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}
+.dock-emoji{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;font-size:19px;line-height:1}
+.rail>.rail-sep{display:block;flex:none;width:24px;height:1px;margin:4px auto;background:rgba(255,255,255,.12)}
+.rail.is-editing{outline:1.5px dashed color-mix(in srgb,var(--accent,#0a84ff) 70%,transparent);outline-offset:3px}
+.rail.is-editing>.rail-btn[data-action="dock-edit"]:not(.dock-edit-btn):hover{outline:1.5px solid var(--accent,#0a84ff)}
+.rail>.dock-edit-btn{color:var(--accent,#0a84ff)}
+/* Barre basse des petits écrans : un dock trop long défile au lieu de déborder de l’écran. */
+@media (max-width:860px),(max-height:620px){
+  [data-design="home"] .rail>.rail-sep{width:1px;height:24px;margin:0 4px}
+  [data-design="home"]:not([data-profile="phone"]) .rail{max-width:calc(100vw - 24px);overflow-x:auto;scrollbar-width:none}
+  [data-design="home"]:not([data-profile="phone"]) .rail::-webkit-scrollbar{display:none}
+}
+body[data-profile="phone"] .rail>.rail-sep{width:1px;height:24px;margin:0 2px}
+
+/* Éditeur du dock : liste ordonnable à gauche, nom et bibliothèque d’icônes à droite. */
+.dock-editor{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:20px;align-items:start}
+.dock-list{list-style:none;margin:0 0 14px;padding:0;display:flex;flex-direction:column;gap:6px}
+.dock-row{display:flex;align-items:center;gap:6px;padding:4px 6px;border:1px solid var(--ui-line,rgba(255,255,255,.1));border-radius:12px;background:rgba(255,255,255,.03)}
+.dock-row.is-on{border-color:var(--accent,#0a84ff)}
+.dock-row.dragging{opacity:.45}
+.dock-row.drop-target{box-shadow:0 -2px 0 var(--accent,#0a84ff)}
+.dock-row>.button{min-height:30px;min-width:30px;padding:0 8px}
+.dock-row>.button .icon{width:15px;height:15px}
+.dock-grip{display:flex;color:var(--ui-muted,#8e8e93);cursor:grab}
+.dock-grip .icon{width:16px;height:16px}
+.dock-row-main{flex:1;min-width:0;display:flex;align-items:center;gap:10px;padding:4px;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+.dock-row-icon{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;border-radius:16px;background:rgba(255,255,255,.07)}
+.dock-row-icon .icon{width:18px;height:18px}
+.dock-row-sep{display:block;width:18px;height:1.5px;background:currentColor;opacity:.5}
+.dock-row-name{display:flex;flex-direction:column;min-width:0}
+.dock-row-name small{opacity:.6;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dock-item-editor h3{margin:0 0 10px}
+.dock-fields{margin-bottom:12px}
+.dock-check{display:flex!important;flex-direction:row!important;align-items:center;gap:8px}
+.dock-icon-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0 8px}
+.dock-icon-head h3{margin:0}
+.dock-item-editor .library-search{margin-bottom:10px}
+.dock-icon-grid{max-height:min(46vh,420px);overflow:auto;padding-right:4px}
+.dock-icon-group h4{margin:10px 0 6px;font-size:12px;font-weight:600;opacity:.6;text-transform:uppercase;letter-spacing:.04em}
+.dock-icon-group>div{display:grid;grid-template-columns:repeat(auto-fill,minmax(40px,1fr));gap:4px}
+.dock-icon-choice{display:inline-flex;align-items:center;justify-content:center;height:40px;border:1px solid transparent;border-radius:10px;background:rgba(255,255,255,.04);color:inherit;cursor:pointer}
+.dock-icon-choice:hover{background:rgba(255,255,255,.1)}
+.dock-icon-choice.is-on{border-color:var(--accent,#0a84ff);background:color-mix(in srgb,var(--accent,#0a84ff) 22%,transparent)}
+.dock-icon-choice .icon{width:20px;height:20px}
+.dock-icon-choice[hidden],.dock-icon-group[hidden]{display:none}
+@media (max-width:720px){.dock-editor{grid-template-columns:1fr}}

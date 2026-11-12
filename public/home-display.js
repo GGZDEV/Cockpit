@@ -30,7 +30,8 @@ export function sanitizeDisplay(data) {
 export let homeDisplay = sanitizeDisplay(read(key, null));
 export function saveDisplay() { const saved=write(key,homeDisplay); if (saved) window.dispatchEvent(new Event('mb:display-saved')); return saved; }
 export function importDisplay(data) { homeDisplay = sanitizeDisplay(data); saveDisplay(); }
-export const spanWidth = m => Number.isInteger(m.width) && m.width >= 1 && m.width <= 4 ? m.width : (m.size === 'full' ? 4 : m.size === 'wide' ? 2 : 1);
+// Largeur sur la grille fine de la tablette (huit colonnes, home-grid.js).
+export const spanWidth = m => Number.isInteger(m.width) && m.width >= 1 && m.width <= 8 ? m.width : (m.size === 'full' ? 8 : m.size === 'wide' ? 4 : 2);
 export function addHeader(type) { if (!headerTypes[type] || homeDisplay.header.length >= 20) return; homeDisplay.header.push({ id: uid(), type, zone: 'right', options: {} }); saveDisplay(); }
 export const fonts = [['','Standard',''],['outfit','Moderne',"'Outfit',sans-serif"],['unbounded','Affirmée',"'Unbounded',sans-serif"],['syne','Design',"'Syne',sans-serif"],['fraunces','Élégante',"'Fraunces',Georgia,serif"],['dmserif','Magazine',"'DM Serif Display',Georgia,serif",400],['cormorant','Raffinée',"'Cormorant Garamond',Georgia,serif"],['comfortaa','Douce',"'Comfortaa',sans-serif"],['orbitron','Futuriste',"'Orbitron',sans-serif"],['righteous','Rétro',"'Righteous',sans-serif",400],['dancing','Manuscrite',"'Dancing Script',cursive"]];
 const grad = (a,b,c) => `linear-gradient(160deg,${a} 0%,${b} 48%,${c} 100%) fixed`;

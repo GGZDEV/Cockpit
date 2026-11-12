@@ -18,9 +18,11 @@ export function sanitizeTabs(value) {
   return out;
 }
 // Hauteur maximale d’un module, en rangs : sur le téléphone (une colonne) un module peut occuper tout l’écran.
-export const maxHeight = profile => profile === 'phone' ? 8 : 4;
+// La tablette compte huit rangées fines par page (home-grid.js).
+export const maxHeight = profile => profile === 'phone' || profile === 'tablet' ? 8 : 4;
 // Première ouverture du téléphone : on repart des modules de la tablette, ramenés à une colonne (mêmes notes).
-export const phoneWidgets = list => JSON.parse(JSON.stringify(list || [])).map(w => ({ ...w, width: 1, size: 'normal' }));
+// Une hauteur de la grille fine (demi-rangées) redevient une hauteur du téléphone.
+export const phoneWidgets = list => JSON.parse(JSON.stringify(list || [])).map(({ half, x, y, ...w }) => ({ ...w, width: 1, size: 'normal', ...(half && w.height ? { height: Math.max(1, Math.ceil(w.height / 2)) } : {}) }));
 export let tabPreferences = sanitizeTabs(read('mb.tabs.v1', null));
 // L'onglet Projets apparaît une fois sur le bureau et la tablette, même avec des choix déjà enregistrés.
 if (!read('mb.tabs.projects', false)) { for (const screen of ['desktop','tablet']) if (!tabPreferences[screen].includes('projects')) tabPreferences[screen] = pageOrder.filter(id => [...tabPreferences[screen],'projects'].includes(id)); write('mb.tabs.v1', tabPreferences); write('mb.tabs.projects', true); }

@@ -575,9 +575,13 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
       <p class="pj-help">Une adresse GitHub est clonée dans l’espace de travail du serveur Cockpit : Claude Code peut y travailler tout de suite. Un dossier existant n’est jamais écrasé.</p>
       ${p.id ? (st.capabilities.engines?.openclaw !== false ? agentLine(p) : '') + workspaceHTML(p) + bootstrapHTML(p) : ''}
       <div class="pj-three"><label>Moteur des tâches<select name="engine">${Object.entries(ENGINE).map(([v, l]) => `<option value="${v}" ${(p.engine || 'claude') === v ? 'selected' : ''}${st.capabilities.engines?.[v] === false ? ' disabled' : ''}>${l}${st.capabilities.engines?.[v] === false ? ' (indisponible sur ce serveur)' : ''}${v === 'claude' ? ' · recommandé' : ''}</option>`).join('')}</select></label>
-        <label>Modèle Claude Code<select name="model">${[['claude-sonnet-5-5','Sonnet 5.5 · recommandé'],['claude-opus-5-5','Opus 5.5'],['claude-haiku-5-5','Haiku 5.5']].map(([v,l]) => `<option value="${v}" ${(p.direct?.model || st.capabilities.directDefaults?.model || 'claude-sonnet-5-5') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+        <label>Modèle Claude Code<select name="model">${[...((p.direct?.model && !['claude-sonnet-5-5','claude-opus-5-5','claude-haiku-5-5'].includes(p.direct.model)) ? [[p.direct.model,p.direct.model]] : []),['claude-sonnet-5-5','Sonnet 5.5 · recommandé'],['claude-opus-5-5','Opus 5.5'],['claude-haiku-5-5','Haiku 5.5']].map(([v,l]) => `<option value="${v}" ${(p.direct?.model || st.capabilities.directDefaults?.model || 'claude-sonnet-5-5') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
         <label>Secours automatique<select name="fallback"><option value="">Aucun</option>${['claude', 'codex'].map(v => `<option value="${v}" ${p.direct?.fallback === v ? 'selected' : ''}>${ENGINE[v]}</option>`).join('')}</select></label></div>
       <p class="pj-help">Claude Code (ou Codex) reçoit chaque tâche directement, dans une seule session reprise à chaque message. ${st.capabilities.engines?.openclaw === false ? 'Le moteur OpenClaw desktop est désactivé dans ce mode serveur.' : 'OpenClaw reste possible : il garde son agent et sa conversation.'} Le secours ne se déclenche que si le moteur échoue avant d’avoir touché au dossier.</p>
+      <details class="pj-details"><summary>Limites Cockpit et effort de réflexion</summary>
+      <p class="pj-help">Ces limites sont propres à Cockpit, pas à votre abonnement Claude. Les montants sont des estimations de consommation, pas une facturation supplémentaire. Une réponse à une question en cours ne compte pas comme un nouveau lancement. Le délai est suspendu pendant cette attente. Les changements s’appliquent aux prochains lancements.</p>
+      <div class="pj-two">${[['timeoutMin','Durée par lancement (minutes)',1,180,1],['maxRuns','Lancements maximum par tâche',1,30,1],['maxBudgetUsd','Coût estimé maximum par lancement ($)',0.1,100,0.1],['taskBudgetUsd','Coût estimé maximum par tâche ($)',0.1,500,0.1]].map(([key,label,min,max,step]) => `<label>${label}<input type="number" name="${key}" min="${min}" max="${max}" step="${step}" required value="${esc(p.direct?.[key] ?? st.capabilities.directDefaults?.[key] ?? ({timeoutMin:30,maxRuns:10,maxBudgetUsd:5,taskBudgetUsd:20})[key])}"></label>`).join('')}</div>
+      <label>Effort de réflexion<select name="effort">${[['','Défaut de Claude'],['low','Faible'],['medium','Moyen'],['high','Élevé'],['xhigh','Très élevé'],['max','Maximum']].map(([v,l]) => `<option value="${v}" ${(p.direct?.effort || '') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></label></details>
       ${deployFields(p)}${p.id ? deployHTML(p) : ''}
       <p class="form-status pj-help" role="status"></p>
       <div class="pj-form-actions"><button class="button primary" type="submit">${p.id ? 'Enregistrer' : 'Créer le projet'}</button><button class="button" type="button" data-action="close-modal">Annuler</button></div></form>`, 'pj-project', true);
@@ -641,6 +645,15 @@ export function createProjectsUI({ sources, modal, showModal, toast, render, isA
     // « Clore la tâche » reste sous la zone de saisie : visible quelle que soit la longueur du fil.
     const foot = (left = '') => `<div class="pj-chatbox-foot">${left}<span class="pj-grow"></span>${inline ? '' : `<div class="pj-panel-actions">${closeHTML(task)}</div>`}</div>`;
     if (m.mode === 'manual') return foot('<p class="pj-help">Tâche manuelle : aucun agent ne répond ici. Choisissez un agent dans « Détails de la tâche » pour lui confier le travail.</p>');
+    const interaction = openRun(task)?.interactions?.[0];
+    if (interaction) {
+      const r = interaction.request, qs = r.input?.questions || [];
+      return `<form class="pj-form" data-pj-form="interaction" data-id="${esc(task.id)}" data-request="${esc(interaction.requestId)}">
+        <h3>${r.tool_name === 'AskUserQuestion' ? 'Claude attend votre réponse' : 'Claude demande une autorisation'}</h3>
+        ${r.tool_name === 'AskUserQuestion' ? qs.map((q,i) => `<label>${esc(q.question)}${(q.options || []).length ? `<span class="pj-help">${q.options.map(o => esc(o.label) + (o.description ? ' — ' + esc(o.description) : '')).join('<br>')}</span>` : ''}<select name="choice${i}" ${q.multiSelect ? 'multiple' : ''} data-keep="${esc(interaction.requestId)}-choice-${i}"><option value="">Réponse libre ou choix ci-dessous</option>${(q.options || []).map(o => `<option value="${esc(o.label)}">${esc(o.label)}</option>`).join('')}</select><textarea name="answer${i}" data-keep="${esc(interaction.requestId)}-${i}" maxlength="8000" placeholder="Votre réponse${q.multiSelect ? ' (plusieurs choix possibles)' : ''}"></textarea></label>`).join('') : `<p>${esc(r.description || r.title || r.tool_name)}</p><pre>${esc(JSON.stringify(r.input || {}, null, 2))}</pre>`}
+        <p class="pj-help">La même exécution reprendra après votre réponse. L’autorisation vaut uniquement pour cette action.</p>
+        <div class="pj-form-actions"><button class="button primary" type="submit" name="decision" value="allow">${r.tool_name === 'AskUserQuestion' ? 'Répondre' : 'Autoriser cette action'}</button><button class="button" type="submit" name="decision" value="deny" formnovalidate>Refuser</button></div><p class="form-status" role="status"></p></form>`;
+    }
     const busy = m.mode === 'busy';
     if (!busy && m.kind === 'initial' && !m.needsText) return `<form class="pj-chatbox is-launch" data-pj-form="chat" data-id="${esc(task.id)}" data-kind="initial">
       <button class="button primary pj-send" type="submit">${G.launch} Lancer</button></form>${foot()}`;
@@ -848,7 +861,14 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
     const status = form.querySelector('.form-status');
     if (submit) submit.disabled = true;
     try {
-      if (kind === 'quick') {
+      if (kind === 'interaction') {
+        const task = st.tasks.find(t => t.id === form.dataset.id);
+        const item = openRun(task)?.interactions?.find(x => x.requestId === form.dataset.request);
+        if (!item) throw new Error('Cette demande n’est plus en attente.');
+        const answers = Object.fromEntries((item.request.input?.questions || []).map((q,i) => [q.question, [...fd.getAll('choice' + i).filter(Boolean), String(fd.get('answer' + i) || '').trim()].filter(Boolean).join(', ')]));
+        upsert(await api('tasks/' + task.id + '/respond', 'POST', { requestId: item.requestId, behavior: event.submitter?.value === 'deny' ? 'deny' : 'allow', answers }));
+        render(); updatePanel();
+      } else if (kind === 'quick') {
         const projectId = String(fd.get('projectId') || ''); if (!projectId) throw new Error('Créez d’abord un projet.');
         upsert(await api('tasks', 'POST', { projectId, title: fd.get('title'), status: form.dataset.status })); st.quickAdd = null; render();
       } else if (kind === 'task') {
@@ -876,7 +896,7 @@ Son agent principal recevra le contexte du projet (objectif, consignes, dépôt)
         const agentValue = String(fd.get('agent') || ''), [agentConnection, agentId] = agentValue.split('|');
         const body = { name: fd.get('name'), description: fd.get('description'), status: fd.get('status'), color: fd.get('color'),
           agent: agentValue ? { connectionId: agentConnection, agentId, name: form.elements.agent.selectedOptions[0]?.dataset.name || agentId } : null,
-          engine: fd.get('engine'), direct: { model: String(fd.get('model') || '').trim(), fallback: fd.get('fallback') || '' },
+          engine: fd.get('engine'), direct: { model: String(fd.get('model') || '').trim(), fallback: fd.get('fallback') || '', effort: fd.get('effort') || '', ...Object.fromEntries(['timeoutMin','maxRuns','maxBudgetUsd','taskBudgetUsd'].map(k => [k, Number(fd.get(k))])) },
           context: { instructions: fd.get('instructions'), links: parseLinks(fd.get('links')), repository: fd.get('repository') },
           deployment: { url: String(fd.get('deployUrl') || '').trim(), auto: fd.has('deployAuto'), branch: String(fd.get('deployBranch') || '').trim() } };
         if (!form.dataset.id && fd.get('repoMode') === 'new') { delete body.context.repository; body.newRepository = { name: String(fd.get('newRepoName') || '').trim(), owner: String(fd.get('newRepoOwner') || '').trim(), private: !fd.has('newRepoPublic') }; }

@@ -81,3 +81,18 @@ test('Projects tab: a task with a work branch offers « Clore » and « Clore et
   const closed = await get(task.id);
   assert.equal(closed.status, 'done'); assert.equal(closed.published, undefined);
 });
+
+test('native question and permission are actionable in the task composer; project limits are visible', async t => {
+  const { ui: api, project, create, launch, until, mode } = await setup(t);
+  const p = await project('alpha'), task = await create(p.id);
+  mode('native-question'); await launch(task.id); await until(task.id,x=>x.runs.at(-1)?.interactions?.length);
+  const {ui, shown, click}=loadUI(api); ui.html(); await new Promise(r=>setImmediate(r)); await new Promise(r=>setImmediate(r));
+  await click('open-task',task.id);
+  // Both board/drawer and conversational views use composerHTML.
+  const html=shown() + ui.html();
+  assert.match(html,/Claude attend votre réponse/);
+  assert.match(html,/data-pj-form="interaction"/); assert.match(html,/name="choice0"/); assert.match(html,/main/); assert.match(html,/Refuser/);
+  await click('edit-project',p.id);
+  assert.match(shown(),/Limites Cockpit/);
+  for(const key of ['timeoutMin','maxRuns','maxBudgetUsd','taskBudgetUsd','effort']) assert.match(shown(),new RegExp('name="'+key+'"'));
+});

@@ -37,7 +37,7 @@ function buildArgs({ mode = 'work', sessionId, fresh, settings, model, addDirs =
   const has = flag => !OPTIONAL_FLAGS.includes(flag) || !flags || flags.has(flag);
   // Travail : les mêmes outils que Claude Code sur le poste (web, sous-agents, liste de tâches…) ; plan : lecture seule.
   const tools = mode === 'plan' ? ['Read', 'Glob', 'Grep'] : ['default'];
-  const args = ['-p', '--output-format', 'stream-json', '--verbose'];
+  const args = ['-p', '--output-format', 'stream-json', '--verbose', '--input-format', 'stream-json', '--permission-prompt-tool', 'stdio'];
   args.push('--tools', tools.join(','), '--permission-mode', mode === 'plan' ? 'plan' : 'acceptEdits');
   if (mode !== 'plan') args.push('--allowedTools', ...s.allowedBash.map(rule), ...(s.allowedBash.includes('*') ? [] : [rule('node ' + VISUAL_CHECK)]), 'WebFetch', 'WebSearch');
   const denied = applications.enabled() ? ['git push', 'npm publish'] : DENY_BASH;

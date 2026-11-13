@@ -23,6 +23,11 @@ export function chatItems(task) {
       if (items[start].role === 'user') items[start].attachments = files;
       else items.splice(start, 0, { role: 'user', type: 'files', at: files[0].at, text: '', attachments: files });
     }
+    for (const interaction of run.interactionHistory || []) {
+      const r = interaction.request || {}, question = r.tool_name === 'AskUserQuestion';
+      items.push({role:'agent', type:'question', at:interaction.at, text: question ? (r.input?.questions || []).map(q => q.question).join('\n\n') : 'Autorisation demandée : ' + (r.description || r.tool_name) + '\n' + JSON.stringify(r.input || {}), run});
+      items.push({role:'user', type:'answer', at:interaction.answeredAt, text: interaction.response === 'deny' ? 'Refusé.' : question ? Object.entries(interaction.answers || {}).map(([q,a]) => q + '\n' + a).join('\n\n') : 'Autorisé pour cette action.', run});
+    }
     if (OPEN.includes(run.status)) items.push({ role: 'agent', type: 'live', at: run.startedAt || run.createdAt, text: run.liveText || '', run });
     else if (run.status === 'succeeded' && run.outcome === 'plan') items.push({ role: 'agent', type: 'plan', at: run.endedAt, text: run.result || '', run });
     else if (run.status === 'succeeded' && run.outcome === 'question') items.push({ role: 'agent', type: 'question', at: run.endedAt, text: run.result || '', run });

@@ -432,7 +432,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
 
   function finalize(task, run, content) {
     const reply = String(content || '');
-    const match = [...reply.matchAll(new RegExp(MARKER.source, 'gim'))].at(-1);
+    const match = run.engine === 'claude' ? null : [...reply.matchAll(new RegExp(MARKER.source, 'gim'))].at(-1);
     const verdict = match ? match[1].toUpperCase().normalize('NFD').replace(/[^A-Z]/g, '') : '';
     const body = (match ? reply.slice(0, match.index) + reply.slice(match.index + match[0].length) : reply).trim();
     run.endedAt = now(); run.startedAt ||= run.endedAt; delete run.liveText; delete run.tracking;
@@ -682,9 +682,15 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         if (run.mode === 'work') Object.assign(d, { workStarted: true, planPending: false });
         markStarted(task, run, label + ' a démarré' + (ev.model ? ' · ' + ev.model : ''));
       }
+      else if (ev.kind === 'interaction') {
+        run.interactions ||= [];
+        run.interactions.push({ requestId: ev.requestId, request: JSON.parse(harness.redact(JSON.stringify(ev.request))), at: now() }); save();
+      }
+      else if (ev.kind === 'interaction_cancel') { run.interactions = (run.interactions || []).filter(x => x.requestId !== ev.requestId); save(); }
       else if (ev.kind === 'tool') { event(run, 'tool', ev.text); saveSoon(); }
       else if (ev.kind === 'text') { run.liveText = harness.redact(collector.state.text).slice(0, 20000); saveSoon(); }
     } });
+    delete run.interactions;
     if (visualDir) attachCaptures(task, run, visualDir);
     run.metrics = result.collector.metrics({ costBefore, usageBefore: run.fresh ? null : d.usage || null, durationMs: result.durationMs, model: run.model });
     run.durationMs = result.durationMs;
@@ -695,8 +701,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (run.stopRequested) return fail(task, run, 'interrupted', `Arrêtée à votre demande. La session ${label} et le worktree sont conservés : un message ou « Relancer » reprend.`);
     if (!result.spawnError && !result.timedOut && !out.ok && out.lostSession) { delete d.sessionId; return fail(task, run, 'failed', `La session ${label} de cette tâche est introuvable sur ce PC. Relancez : une nouvelle session sera ouverte avec les consignes complètes.`); }
     if (result.spawnError || result.timedOut || !out.ok) {
-      const why = result.spawnError || (result.timedOut ? `Délai dépassé (${s.timeoutMin} min) : ${label} a été arrêté. Le worktree et la session sont conservés ; « Relancer » reprend.`
-        : out.budget ? `Budget de l’exécution atteint (${run.budgetUsd ?? s.maxBudgetUsd} $).` : out.error);
+      const why = result.spawnError || (result.timedOut ? `Limite Cockpit de durée atteinte (${s.timeoutMin} min hors attente de réponse) : ${label} a été arrêté. Le worktree et la session sont conservés ; « Relancer » reprend.`
+        : out.budget ? `Limite Cockpit de coût estimé atteinte (${run.budgetUsd ?? s.maxBudgetUsd} $).` : out.error);
       let refused = '';
       if (fallbackTo) {
         const decision = harness.fallbackDecision({ result, activity: result.collector.state.activity, errorText: result.spawnError || out.error, before, after: await engine.gitState(d.cwd) });
@@ -710,7 +716,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     }
     const reply = harness.redact(out.text);
     run.summary = await engine.summary({ cwd: d.cwd, baseSha: d.baseSha }).catch(() => null);
-    const { status, body } = harness.verdict(reply);
+    const { status, body } = run.engine === 'claude' ? { status: '', body: reply } : harness.verdict(reply);
     if (run.mode === 'plan' && !status) {
       const plan = text(harness.redact(result.collector.state.plan) || body, 20000);
       Object.assign(run, { status: 'succeeded', outcome: 'plan', result: plan, endedAt: now() }); run.startedAt ||= run.endedAt; delete run.liveText; delete run.tracking;
@@ -748,6 +754,33 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     return followDirect(task, next.run, s, next.attachmentIds, { allowFallback: false });
   }
   // Arrêt demandé par l'utilisateur : le processus et ses enfants sont arrêtés, la session et le worktree restent.
+  function respondInteraction(tid, body) {
+    const task = findTask(tid), run = openRun(task);
+    const item = run?.interactions?.find(x => x.requestId === body.requestId);
+    if (!item || run.engine !== 'claude') throw new HttpError(409, 'Cette demande Claude n’est plus en attente.');
+    if (!['allow', 'deny'].includes(body.behavior)) throw new HttpError(400, 'Choisissez autoriser ou refuser.');
+    const input = item.request.input || {};
+    let response = { behavior: 'deny', message: text(body.message, 8000) || 'Refusé par l’utilisateur.' };
+    if (body.behavior === 'allow') {
+      const updatedInput = { ...input };
+      if (item.request.tool_name === 'AskUserQuestion') {
+        const answers = {};
+        for (const q of input.questions || []) {
+          const answer = body.answers?.[q.question];
+          if (typeof answer !== 'string' || !answer.trim() || answer.length > 8000) throw new HttpError(400, 'Répondez à chaque question.');
+          answers[q.question] = answer;
+        }
+        updatedInput.answers = answers;
+      }
+      response = { behavior: 'allow', updatedInput };
+    }
+    if (!engines.claude.respond(run.id, body.requestId, response)) throw new HttpError(409, 'Le processus Claude n’attend plus cette réponse.');
+    item.response = body.behavior; item.answeredAt = now();
+    if (item.request.tool_name === 'AskUserQuestion' && response.behavior === 'allow') item.answers = JSON.parse(harness.redact(JSON.stringify(response.updatedInput.answers)));
+    run.interactionHistory ||= []; run.interactionHistory.push(item);
+    run.interactions = run.interactions.filter(x => x !== item);
+    save(); return task;
+  }
   function stop(tid) {
     const task = findTask(tid), run = openRun(task);
     if (!run || !isDirectRun(run)) throw new HttpError(409, 'Aucune exécution Claude Code ou Codex à arrêter sur cette tâche.');
@@ -1076,7 +1109,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     if (!isDirectRun(run)) { run.tracking = 'recovering'; continue; }
     forgetUnstartedSession(task, run);
     Object.assign(run, { status: 'interrupted', error: `Cockpit a redémarré pendant l’exécution. La session ${LABEL[run.engine]} et le worktree sont conservés : « Relancer » reprend.`, endedAt: now() });
-    delete run.tracking; delete run.liveText; event(run, 'interrupted', 'Exécution interrompue par un redémarrage de Cockpit'); task.status = 'blocked';
+    delete run.interactions; delete run.tracking; delete run.liveText; event(run, 'interrupted', 'Exécution interrompue par un redémarrage de Cockpit'); task.status = 'blocked';
   }
 
   // Création interrompue par un redémarrage : reprenable (chaque étape sait ce qui est déjà fait).
@@ -1273,6 +1306,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
         case 'PATCH projects/:id': return json(res, 200, updateProject(a, body));
         case 'POST projects/:id/clone': return json(res, 200, retryWorkspace(findProject(a)));
         case 'POST projects/:id/claude-md': return json(res, 200, await regenerateClaudeMd(a));
+        case 'POST tasks/:id/respond': return json(res, 200, respondInteraction(a, body));
         case 'POST tasks/:id/stop': return json(res, 200, stop(a));
         case 'POST projects/:id/agent-request': return json(res, 202, await requestAgent(a));
         case 'POST tasks': return json(res, 200, createTask(body));

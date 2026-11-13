@@ -184,22 +184,50 @@ function createHarness({ adapter, enabled = false, command, prefixArgs = [], bas
   // env : variables ajoutées par Cockpit pour cette exécution (ex. COCKPIT_VISUAL_DIR).
   function run({ runId, args, cwd, prompt, timeoutMs, env = {}, onEvent = () => {} }) {
     const collector = adapter.createCollector(), started = Date.now();
+    const interactive = args.includes('--input-format') && adapter.name === 'claude';
     const program = resolveProgram(command, prefixArgs, { platform, execPath });
     if (program.refused) return Promise.resolve({ collector, durationMs: 0, spawnError: adapter.cmdRefusal });
     return new Promise(resolve => {
-      let child, stderr = '', buffer = '', timedOut = false, settled = false;
+      let child, timer, stderr = '', buffer = '', timedOut = false, settled = false;
+      const pending = new Map();
+      let remaining = timeoutMs, armedAt = Date.now();
+      const arm = () => { armedAt = Date.now(); timer = setTimeout(() => { timedOut = true; stop(child); }, remaining); };
+      const pause = () => { clearTimeout(timer); remaining = Math.max(1, remaining - (Date.now() - armedAt)); };
+      const write = value => child.stdin.write(JSON.stringify(value) + '\n');
       const done = value => { if (settled) return; settled = true; clearTimeout(timer); active.delete(runId); resolve({ collector, stderr: redact(stderr.slice(-4000)), timedOut, durationMs: Date.now() - started, ...value }); };
       try { child = spawnImpl(program.file, [...program.args, ...args], { cwd, env: { ...adapter.env(baseEnv), ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, detached: !win }); }
       catch (error) { return done({ spawnError: error.message }); }
       active.set(runId, child);
       child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
-      const timer = setTimeout(() => { timedOut = true; stop(child); }, timeoutMs);
+      arm();
+      child.cockpitRespond = (requestId, response) => {
+        if (settled || !pending.has(requestId)) return false;
+        if (response.behavior === 'allow') response = { behavior: 'allow', updatedInput: { ...pending.get(requestId).input, ...(pending.get(requestId).tool_name === 'AskUserQuestion' ? { answers: response.updatedInput.answers } : {}) } };
+        write({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } });
+        pending.delete(requestId); if (!pending.size) arm(); return true;
+      };
       child.on('error', error => done({ spawnError: error.code === 'ENOENT' ? adapter.missing(command) : error.message }));
-      const line = raw => { const value = raw.trim(); if (!value) return; const ev = collector.push(value); if (ev) onEvent(ev, collector); };
+      const line = raw => {
+        const value = raw.trim(); if (!value) return;
+        let msg; try { msg = JSON.parse(value); } catch {}
+        if (interactive && msg?.type === 'control_request') {
+          if (msg.request?.subtype !== 'can_use_tool') { write({ type: 'control_response', response: { subtype: 'error', request_id: msg.request_id, error: 'Unsupported control request' } }); return; }
+          if (!pending.size) pause(); pending.set(msg.request_id, msg.request);
+          onEvent({ kind: 'interaction', requestId: msg.request_id, request: msg.request }, collector); return;
+        }
+        if (interactive && msg?.type === 'control_cancel_request') {
+          if (pending.delete(msg.request_id)) { if (!pending.size) arm(); onEvent({ kind: 'interaction_cancel', requestId: msg.request_id }, collector); } return;
+        }
+        const ev = collector.push(value); if (ev) onEvent(ev, collector);
+        if (interactive && msg?.type === 'result') child.stdin.end();
+      };
       child.stdout.on('data', chunk => { buffer += chunk; let i; while ((i = buffer.indexOf('\n')) >= 0) { line(buffer.slice(0, i)); buffer = buffer.slice(i + 1); } });
       child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-16000); });
       child.stdin.on('error', () => {});
-      child.stdin.end(prompt);
+      if (interactive) {
+        write({ type: 'control_request', request_id: 'cockpit-init', request: { subtype: 'initialize' } });
+        write({ type: 'user', message: { role: 'user', content: prompt }, parent_tool_use_id: null, session_id: '' });
+      } else child.stdin.end(prompt);
       child.on('close', (code, signal) => { line(buffer); done({ code, signal }); });
     });
   }
@@ -213,7 +241,7 @@ function createHarness({ adapter, enabled = false, command, prefixArgs = [], bas
     return { at: new Date().toISOString(), branch, baseSha: baseSha || '', head, commits: list(log).map(l => redact(clip(l, 200))), files: list(files).slice(0, 200), uncommitted: list(dirty).slice(0, 100) };
   }
 
-  return { name: adapter.name, enabled: !!enabled, repository, worktree, gitState, run, summary, active, maxParallel, worktreeRoot,
+  return { name: adapter.name, enabled: !!enabled, repository, worktree, gitState, run, respond: (runId, requestId, response) => active.get(runId)?.cockpitRespond?.(requestId, response) || false, summary, active, maxParallel, worktreeRoot,
     close: () => { for (const child of active.values()) stop(child); } };
 }
 

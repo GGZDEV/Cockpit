@@ -34,7 +34,7 @@ Un manifeste de hachages dans le répertoire administratif Git de la tâche perm
 
 ## Intégration conservée / limites restantes
 
-Cockpit crée une branche et un worktree par tâche, reçoit le texte et les appels outils, joint les captures produites et relève l'état Git sans appel modèle. Les droits et la publication Deployer restent inchangés. Le marqueur facultatif `STATUT: BLOQUÉ/ÉCHEC` reste une convention de compatibilité ; le relais interactif natif des questions/permissions est un chantier distinct.
+Cockpit crée une branche et un worktree par tâche, reçoit le texte et les appels outils, joint les captures produites et relève l'état Git sans appel modèle. Les droits et la publication Deployer restent inchangés. Claude utilise désormais le dialogue natif bidirectionnel `stream-json` (`--permission-prompt-tool stdio`). Les questions `AskUserQuestion` et demandes de permission sont affichées dans le compositeur ; une réponse repart dans le processus en cours, sans nouveau lancement ni changement de session. Les choix simples/multiples, réponses libres et refus sont conservés dans le fil. Le serveur valide la demande encore en attente ; une autorisation ne modifie jamais les droits persistants. Les restrictions explicites de publication restent prioritaires. Les annulations natives suppriment la demande ; après arrêt/redémarrage, les demandes périmées ne sont plus actionnables. Claude ne doit plus produire de marqueur textuel et ses réponses ne sont plus découpées sur ces marqueurs. Compatibilité historique conservée pour Codex/OpenClaw.
 
 Les limites existantes sont inchangées : 30 min/exécution, 10 exécutions/tâche, 5 $ estimés/exécution et 20 $ estimés/tâche, parallélisme réglable. Ce ne sont pas des limites natives de l'abonnement Claude.
 
@@ -53,5 +53,7 @@ Seuls les compteurs exposés par Codex sont affichés (coût et appels : jamais 
 ## Vérification
 
 `npm test` utilise de faux binaires sans quota modèle. Les scénarios couvrent session stable, demande sans surcouche, capacités non désactivées, héritage de configuration, mises à jour, protection des fichiers suivis/retouchés, publication et pièces jointes.
+
+Référence du protocole : https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py (transport natif, aucune dépendance ajoutée).
 
 Un essai réel supplémentaire peut utiliser une instance temporaire du service Projets, un dépôt local et une tâche jetables, sans dépôt GitHub ni déploiement externe. Supprimer ensuite état, dépôt, worktree et session Claude du test, sans toucher aux projets réels.

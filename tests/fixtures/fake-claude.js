@@ -18,8 +18,19 @@ if (args.includes('--help')) {
 }
 let input = '';
 process.stdin.setEncoding('utf8');
-process.stdin.on('data', chunk => { input += chunk; });
-process.stdin.on('end', main);
+if (opt('--input-format') === 'stream-json') {
+  require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
+    const m = JSON.parse(line);
+    if (m.type === 'user') { input = m.message.content; main(); }
+    if (m.type === 'control_response') {
+      fs.appendFileSync(path.join(dir, 'responses.log'), JSON.stringify(m) + '\n');
+      process.stdout.write(JSON.stringify({ type: 'result', is_error: false, result: 'Réponse native reçue', session_id: opt('--session-id') || opt('--resume') }) + '\n');
+    }
+  });
+} else {
+  process.stdin.on('data', chunk => { input += chunk; });
+  process.stdin.on('end', main);
+}
 
 function main() {
   const store = path.join(dir, 'sessions.json'), sessions = fs.existsSync(store) ? JSON.parse(fs.readFileSync(store, 'utf8')) : {};
@@ -32,6 +43,9 @@ function main() {
   const model = opt('--model') || 'claude-opus-5-5';
   const out = value => process.stdout.write(JSON.stringify(value) + '\n');
   out({ type: 'system', subtype: 'init', session_id: id, model, cwd: process.cwd(), tools: (opt('--tools') || '').split(',') });
+  if (mode === 'native-question' || mode === 'native-permission') {
+    out({ type: 'control_request', request_id: 'native-1', request: { subtype: 'can_use_tool', tool_name: mode === 'native-question' ? 'AskUserQuestion' : 'Bash', input: mode === 'native-question' ? { questions: [{ question: 'Quelle branche ?', options: [{label:'main'}, {label:'dev'}] }] } : { command: 'echo allowed' } } }); return;
+  }
   if (mode === 'hang') { setInterval(() => {}, 1000); return; }
   // Indisponibilités : quota ou authentification avant tout travail (secours permis), ou après un premier outil (secours refusé).
   const unavailable = { quota: 'API Error: 429 rate_limit_error · Claude usage limit reached', auth: 'Invalid API key · Please run /login', 'tool-quota': 'API Error: 429 rate_limit_error' }[mode];

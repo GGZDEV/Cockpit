@@ -16,7 +16,7 @@ test('creating a project prepares the folder: short CLAUDE.md, never committed, 
   assert.ok(body.length < 2600, 'short and stable: ' + body.length);
   assert.match(body, /Généré par Cockpit/); assert.match(body, /# alpha/); assert.match(body, /Objectif : Objectif alpha/);
   assert.match(body, /Tests : `npm test`/); assert.match(body, /src\/ \(code source\)/); assert.match(body, /Répondre en français/);
-  assert.doesNotMatch(body, /Plafonner toute sortie|suite complète|Un seul commit/); assert.match(body, /STATUT: BLOQUÉ/);
+  assert.doesNotMatch(body, /Plafonner toute sortie|suite complète|Un seul commit/); assert.doesNotMatch(body, /STATUT: BLOQUÉ/);
   assert.equal(git(path.join(root, 'alpha'), 'status', '--porcelain'), '', 'ignored locally: never committed by accident');
   assert.match(fs.readFileSync(path.join(root, 'alpha', '.git', 'info', 'exclude'), 'utf8'), /^\/CLAUDE\.md$/m);
   // Régénération : permise tant que le fichier n'a pas été retouché, refusée ensuite.
@@ -138,15 +138,36 @@ test('plan first is an option of the task (off by default): read-only plan, rema
   assert.ok(!('plan' in done) && !('claude' in done), 'no plan record, approval or receipt chain');
 });
 
-test('a question blocks the task, the answer resumes the same session; explicit failure is reported', async t => {
-  const { project, create, launch, lastDone, calls, mode } = await setup(t);
+test('native questions are answered inside the running session, without another launch', async t => {
+  const { project, create, launch, until, lastDone, calls, dir, ui } = await setup(t);
   const p = await project('alpha'), task = await create(p.id);
-  mode('blocked'); await launch(task.id); let done = await lastDone(task.id);
-  assert.equal(done.status, 'blocked'); assert.equal(done.question, 'Quelle branche de base ?'); assert.equal(done.runs[0].outcome, 'question');
-  mode('ok'); await launch(task.id, { kind: 'answer', note: 'main' }); done = await lastDone(task.id);
-  assert.equal(calls()[1].input, 'Suite (AL-1) :\nmain'); assert.equal(done.status, 'review'); assert.equal(done.question, '');
-  mode('fail-marker'); await launch(task.id, { kind: 'reprise', note: 'encore' }); done = await lastDone(task.id);
-  assert.equal(done.runs.at(-1).status, 'failed'); assert.equal(done.runs.at(-1).error, 'Impossible : dépendance absente.'); assert.equal(done.status, 'blocked');
+  fs.writeFileSync(path.join(dir, 'fake', 'mode'), 'native-question');
+  await launch(task.id);
+  const waiting = await until(task.id, x => x.runs.at(-1)?.interactions?.length);
+  const requestId = waiting.runs[0].interactions[0].requestId;
+  assert.equal((await ui('tasks/' + task.id + '/respond', 'POST', {requestId, behavior:'allow', answers:{}})).status, 400);
+  assert.equal((await ui('tasks/' + task.id + '/respond', 'POST', {requestId:'stale', behavior:'allow'})).status, 409);
+  const response = await ui('tasks/' + task.id + '/respond', 'POST', {requestId, behavior:'allow', answers:{'Quelle branche ?':'main'}});
+  assert.equal(response.status, 200);
+  const done = await lastDone(task.id);
+  assert.equal(calls().length, 1); assert.equal(done.runs.length, 1);
+  assert.equal(done.runs[0].result, 'Réponse native reçue');
+  const wire = JSON.parse(fs.readFileSync(path.join(dir, 'fake', 'responses.log'), 'utf8').trim());
+  assert.equal(wire.response.response.updatedInput.answers['Quelle branche ?'], 'main');
+  assert.equal(wire.response.response.updatedInput.questions[0].question, 'Quelle branche ?');
+  assert.equal((await ui('tasks/' + task.id + '/respond', 'POST', {requestId, behavior:'allow'})).status, 409);
+});
+
+test('native permission can be refused without granting a persistent permission', async t => {
+  const {project, create, launch, until, lastDone, dir, ui} = await setup(t);
+  const p = await project('alpha'), task = await create(p.id);
+  fs.writeFileSync(path.join(dir, 'fake', 'mode'), 'native-permission'); await launch(task.id);
+  await until(task.id, x => x.runs.at(-1)?.interactions?.length);
+  assert.equal((await ui('tasks/'+task.id+'/respond','POST',{requestId:'native-1',behavior:'deny'})).status,200);
+  await lastDone(task.id);
+  const wire=JSON.parse(fs.readFileSync(path.join(dir,'fake','responses.log'),'utf8').trim());
+  assert.equal(wire.response.response.behavior,'deny');
+  assert.equal(wire.response.response.updatedPermissions,undefined);
 });
 
 test('errors, crashes and budget are reported without leaking secrets; a lost session restarts cleanly with full instructions', async t => {
@@ -155,7 +176,7 @@ test('errors, crashes and budget are reported without leaking secrets; a lost se
   mode('crash'); await launch(task.id); let done = await lastDone(task.id);
   assert.equal(done.runs[0].status, 'failed'); assert.doesNotMatch(JSON.stringify(done), /abcdef123456789/); assert.match(done.runs[0].error, /token=\*\*\*/);
   mode('budget'); await launch(task.id, { kind: 'retry' }); done = await lastDone(task.id);
-  assert.match(done.runs.at(-1).error, /Budget de l’exécution atteint/);
+  assert.match(done.runs.at(-1).error, /Limite Cockpit de coût estimé atteinte/);
   // Session perdue : la reprise échoue proprement, la suivante ouvre une nouvelle session avec les consignes complètes.
   mode('ok'); await launch(task.id, { kind: 'retry' }); await lastDone(task.id);
   fs.writeFileSync(path.join(dir, 'fake', 'sessions.json'), '{}');
@@ -376,4 +397,23 @@ test('Claude owns preparation and verification; project instructions refresh acr
   assert.equal(done.direct.sessionId, session);
   assert.equal(s.calls()[1].input, 'Suite (AL-1) :\nContinue only');
   assert.match(fs.readFileSync(path.join(done.direct.cwd, 'CLAUDE.md'), 'utf8'), /Updated project instruction 123/);
+});
+
+test('waiting on a native permission pauses Cockpit execution time; approval is one-shot', async t => {
+  const {engine,root,mode}=await setup(t); mode('native-permission');
+  const args=engine.buildArgs({fresh:true,sessionId:require('node:crypto').randomUUID(),settings:{}});
+  const result=await engine.run({runId:'timer-probe',args,cwd:path.join(root,'alpha'),prompt:'Probe',timeoutMs:1000,onEvent:ev=>{
+    if(ev.kind==='interaction') setTimeout(()=>engine.respond('timer-probe',ev.requestId,{behavior:'allow',updatedInput:{}}),1200);
+  }});
+  assert.equal(result.timedOut,false); assert.equal(result.code,0); assert.ok(result.durationMs>=1200);
+  assert.equal(engine.respond('timer-probe','native-1',{behavior:'allow'}),false);
+});
+
+test('stop during a native question invalidates its pending answer',async t=>{
+ const {project,create,launch,until,lastDone,mode,ui}=await setup(t);
+ const p=await project('alpha'), task=await create(p.id); mode('native-question'); await launch(task.id);
+ await until(task.id,x=>x.runs.at(-1)?.interactions?.length);
+ await ui('tasks/'+task.id+'/stop','POST',{}); const done=await lastDone(task.id);
+ assert.equal(done.runs[0].interactions,undefined);
+ assert.equal((await ui('tasks/'+task.id+'/respond','POST',{requestId:'native-1',behavior:'allow',answers:{'Quelle branche ?':'main'}})).status,409);
 });

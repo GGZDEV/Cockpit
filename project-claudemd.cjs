@@ -78,7 +78,7 @@ function render(project, analysis) {
   if (c.instructions) out.push('- Consignes du projet :', ...String(c.instructions).split('\n').filter(Boolean).map(l => '  ' + l));
   out.push('', '## Intégration Cockpit',
     '- Les modifications restent dans la branche de cette tâche. La publication est pilotée par Cockpit et Deployer ; ne contourne pas les validations existantes.',
-    '- Si une réponse de l’utilisateur est indispensable, finir par la ligne seule `STATUT: BLOQUÉ` (question au-dessus) ; si c’est impossible, `STATUT: ÉCHEC` (raison au-dessus).');
+    '- Pose directement tes questions lorsque des précisions sont nécessaires.');
   return out.join('\n') + '\n';
 }
 

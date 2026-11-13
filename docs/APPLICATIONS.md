@@ -4,7 +4,7 @@ Le conteneur **CT113 application**, `192.168.1.236`, héberge Cockpit, Claude Co
 
 ## Droits effectifs des tâches
 
-Sur cette installation, `COCKPIT_APPLICATIONS=1` autorise les outils réseau et Docker local pour les tâches Claude existantes et nouvelles, y compris les sessions reprises. La politique serveur est ajoutée au prompt système, même si un ancien `CLAUDE.md` parle encore d'interdiction réseau. L'utilisateur a autorisé ces droits pour son usage personnel. L'accès au socket Docker donne de larges droits sur le conteneur Applications : ce n'est pas une isolation de sécurité face à du code malveillant.
+Sur cette installation, `COCKPIT_APPLICATIONS=1` autorise les outils réseau et Docker local pour les tâches Claude existantes et nouvelles, y compris les sessions reprises. Le contexte serveur est ajouté au lancement, même si un ancien `CLAUDE.md` parle encore d'interdiction réseau. Attention : une session créée avant cette politique peut conserver son instantané système natif ; la reprise seule ne garantit pas son remplacement. L'utilisateur a autorisé ces droits pour son usage personnel. L'accès au socket Docker donne de larges droits sur le conteneur Applications : ce n'est pas une isolation de sécurité face à du code malveillant.
 
 Ne pas modifier les conteneurs en ligne pour essayer une tâche : construire une image et démarrer un conteneur temporaire nommé avec le code de tâche, sur un port libre. Les dépôts/worktrees restent séparés du code servi. Ne pas utiliser CT104/OpenClaw comme dépendance d'hébergement.
 

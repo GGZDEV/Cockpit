@@ -54,7 +54,7 @@ function analyze(repo) {
   } catch { /* dossier illisible */ }
   const editor = read(path.join(repo, '.editorconfig'), 4000), indent = /indent_style\s*=\s*(\w+)/.exec(editor)?.[1], size = /indent_size\s*=\s*(\d+)/.exec(editor)?.[1];
   if (indent) a.notes.push('indentation : ' + (indent === 'tab' ? 'tabulations' : (size || '2') + ' espaces') + ' (.editorconfig)');
-  if (['.eslintrc', '.eslintrc.json', '.eslintrc.js', 'eslint.config.js', 'eslint.config.mjs', '.prettierrc', 'prettier.config.js'].some(f => exists(repo, f))) a.notes.push('un linter/formateur est configuré : le lancer avant de conclure');
+  if (['.eslintrc', '.eslintrc.json', '.eslintrc.js', 'eslint.config.js', 'eslint.config.mjs', '.prettierrc', 'prettier.config.js'].some(f => exists(repo, f))) a.notes.push('un linter/formateur est configuré');
   if (!a.summary) { const readme = read(path.join(repo, 'README.md'), 3000).split('\n').map(l => l.trim()).filter(l => l && !/^[#!<\[`-]/.test(l)); a.summary = readme[0] || ''; }
   return a;
 }
@@ -65,24 +65,19 @@ function render(project, analysis) {
   const about = clip(project.description || a.summary, 240);
   if (about) out.push(about);
   out.push('', '## Projet');
-  if (c.objective) out.push('- Objectif : ' + clip(c.objective, 400).replace(/\n+/g, ' '));
+  if (c.objective) out.push('- Objectif : ' + String(c.objective));
   out.push('- Pile : ' + a.stack.join(', '));
   if (a.dirs.length) out.push('- Dossiers : ' + a.dirs.join(', '));
-  if (c.environment) out.push('- Environnement : ' + clip(c.environment, 300).replace(/\n+/g, ' '));
+  if (c.environment) out.push('- Environnement : ' + String(c.environment));
   const cmds = Object.entries(a.commands);
   out.push('', '## Commandes');
   const label = { test: 'Tests', build: 'Build', lint: 'Lint', typecheck: 'Types', check: 'Vérification' };
-  out.push(...(cmds.length ? cmds.map(([k, v]) => `- ${label[k] || k} : \`${v}\`${a.hints[k] ? ' — ' + a.hints[k] : ''}`) : ['- Aucune commande de test détectée : en chercher une dans le README avant de modifier le code.']));
-  out.push('', '## Conventions', '- Imiter le style du code voisin ; pas de nouvelle dépendance ni de refonte hors de la demande.');
+  out.push(...(cmds.length ? cmds.map(([k, v]) => `- ${label[k] || k} : \`${v}\`${a.hints[k] ? ' — ' + a.hints[k] : ''}`) : ['- Aucune commande de test détectée automatiquement.']));
+  out.push('', '## Conventions');
   for (const note of a.notes) out.push('- ' + note[0].toUpperCase() + note.slice(1) + '.');
-  if (c.instructions) out.push('- Consignes du projet :', ...clip(c.instructions, 1200).split('\n').filter(Boolean).map(l => '  ' + l));
-  out.push('', '## Règles de travail (économie de jetons)',
-    '- Lire par plages (`Read` avec offset/limit) ; jamais `cat` sur un gros fichier ; chercher avec `grep -n … | head -40`.',
-    '- Plafonner toute sortie de commande : `| tail -30` pour tests et build, `git diff --stat` avant `git diff <fichier>`, `ls`/`find` bornés.',
-    '- Tests : d’abord le fichier concerné ; la suite complète une seule fois avant de conclure.',
-    '- Modifier les fichiers avec `Edit`/`Write` plutôt que par script. Scripts jetables (décoder une pièce jointe, essais) : dans le dossier temporaire du système, jamais dans le dépôt. Les tests peuvent réécrire des fichiers suivis (ex. `runtime.json`) : relire `git status` et n’ajouter au commit que ce que tu as modifié.',
-    '- Ne rien publier : pas de push, de déploiement ni d’envoi hors de la machine ; l’utilisateur publie lui-même avec « Clore la tâche », ne lui propose jamais de pousser. Un seul commit local à la fin (`git add <fichiers modifiés> && git commit -m "<résumé court>"`, jamais `git add -A`).',
-    '- Réponse finale courte : ce qui a changé (fichiers), résultat des tests, point restant. Pas de récit des étapes.',
+  if (c.instructions) out.push('- Consignes du projet :', ...String(c.instructions).split('\n').filter(Boolean).map(l => '  ' + l));
+  out.push('', '## Intégration Cockpit',
+    '- Les modifications restent dans la branche de cette tâche. La publication est pilotée par Cockpit et Deployer ; ne contourne pas les validations existantes.',
     '- Si une réponse de l’utilisateur est indispensable, finir par la ligne seule `STATUT: BLOQUÉ` (question au-dessus) ; si c’est impossible, `STATUT: ÉCHEC` (raison au-dessus).');
   return out.join('\n') + '\n';
 }
@@ -100,27 +95,84 @@ async function ensureExcluded(repo) {
 }
 const tracked = async repo => (await gitRun(['-C', repo, 'ls-files', '--error-unmatch', FILE])) !== null;
 
+// Si le dépôt possède déjà ses consignes, les champs Cockpit restent des règles natives
+// séparées. Un fichier retouché ou versionné n'est jamais remplacé.
+async function prepareContext(project, repo, previous = {}) {
+  const rel = '.claude/rules/cockpit-project.md', target = path.join(repo, rel);
+  const body = ['# Contexte du projet Cockpit', ...['objective', 'environment', 'instructions'].filter(k => project.context?.[k]).map(k => '\n## ' + ({ objective: 'Objectif', environment: 'Environnement', instructions: 'Consignes' })[k] + '\n' + project.context[k])].join('\n') + '\n';
+  const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
+  if ((await gitRun(['-C', repo, 'ls-files', '--error-unmatch', rel])) !== null || (current !== null && sha(current) !== previous.hash)) return { status: 'existing' };
+  if (body === '# Contexte du projet Cockpit\n' && current === null) return {};
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.writeFileSync(target, body);
+  const exclude = await gitRun(['-C', repo, 'rev-parse', '--path-format=absolute', '--git-path', 'info/exclude']);
+  if (exclude && !read(exclude, Infinity).split(/\r?\n/).includes('/' + rel)) fs.appendFileSync(exclude, '\n/' + rel + '\n');
+  return { status: 'generated', hash: sha(body) };
+}
+
 // Prépare le dossier d'un projet : génère le CLAUDE.md s'il n'existe pas. Renvoie l'état à mémoriser dans le projet.
 // previous : état précédent ; il autorise la mise à jour d'un fichier que Cockpit a lui-même généré et que personne n'a retouché.
 async function prepare(project, repo, previous = {}, { regenerate = false, now = () => new Date().toISOString() } = {}) {
-  const target = path.join(repo, FILE), current = fs.existsSync(target) ? read(target, 200000) : null;
-  const ours = current !== null && previous.status === 'generated' && previous.hash === sha(current);
+  const target = path.join(repo, FILE), current = fs.existsSync(target) ? read(target, Infinity) : null;
+  const isTracked = await tracked(repo);
+  const ours = !isTracked && current !== null && previous.status === 'generated' && previous.hash === sha(current);
   if (current !== null && !ours) {
-    const isTracked = await tracked(repo);
     if (regenerate) throw Object.assign(new Error('Ce CLAUDE.md ' + (isTracked ? 'fait partie du dépôt' : 'a été modifié') + ' : Cockpit ne l’écrase pas. Supprimez-le ou modifiez-le vous-même.'), { status: 409 });
-    return { status: 'existing', path: target, tracked: isTracked, chars: current.length, at: now() };
+    const context = await prepareContext(project, repo, previous.context);
+    return { status: 'existing', path: target, tracked: isTracked, chars: current.length, context, at: now() };
   }
   const text = render(project, analyze(repo));
   fs.writeFileSync(target, text);
   await ensureExcluded(repo);
-  return { status: 'generated', path: target, hash: sha(text), chars: text.length, at: now() };
+  return { status: 'generated', path: target, hash: sha(text), previousHashes: [...new Set([...(previous.previousHashes || []), ...(ours ? [previous.hash] : [])])].slice(-20), chars: text.length, at: now() };
 }
 
-// Un worktree reçoit le CLAUDE.md du dossier principal s'il ne l'a pas (cas du fichier généré, non versionné) ; jamais d'écrasement.
-function seedWorktree(repo, dir) {
-  const from = path.join(repo, FILE), to = path.join(dir, FILE);
-  if (fs.existsSync(to) || !fs.existsSync(from)) return false;
-  fs.copyFileSync(from, to); return true;
+// Configuration locale de projet héritée à chaque lancement. Les fichiers suivis dans Git
+// appartiennent à la branche ; seuls les fichiers locaux sont synchronisés. Un manifeste dans
+// le répertoire administratif Git protège toute modification propre à une tâche.
+async function seedWorktree(repo, dir, previous = {}) {
+  const manifestPath = await gitRun(['-C', dir, 'rev-parse', '--path-format=absolute', '--git-path', 'cockpit-environment.json']);
+  if (!manifestPath) throw new Error('Répertoire Git de la tâche introuvable.');
+  const manifest = json(manifestPath) || {}, next = {};
+  const sourceTracked = new Set((await gitRun(['-C', repo, 'ls-files', '-z']) || '').split('\0'));
+  const destTracked = new Set((await gitRun(['-C', dir, 'ls-files', '-z']) || '').split('\0'));
+  const candidates = [];
+  const walk = rel => {
+    const from = path.join(repo, rel);
+    let stat; try { stat = fs.lstatSync(from); } catch { return; }
+    // Ne pas recopier de liens vers des fichiers extérieurs au projet.
+    if (stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) { for (const entry of fs.readdirSync(from)) walk(rel + '/' + entry); }
+    else if (stat.isFile() && !sourceTracked.has(rel)) candidates.push(rel);
+  };
+  for (const rel of [FILE, 'CLAUDE.local.md', '.claude', '.mcp.json']) walk(rel);
+  const excludePath = await gitRun(['-C', repo, 'rev-parse', '--path-format=absolute', '--git-path', 'info/exclude']);
+  let excludes = excludePath ? read(excludePath, Infinity) : '';
+  let changed = false;
+  for (const rel of new Set([...candidates, ...Object.keys(manifest)])) {
+    if (destTracked.has(rel)) continue;
+    const target = path.join(dir, rel);
+    // Refuser aussi une traversée d'un dossier local remplacé par un lien.
+    let safe = true, cursor = dir;
+    for (const part of rel.split('/')) { cursor = path.join(cursor, part); try { if (fs.lstatSync(cursor).isSymbolicLink()) safe = false; } catch {} }
+    if (!safe) continue;
+    const current = fs.existsSync(target) ? fs.readFileSync(target) : null;
+    const currentHash = current === null ? null : sha(current);
+    const from = path.join(repo, rel), present = candidates.includes(rel);
+    const body = present ? fs.readFileSync(from) : null, sourceHash = body === null ? null : sha(body);
+    const legacy = rel === FILE && previous.previousHashes?.includes(currentHash);
+    const managed = current === null || currentHash === manifest[rel] || currentHash === sourceHash || legacy;
+    if (!managed) { if (manifest[rel]) next[rel] = manifest[rel]; continue; }
+    if (!present) { if (current !== null && currentHash === manifest[rel]) { fs.unlinkSync(target); changed = true; } continue; }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (currentHash !== sourceHash) { fs.writeFileSync(target, body); changed = true; }
+    next[rel] = sourceHash;
+    const line = '/' + rel;
+    if (excludePath && !excludes.split(/\r?\n/).includes(line)) excludes += (excludes.endsWith('\n') ? '' : '\n') + line + '\n';
+  }
+  if (excludePath && excludes !== read(excludePath, Infinity)) fs.writeFileSync(excludePath, excludes);
+  fs.writeFileSync(manifestPath, JSON.stringify(next));
+  return changed;
 }
 
 module.exports = { analyze, render, prepare, seedWorktree, ensureExcluded, MARK, FILE };

@@ -16,7 +16,7 @@ test('creating a project prepares the folder: short CLAUDE.md, never committed, 
   assert.ok(body.length < 2600, 'short and stable: ' + body.length);
   assert.match(body, /Généré par Cockpit/); assert.match(body, /# alpha/); assert.match(body, /Objectif : Objectif alpha/);
   assert.match(body, /Tests : `npm test`/); assert.match(body, /src\/ \(code source\)/); assert.match(body, /Répondre en français/);
-  assert.match(body, /Plafonner toute sortie/); assert.match(body, /STATUT: BLOQUÉ/);
+  assert.doesNotMatch(body, /Plafonner toute sortie|suite complète|Un seul commit/); assert.match(body, /STATUT: BLOQUÉ/);
   assert.equal(git(path.join(root, 'alpha'), 'status', '--porcelain'), '', 'ignored locally: never committed by accident');
   assert.match(fs.readFileSync(path.join(root, 'alpha', '.git', 'info', 'exclude'), 'utf8'), /^\/CLAUDE\.md$/m);
   // Régénération : permise tant que le fichier n'a pas été retouché, refusée ensuite.
@@ -46,13 +46,13 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   assert.equal(feed.sends.length, 0, 'OpenClaw is not involved');
   const a = call.args;
   assert.equal(a[0], '-p'); assert.equal(arg(a, '--output-format'), 'stream-json'); assert.ok(a.includes('--verbose'));
-  assert.ok(a.includes('--strict-mcp-config') && a.includes('--disable-slash-commands') && a.includes('--exclude-dynamic-system-prompt-sections'));
+  for (const flag of ['--strict-mcp-config', '--disable-slash-commands', '--exclude-dynamic-system-prompt-sections', '--settings']) assert.ok(!a.includes(flag), flag);
   assert.equal(arg(a, '--tools'), 'default', 'same tools as Claude Code on the desktop'); assert.equal(arg(a, '--permission-mode'), 'acceptEdits');
   assert.equal(arg(a, '--model'), 'claude-sonnet-5-5', 'Sonnet 5.5 by default');
-  assert.equal(arg(a, '--append-system-prompt'), claude.CAVEMAN, 'only the caveman reply style is appended: project rules live in CLAUDE.md');
+  assert.ok(!a.includes('--append-system-prompt'), 'no mandatory reply style');
   assert.ok(!a.includes('--system-prompt'), 'default system prompt kept');
   assert.ok(!a.includes('--bare') && !a.includes('--dangerously-skip-permissions'), 'OAuth kept, permissions kept');
-  assert.deepEqual(JSON.parse(arg(a, '--settings')), { autoMemoryEnabled: false, disableAllHooks: true, includeGitInstructions: false, enabledPlugins: {} });
+  assert.ok(!a.includes('--settings'), 'native environment settings inherited');
   assert.match(arg(a, '--session-id'), UUID); assert.equal(arg(a, '--session-id'), a.at(-1), 'session is the last argument');
   const allowed = a.slice(a.indexOf('--allowedTools') + 1, a.indexOf('--disallowedTools')), denied = a.slice(a.indexOf('--disallowedTools') + 1, a.indexOf('--max-budget-usd'));
   assert.ok(allowed.includes('Bash') && allowed.includes('WebFetch'), 'any command (node, python…) like Claude Code; denials below still win');
@@ -61,7 +61,7 @@ test('a task goes straight to Claude Code: one call, lean arguments, task folder
   assert.equal(arg(a, '--max-budget-usd'), '5');
   assert.ok(!a.some(x => x.includes('Ajoute feature.txt')), 'the request goes through stdin, never in argv');
   // Demande courte : la tâche, puis l'environnement préparé et la vérification ; ni contexte de projet ni cadre.
-  assert.match(call.input, /^Tâche AL-1 — « Tâche \d+ »\n\nAjoute feature\.txt\n\n## Résultat attendu\nfeature\.txt existe\n\n## Critères de réussite\nTests verts\n\n## Environnement préparé\n[^#]+\n\n## Vérification\n/);
+  assert.equal(call.input, `Tâche AL-1 — « ${task.title} »\n\nAjoute feature.txt\n\n## Résultat attendu\nfeature.txt existe\n\n## Critères de réussite\nTests verts`);
   assert.ok(call.input.length < 1400 && !/Objectif alpha|Cadre|publi/i.test(call.input));
   // Dossier de travail : worktree de la tâche, avec le CLAUDE.md du projet ; la copie principale reste intacte.
   assert.ok(call.cwd.startsWith(path.join(dir, 'worktrees')) && call.cwd.endsWith('AL-1'));
@@ -227,7 +227,7 @@ test('old Claude Code versions: optional flags unknown to the installed binary a
   mode('old-cli'); await launch(task.id); await lastDone(task.id);
   const a = calls()[0].args;
   for (const f of ['--settings', '--max-budget-usd', '--exclude-dynamic-system-prompt-sections', '--effort']) assert.ok(!a.includes(f), f);
-  assert.ok(a.includes('--strict-mcp-config') && a.includes('--tools') && a.includes('--model'));
+  assert.ok(!a.includes('--strict-mcp-config') && a.includes('--tools') && a.includes('--model'));
 });
 
 test('buildArgs: lists are always followed by an option, session id last, web tools in work mode only', () => {
@@ -238,10 +238,8 @@ test('buildArgs: lists are always followed by an option, session id last, web to
   assert.ok(a.includes('Bash(node ' + claude.VISUAL_CHECK + ':*)') && path.isAbsolute(claude.VISUAL_CHECK), 'visual check allowed even with a restricted list');
   assert.ok(a[a.indexOf('--add-dir') + 3].startsWith('--'));
   assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {} }).includes('WebSearch'));
-  // Style caveman ajouté au prompt système de chaque appel, travail comme plan, session neuve comme reprise.
-  assert.equal(arg(a, '--append-system-prompt'), claude.CAVEMAN);
-  assert.match(claude.CAVEMAN, /Payload verbatim/);
-  assert.equal(arg(claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {}, flags: new Set() }), '--append-system-prompt'), claude.CAVEMAN);
+  assert.ok(!a.includes('--append-system-prompt'));
+  assert.ok(!claude.buildArgs({ mode: 'plan', sessionId: 'S', fresh: true, settings: {}, flags: new Set() }).includes('--append-system-prompt'));
   // Un projet qui a encore l'ancienne liste restreinte passe au nouveau défaut (toutes les commandes).
   const legacy = ['git status', 'git diff', 'git log', 'git show', 'git add', 'git commit', 'git rev-parse', 'git branch', 'git ls-files', 'npm test', 'npm run test', 'npm run lint', 'npm run build', 'node --test', 'node --check'];
   const b = claude.buildArgs({ mode: 'work', sessionId: 'S', fresh: true, settings: { allowedBash: legacy } });
@@ -362,4 +360,20 @@ test('closing refuses to publish over uncommitted changes in the local copy, and
   assert.equal(r.status, 409); assert.match(r.body.error, /non committées/);
   assert.notEqual((await ui('state')).body.tasks.find(x => x.id === task.id).status, 'done');
   assert.equal(git(origin, 'log', '--format=%s', 'main'), 'init');
+});
+
+test('Claude owns preparation and verification; project instructions refresh across the same session', async t => {
+  let preparations = 0;
+  const taskEnv = { plan: () => { preparations++; return null; }, testScript: () => true, baseline: async () => { preparations++; }, install: async () => { preparations++; } };
+  const s = await setup(t, { taskEnv });
+  const p = await s.project('alpha'), x = await s.create(p.id);
+  await s.launch(x.id); let done = await s.lastDone(x.id);
+  const session = done.direct.sessionId;
+  await s.ui('projects/' + p.id, 'PATCH', { context: { ...p.context, instructions: 'Updated project instruction 123' } });
+  await s.launch(x.id, { note: 'Continue only', kind: 'reprise' });
+  done = await s.until(x.id, v => v.runs[1]?.status === 'succeeded');
+  assert.equal(preparations, 0);
+  assert.equal(done.direct.sessionId, session);
+  assert.equal(s.calls()[1].input, 'Suite (AL-1) :\nContinue only');
+  assert.match(fs.readFileSync(path.join(done.direct.cwd, 'CLAUDE.md'), 'utf8'), /Updated project instruction 123/);
 });

@@ -565,9 +565,9 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     launching.add(task.id); starting.add(task.id);
     try {
       const repo = await engine.repository(project);
-      if (!project.claudeMd) await prepareClaudeMd(project).catch(error => log('CLAUDE.md : ' + error.message)); // projet d'avant : préparé au premier lancement
+      await prepareClaudeMd(project); // actualise uniquement les fichiers encore gérés par Cockpit
       const wt = await engine.worktree(project, task, repo);
-      if (wt.created) claudemd.seedWorktree(repo, wt.path);
+      await claudemd.seedWorktree(repo, wt.path, project.claudeMd);
       // Changement de moteur ou dossier différent : la session précédente n'est plus utilisable, une nouvelle s'ouvre avec les consignes complètes.
       const previous = d.sessionId && (d.engine !== name || d.cwd !== wt.path) ? { engine: d.engine, reason: d.engine !== name ? 'changement de moteur' : 'dossier de travail différent' } : null;
       if (previous) delete d.sessionId;
@@ -629,6 +629,8 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   // Avant le moteur, dans le suivi asynchrone (la réponse HTTP du lancement n'attend pas) : dépendances du worktree, puis tests de départ
   // une fois par commit de départ. Faux si l'exécution a été arrêtée entre-temps (arrêt demandé ou arrêt de Cockpit).
   async function prepareWorktree(task, run) {
+    // Claude prépare et vérifie son environnement lui-même, comme en lancement direct.
+    if (run.engine === 'claude') return true;
     const d = task.direct, controller = new AbortController(), signal = controller.signal;
     preparing.set(run.id, controller);
     let deps = null;

@@ -85,7 +85,7 @@ test('captures made during a Claude run are attached to the task and their folde
   assert.ok(done.runs[0].events.some(e => e.text === '2 captures jointes à la tâche'));
   assert.ok(done.attachments.every(a => done.direct.sent.includes(a.id)), 'déjà connues de la session : pas relistées au message suivant');
   const input = calls()[0].input;
-  assert.ok(input.includes('node ' + claude.VISUAL_CHECK + ' --path / -- '), 'le brief explique l’outil');
+  assert.ok(!input.includes('node ' + claude.VISUAL_CHECK), 'aucune procédure de capture imposée dans le prompt');
   assert.equal(fs.readdirSync(os.tmpdir()).filter(f => f.startsWith('cockpit-visual-') && fs.existsSync(path.join(os.tmpdir(), f, 'accueil-mobile.png'))).length, 0, 'dossier de captures supprimé');
 });
 

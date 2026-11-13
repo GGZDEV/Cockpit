@@ -21,7 +21,7 @@ test('Codex as the project engine: one session, workspace-write sandbox, project
   assert.equal(arg(call.args, '--model'), 'gpt-5.5-codex'); assert.equal(call.args.at(-1), '-', 'the request goes through stdin');
   assert.ok(!call.args.some(a => DANGER.test(a)) && !call.args.some(a => a.includes('Ajoute feature.txt')));
   // Codex ne lit pas CLAUDE.md : les règles du projet sont jointes à la première demande, avec la consigne de ne pas commiter.
-  assert.match(call.input, /^## Consignes du projet\n<!-- Généré par Cockpit/); assert.match(call.input, /Plafonner toute sortie/); assert.match(call.input, /Ne fais pas de commit/);
+  assert.match(call.input, /^## Consignes du projet\n<!-- Généré par Cockpit/); assert.match(call.input, /## Intégration Cockpit/); assert.match(call.input, /Ne fais pas de commit/);
   assert.match(call.input, /Tâche AL-1 — « Tâche \d+ »\n\nAjoute feature\.txt\n\n## Résultat attendu\nfeature-codex\.txt/);
   assert.ok(call.cwd.startsWith(path.join(dir, 'worktrees')));
   assert.deepEqual(call.env, { CODEX_HOME: path.join(dir, 'codex-home'), PATH: true }, 'dedicated CODEX_HOME, no API key, token or Claude OAuth');

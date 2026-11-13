@@ -21,12 +21,11 @@ test('analysis detects the stack, the test command and the folders without any A
   const none = path.join(dir, 'none'); fs.mkdirSync(none); assert.deepEqual(md.analyze(none).stack, ['pile non détectée automatiquement']);
 });
 
-test('the generated file stays short whatever the project context, and is French', () => {
-  const huge = 'x'.repeat(50000), a = md.analyze(__dirname);
-  const text = md.render({ name: 'N'.repeat(500), description: huge, context: { objective: huge, instructions: Array.from({ length: 500 }, (_, i) => 'règle ' + i).join('\n'), environment: huge } }, a);
-  assert.ok(text.length < 4500, 'bounded: ' + text.length);
-  assert.match(text, /^<!-- Généré par Cockpit/); assert.match(text, /## Règles de travail \(économie de jetons\)/);
-  assert.match(text, /jamais `git add -A`/); assert.match(text, /relire `git status`/);
+test('project context is complete and has no imposed work or response method', () => {
+  const huge = 'x'.repeat(50000), instructions = Array.from({ length: 500 }, (_, i) => 'règle ' + i).join('\n');
+  const text = md.render({ name: 'N', context: { objective: huge, instructions, environment: huge } }, md.analyze(__dirname));
+  assert.ok(text.includes(huge)); assert.match(text, /règle 499/);
+  assert.doesNotMatch(text, /Règles de travail|suite complète|Réponse finale courte|Un seul commit|Plafonner/);
 });
 
 test('prepare: generates once, ignores the file in Git, never overwrites an existing or edited file', async t => {
@@ -50,7 +49,54 @@ test('a task worktree receives the project file, but never overwrites its own', 
   const dir = tmp(t), r = repo(path.join(dir, 'p')); await md.prepare({ name: 'P' }, r);
   const wt = path.join(dir, 'wt'); git(r, 'worktree', 'add', '-q', '-b', 'b1', wt);
   assert.ok(!fs.existsSync(path.join(wt, 'CLAUDE.md')), 'untracked files are not part of a worktree');
-  assert.equal(md.seedWorktree(r, wt), true); assert.equal(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), fs.readFileSync(path.join(r, 'CLAUDE.md'), 'utf8'));
-  fs.writeFileSync(path.join(wt, 'CLAUDE.md'), 'local'); assert.equal(md.seedWorktree(r, wt), false); assert.equal(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), 'local');
+  assert.equal(await md.seedWorktree(r, wt), true); assert.equal(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), fs.readFileSync(path.join(r, 'CLAUDE.md'), 'utf8'));
+  fs.writeFileSync(path.join(wt, 'CLAUDE.md'), 'local'); assert.equal(await md.seedWorktree(r, wt), false); assert.equal(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), 'local');
   git(wt, 'add', '-A'); assert.equal(git(wt, 'status', '--porcelain'), '', 'git add -A inside the worktree never picks the file up');
+});
+
+test('environment sync refreshes managed settings and rules, preserves task edits/tracked files, removes only owned deleted files', async t => {
+  const dir = tmp(t), r = repo(path.join(dir, 'p'), { '.claude/rules/tracked.md': 'tracked branch rule' });
+  let state = await md.prepare({ name: 'P', context: { instructions: 'First' } }, r);
+  fs.mkdirSync(path.join(r, '.claude/skills/local'), { recursive: true });
+  fs.writeFileSync(path.join(r, '.claude/skills/local/SKILL.md'), 'skill-v1');
+  fs.writeFileSync(path.join(r, '.mcp.json'), '{"mcpServers":{}}');
+  const wt = path.join(dir, 'wt'); git(r, 'worktree', 'add', '-q', '-b', 'env', wt);
+  await md.seedWorktree(r, wt, state);
+  assert.equal(fs.readFileSync(path.join(wt, '.claude/skills/local/SKILL.md'), 'utf8'), 'skill-v1');
+  fs.writeFileSync(path.join(wt, '.claude/rules/tracked.md'), 'task branch rule');
+  fs.writeFileSync(path.join(wt, '.mcp.json'), 'task specific');
+  fs.writeFileSync(path.join(r, '.claude/skills/local/SKILL.md'), 'skill-v2');
+  state = await md.prepare({ name: 'P', context: { instructions: 'Updated' } }, r, state);
+  await md.seedWorktree(r, wt, state);
+  assert.match(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), /Updated/);
+  assert.equal(fs.readFileSync(path.join(wt, '.claude/skills/local/SKILL.md'), 'utf8'), 'skill-v2');
+  assert.equal(fs.readFileSync(path.join(wt, '.mcp.json'), 'utf8'), 'task specific');
+  assert.equal(fs.readFileSync(path.join(wt, '.claude/rules/tracked.md'), 'utf8'), 'task branch rule');
+  fs.unlinkSync(path.join(r, '.claude/skills/local/SKILL.md'));
+  await md.seedWorktree(r, wt, state);
+  assert.ok(!fs.existsSync(path.join(wt, '.claude/skills/local/SKILL.md')));
+  assert.ok(!git(wt, 'status', '--porcelain').includes('.mcp.json'));
+});
+
+test('tracked CLAUDE.md gets complete Cockpit context separately without overwrites', async t => {
+  const dir = tmp(t), r = repo(path.join(dir, 'p'), { 'CLAUDE.md': '# Team rules' });
+  let state = await md.prepare({ name: 'P', context: { instructions: 'i'.repeat(3000) + 'END' } }, r);
+  const rule = path.join(r, '.claude/rules/cockpit-project.md');
+  assert.match(fs.readFileSync(rule, 'utf8'), /i{3000}END/);
+  state = await md.prepare({ name: 'P', context: { instructions: 'new rule' } }, r, state);
+  assert.match(fs.readFileSync(rule, 'utf8'), /new rule/);
+  assert.equal(fs.readFileSync(path.join(r, 'CLAUDE.md'), 'utf8'), '# Team rules');
+  fs.writeFileSync(rule, 'manually edited');
+  await md.prepare({ name: 'P', context: { instructions: 'do not overwrite' } }, r, state);
+  assert.equal(fs.readFileSync(rule, 'utf8'), 'manually edited');
+});
+
+test('legacy worktree copies upgrade using previously generated root hashes', async t => {
+  const dir = tmp(t), r = repo(path.join(dir, 'p'));
+  let state = await md.prepare({ name: 'Old' }, r);
+  const wt = path.join(dir, 'wt'); git(r, 'worktree', 'add', '-q', '-b', 'old', wt);
+  fs.copyFileSync(path.join(r, 'CLAUDE.md'), path.join(wt, 'CLAUDE.md'));
+  state = await md.prepare({ name: 'New' }, r, state);
+  await md.seedWorktree(r, wt, state);
+  assert.match(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), /# New/);
 });

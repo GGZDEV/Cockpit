@@ -98,8 +98,8 @@ test('direct runs prepare the worktree asynchronously before the engine, once pe
     install: async () => { seen.install++; await gate; return { status: 'installed', label: 'npm ci', durationMs: 2000 }; },
     baseline: async (cwd, sha) => { seen.baseline++; return { sha, at: new Date().toISOString(), ok: false, passed: 10, failed: 2, total: 12, summary: 'ℹ fail 2' }; }
   };
-  const { project, create, launch, until, lastDone, calls, task } = await setup(t, { taskEnv });
-  const p = await project('alpha'), x = await create(p.id);
+  const { project, create, launch, until, lastDone, codexCalls: calls, task } = await setup(t, { taskEnv, codexEnabled: true });
+  const p = await project('alpha', { engine: 'codex' }), x = await create(p.id);
   const started = await launch(x.id);
   assert.equal(started.status, 202, 'la réponse n’attend pas l’installation');
   await until(x.id, v => v.runs[0].events.some(e => e.text === 'Préparation des dépendances… (npm ci)'));
@@ -120,8 +120,8 @@ test('stopping during preparation aborts it and never starts the engine', async 
   let aborted = false, hang = true;
   const taskEnv = { plan: () => ({ label: 'npm ci' }), testScript: () => false, baseline: async () => null,
     install: (cwd, { signal }) => hang ? new Promise(resolve => signal.addEventListener('abort', () => { aborted = true; resolve({ status: 'aborted', label: 'npm ci' }); })) : null };
-  const { project, create, launch, until, ui, calls } = await setup(t, { taskEnv });
-  const p = await project('alpha'), x = await create(p.id);
+  const { project, create, launch, until, ui, codexCalls: calls } = await setup(t, { taskEnv, codexEnabled: true });
+  const p = await project('alpha', { engine: 'codex' }), x = await create(p.id);
   await launch(x.id); await until(x.id, v => v.runs[0].events.some(e => /Préparation/.test(e.text)));
   assert.equal((await ui('tasks/' + x.id + '/stop', 'POST', {})).status, 200);
   const done = await until(x.id, v => v.runs[0].status === 'interrupted');
@@ -130,14 +130,14 @@ test('stopping during preparation aborts it and never starts the engine', async 
   // La session choisie par Cockpit n'a jamais existé chez Claude : « Relancer » en ouvre une nouvelle au lieu de la reprendre.
   assert.equal(done.direct.sessionId, undefined);
   hang = false; await launch(x.id, { kind: 'retry' }); await until(x.id, v => v.runs[1]?.status === 'succeeded');
-  assert.ok(calls()[0].args.includes('--session-id') && !calls()[0].args.includes('--resume'));
+  assert.ok(!calls()[0].args.includes('resume'));
 });
 
 test('a restart during preparation does not leave a session that Claude never opened', async t => {
   const taskEnv = { plan: () => ({ label: 'npm ci' }), testScript: () => false, baseline: async () => null,
     install: (cwd, { signal }) => new Promise(resolve => signal.addEventListener('abort', () => resolve({ status: 'aborted', label: 'npm ci' }))) };
-  const { project, create, launch, until, calls, services, make } = await setup(t, { taskEnv });
-  const p = await project('alpha'), x = await create(p.id);
+  const { project, create, launch, until, codexCalls: calls, services, make } = await setup(t, { taskEnv, codexEnabled: true });
+  const p = await project('alpha', { engine: 'codex' }), x = await create(p.id);
   await launch(x.id); await until(x.id, v => v.runs[0].events.some(e => /Préparation/.test(e.text)));
   services[0].close(); await new Promise(r => setTimeout(r, 100));
   services.push(make());

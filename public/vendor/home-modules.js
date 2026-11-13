@@ -600,8 +600,9 @@ window.HD = window.HD || {};
     }
     return out.length ? out : [st];
   }
-  // "idfm_Le Mée - Le Mée-sur-Seine -> Goussainville #0" -> "Le Mée"
-  const idfmStation = (st) => String(st.attributes.friendly_name || st.entity_id).replace(/^idfm_/i, '').replace(/\s*->.*$/, '').replace(/\s*#\d+$/, '').split(' - ')[0].trim();
+  // "idfm_Le Mée - Le Mée-sur-Seine -> Goussainville #0" -> "Le Mée". Home Assistant prefixes the name with the
+  // device's ("D - Le Mée - Le Mée-sur-Seine -> Goussainville idfm_Le Mée - …"): only what follows "idfm_" counts.
+  const idfmStation = (st) => String(st.attributes.friendly_name || st.entity_id).replace(/^.*?idfm_/i, '').replace(/\s*->.*$/, '').replace(/\s*#\d+$/, '').split(' - ')[0].trim();
   // Line from the device name ("D - Le Mée - …"), else RER D.
   function idfmLine(st, c) {
     const reg = c && c.index && c.index.reg;
@@ -727,7 +728,10 @@ window.HD = window.HD || {};
     const station = idfm ? idfmStation(st) : M.shortName(st);
     const w = m.w, h = m.h;
     const tiny = w === 1 && h === 1;
-    const upd = st.last_updated && isFinite(Date.parse(st.last_updated)) ? 'maj. ' + hm(new Date(st.last_updated)) : '';
+    // Last update: the freshest of the sensors that feed the module (the first one may be an idle direction).
+    const fed = idfm ? list.flatMap((x) => idfmGroup(x, c, isIdfmTime)) : list;
+    const updAt = Math.max(...fed.map((s) => Date.parse(s.last_updated)).filter(isFinite));
+    const upd = isFinite(updAt) ? 'maj. ' + hm(new Date(updAt)) : '';
     const head2 = (meta) => `<div class="mod-head"><h2 class="row transit-title">${badge}<span>${esc(m.title || (w === 1 ? station : 'Départs · ' + station))}</span></h2>${meta ? `<span class="muted small">${esc(meta)}</span>` : ''}</div>`;
     if (!deps.length) {
       const noData = idfm ? list.flatMap((x) => idfmGroup(x, c, isIdfmTime)).every((s) => !M.isAvail(s) || s.state === 'unknown') : !(st.attributes && st.attributes.MonitoredStopVisit);
@@ -791,7 +795,7 @@ window.HD = window.HD || {};
     const boardHead = m.title ? `<div class="mod-head"><h2>${esc(m.title)}</h2></div>` : '';
     // 1×1: a light header (station, last update), then as many of the next trains as fit
     // (home.css hides the rows that do not; three on the phone).
-    const tinyHead = `<div class="mod-head trn-head"><h2>${esc(m.title || station)}</h2>${upd ? `<span class="muted small">${esc(upd)}</span>` : ''}</div>`;
+    const tinyHead = `<div class="mod-head trn-head"><h2>${esc(m.title || station + (o.direction ? ' → ' + o.direction : ''))}</h2>${upd ? `<span class="muted small">${esc(upd)}</span>` : ''}</div>`;
     if (tiny) return tinyHead +`<ul class="trn-list is-compact">${deps.slice(0, 8).map((d) => row(d, true)).join('')}</ul>`;
     // 3+ columns wide without a direction filter: one column per direction.
     const dirs = [...new Set(deps.map(dirOf))];

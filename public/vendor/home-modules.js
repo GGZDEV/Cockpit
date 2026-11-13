@@ -789,8 +789,10 @@ window.HD = window.HD || {};
     // No header: the clock is in the page header and the right column is obviously the platform.
     // A title the user typed is still shown.
     const boardHead = m.title ? `<div class="mod-head"><h2>${esc(m.title)}</h2></div>` : '';
-    // 1×1: as many of the next trains as fit (home.css hides the rows that do not; three on the phone).
-    if (tiny) return boardHead + `<ul class="trn-list is-compact">${deps.slice(0, 8).map((d) => row(d, true)).join('')}</ul>`;
+    // 1×1: a light header (station, last update), then as many of the next trains as fit
+    // (home.css hides the rows that do not; three on the phone).
+    const tinyHead = `<div class="mod-head trn-head"><h2>${esc(m.title || station)}</h2>${upd ? `<span class="muted small">${esc(upd)}</span>` : ''}</div>`;
+    if (tiny) return tinyHead +`<ul class="trn-list is-compact">${deps.slice(0, 8).map((d) => row(d, true)).join('')}</ul>`;
     // 3+ columns wide without a direction filter: one column per direction.
     const dirs = [...new Set(deps.map(dirOf))];
     if (!o.direction && w >= 3 && dirs.length >= 2) {

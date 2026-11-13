@@ -1083,6 +1083,9 @@ button.ag-cell:hover { background: rgba(255, 255, 255, 0.08); }
 .trn.is-narrow.is-first .trn-min b { font-size: 22px; }
 /* Small tile: one-line rows of a fixed height, from the top. Rows that do not fit wrap into a second
    column pushed outside the tile and hidden, so only whole rows show and a smaller tile never gets taller rows. */
+.trn-head { align-items: center; padding: 0 2px; }
+.trn-head h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
+.trn-head > .muted.small { font-size: 12px; }
 .trn-list.is-compact { overflow: hidden; gap: 4px; flex-wrap: wrap; align-content: flex-start; column-gap: 24px; }
 .trn.is-compact { flex: none; width: 100%; height: 34px; border-radius: 8px; }
 body[data-profile="phone"] .trn.is-compact:nth-child(n+4) { display: none; }

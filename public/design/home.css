@@ -1085,7 +1085,6 @@ button.ag-cell:hover { background: rgba(255, 255, 255, 0.08); }
    column pushed outside the tile and hidden, so only whole rows show and a smaller tile never gets taller rows. */
 .trn-head { align-items: center; padding: 0 2px; }
 .trn-head h2 { font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-muted); }
-.trn-head > .muted.small { flex: none; font-size: 12px; }
 .trn-list.is-compact { overflow: hidden; gap: 4px; flex-wrap: wrap; align-content: flex-start; column-gap: 24px; }
 /* Rows share the height under the header: 28px at least (one more train rather than a gap), 38px at most. */
 .trn.is-compact { flex: 1 0 28px; max-height: 38px; width: 100%; border-radius: 8px; }

@@ -728,18 +728,17 @@ window.HD = window.HD || {};
     const station = idfm ? idfmStation(st) : M.shortName(st);
     const w = m.w, h = m.h;
     const tiny = w === 1 && h === 1;
-    // Last update: the freshest of the sensors that feed the module (the first one may be an idle direction).
-    const fed = idfm ? list.flatMap((x) => idfmGroup(x, c, isIdfmTime)) : list;
-    const updAt = Math.max(...fed.map((s) => Date.parse(s.last_updated)).filter(isFinite));
-    const upd = isFinite(updAt) ? 'maj. ' + hm(new Date(updAt)) : '';
+    // No "last update" time: Home Assistant only stamps a sensor when its value changes, not at each poll
+    // (every 3 min for IDFM), so an old time would wrongly suggest frozen data. The minutes are computed live.
     const head2 = (meta) => `<div class="mod-head"><h2 class="row transit-title">${badge}<span>${esc(m.title || (w === 1 ? station : 'Départs · ' + station))}</span></h2>${meta ? `<span class="muted small">${esc(meta)}</span>` : ''}</div>`;
     if (!deps.length) {
       const noData = idfm ? list.flatMap((x) => idfmGroup(x, c, isIdfmTime)).every((s) => !M.isAvail(s) || s.state === 'unknown') : !(st.attributes && st.attributes.MonitoredStopVisit);
-      return head2(tiny ? '' : upd) + (tiny ? '' : trafficInfo(m, line, deps, c, st)) + `<div class="mod-empty"><span class="empty-ic">${icon(IC.train, 22, 1.8)}</span>
+      return head2('') + (tiny ? '' : trafficInfo(m, line, deps, c, st)) + `<div class="mod-empty"><span class="empty-ic">${icon(IC.train, 22, 1.8)}</span>
         <p class="empty-title">${noData && !idfm ? 'Aucune donnée reçue' : 'Aucun départ'}</p><p class="muted small">${noData && !idfm ? 'Vérifiez la clé API IDFM dans Home Assistant.' : 'Aucun départ annoncé pour le moment.'}</p></div>`;
     }
     const mins = (d) => Math.max(0, Math.round((d.time - Date.now()) / 60000));
-    const inShort = (d) => { const n = mins(d); return d.cancelled ? '—' : n === 0 ? 'À quai' : n < 60 ? n + ' min' : Math.floor(n / 60) + ' h ' + String(n % 60).padStart(2, '0'); };
+    // "À quai" only when IDFM says so; a departure time just passed (kept 30 s) is "Au départ".
+    const inShort = (d) => { const n = mins(d); return d.cancelled ? '—' : d.atStop ? 'À quai' : d.time <= Date.now() ? 'Au départ' : n === 0 ? 'À l’approche' : n < 60 ? n + ' min' : Math.floor(n / 60) + ' h ' + String(n % 60).padStart(2, '0'); };
     const time = (d) => hm(new Date(d.time));
     const late = (d) => !d.cancelled && (d.delay >= 1 || d.delayed);
     const status = (d) => (d.cancelled ? 'Supprimé' : late(d) ? 'Retard' + (d.delay >= 1 ? ' +' + d.delay + ' min' : '') : 'À l’heure') + (d.platform ? ' · Voie ' + d.platform : '');
@@ -748,7 +747,7 @@ window.HD = window.HD || {};
 
     // x×1: the next departures side by side.
     if (h === 1 && !tiny) {
-      return head2(upd) + `<div class="rer-cards">${deps.slice(0, w).map((d) => `<div class="rer-card${d.cancelled ? ' is-cancelled' : ''}">
+      return head2('') + `<div class="rer-cards">${deps.slice(0, w).map((d) => `<div class="rer-card${d.cancelled ? ' is-cancelled' : ''}">
         <span class="muted small ell">→ ${esc(dest(d))}</span><span class="rer-mid">${esc(inShort(d))}</span>
         <span class="small ell ${stCls(d)}">${esc(time(d))} · ${esc(status(d))}</span></div>`).join('')}</div>`;
     }
@@ -763,7 +762,8 @@ window.HD = window.HD || {};
     const when = (d) => {
       const n = mins(d);
       if (d.cancelled) return '<span class="trn-chip is-bad">Supprimé</span>';
-      if (d.atStop || n === 0) return '<span class="trn-soon">À quai</span>';
+      if (d.atStop) return '<span class="trn-soon">À quai</span>';
+      if (d.time <= Date.now()) return '<span class="trn-soon">Au départ</span>';
       if (n <= 1) return '<span class="trn-soon">à l’approche</span>';
       return n < 60 ? `<span class="trn-min"><b>${n}</b> min</span>` : `<span class="trn-min"><b>${Math.floor(n / 60)} h ${String(n % 60).padStart(2, '0')}</b></span>`;
     };
@@ -793,9 +793,9 @@ window.HD = window.HD || {};
     // No header: the clock is in the page header and the right column is obviously the platform.
     // A title the user typed is still shown.
     const boardHead = m.title ? `<div class="mod-head"><h2>${esc(m.title)}</h2></div>` : '';
-    // 1×1: a light header (station, last update), then as many of the next trains as fit
+    // 1×1: a light header (station, direction), then as many of the next trains as fit
     // (home.css hides the rows that do not; three on the phone).
-    const tinyHead = `<div class="mod-head trn-head"><h2>${esc(m.title || station + (o.direction ? ' → ' + o.direction : ''))}</h2>${upd ? `<span class="muted small">${esc(upd)}</span>` : ''}</div>`;
+    const tinyHead = `<div class="mod-head trn-head"><h2>${esc(m.title || station + (o.direction ? ' → ' + o.direction : ''))}</h2></div>`;
     if (tiny) return tinyHead +`<ul class="trn-list is-compact">${deps.slice(0, 8).map((d) => row(d, true)).join('')}</ul>`;
     // 3+ columns wide without a direction filter: one column per direction.
     const dirs = [...new Set(deps.map(dirOf))];

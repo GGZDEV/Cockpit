@@ -99,6 +99,9 @@ const tracked = async repo => (await gitRun(['-C', repo, 'ls-files', '--error-un
 // séparées. Un fichier retouché ou versionné n'est jamais remplacé.
 async function prepareContext(project, repo, previous = {}) {
   const rel = '.claude/rules/cockpit-project.md', target = path.join(repo, rel);
+  for (const part of ['.claude', '.claude/rules', rel]) {
+    try { if (fs.lstatSync(path.join(repo, part)).isSymbolicLink()) return { status: 'existing' }; } catch {}
+  }
   const body = ['# Contexte du projet Cockpit', ...['objective', 'environment', 'instructions'].filter(k => project.context?.[k]).map(k => '\n## ' + ({ objective: 'Objectif', environment: 'Environnement', instructions: 'Consignes' })[k] + '\n' + project.context[k])].join('\n') + '\n';
   const current = fs.existsSync(target) ? fs.readFileSync(target, 'utf8') : null;
   if ((await gitRun(['-C', repo, 'ls-files', '--error-unmatch', rel])) !== null || (current !== null && sha(current) !== previous.hash)) return { status: 'existing' };
@@ -115,7 +118,8 @@ async function prepareContext(project, repo, previous = {}) {
 async function prepare(project, repo, previous = {}, { regenerate = false, now = () => new Date().toISOString() } = {}) {
   const target = path.join(repo, FILE), current = fs.existsSync(target) ? read(target, Infinity) : null;
   const isTracked = await tracked(repo);
-  const ours = !isTracked && current !== null && previous.status === 'generated' && previous.hash === sha(current);
+  const linked = fs.existsSync(target) && fs.lstatSync(target).isSymbolicLink();
+  const ours = !linked && !isTracked && current !== null && previous.status === 'generated' && previous.hash === sha(current);
   if (current !== null && !ours) {
     if (regenerate) throw Object.assign(new Error('Ce CLAUDE.md ' + (isTracked ? 'fait partie du dépôt' : 'a été modifié') + ' : Cockpit ne l’écrase pas. Supprimez-le ou modifiez-le vous-même.'), { status: 409 });
     const context = await prepareContext(project, repo, previous.context);

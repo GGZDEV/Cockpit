@@ -100,3 +100,11 @@ test('legacy worktree copies upgrade using previously generated root hashes', as
   await md.seedWorktree(r, wt, state);
   assert.match(fs.readFileSync(path.join(wt, 'CLAUDE.md'), 'utf8'), /# New/);
 });
+
+test('project preparation never writes through user symlinks', async t => {
+  const dir = tmp(t), r = repo(path.join(dir, 'p'), { 'CLAUDE.md': '# Team' });
+  const outside = path.join(dir, 'external'); fs.mkdirSync(outside);
+  fs.symlinkSync(outside, path.join(r, '.claude'), 'dir');
+  await md.prepare({ name: 'P', context: { instructions: 'Do not write outside' } }, r);
+  assert.deepEqual(fs.readdirSync(outside), []);
+});

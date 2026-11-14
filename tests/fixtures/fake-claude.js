@@ -21,6 +21,7 @@ process.stdin.setEncoding('utf8');
 if (opt('--input-format') === 'stream-json') {
   require('node:readline').createInterface({ input: process.stdin }).on('line', line => {
     const m = JSON.parse(line);
+    if(m.type==='control_request' && m.request?.subtype==='initialize'){ process.stdout.write(JSON.stringify({type:'control_response',response:{subtype:'success',request_id:m.request_id,response:{models:[{value:'sonnet',resolvedModel:'claude-sonnet-5-5',displayName:'Sonnet 5.5'},{value:'opus',resolvedModel:'claude-opus-5-5',displayName:'Opus 5.5'},{value:'haiku',resolvedModel:'claude-haiku-5-5',displayName:'Haiku 5.5'},{value:'fable',resolvedModel:'claude-fable-5-2',displayName:'Fable 5.2'}]}}})+'\n');return; }
     if (m.type === 'user') { input = m.message.content; main(); }
     if (m.type === 'control_response') {
       fs.appendFileSync(path.join(dir, 'responses.log'), JSON.stringify(m) + '\n');

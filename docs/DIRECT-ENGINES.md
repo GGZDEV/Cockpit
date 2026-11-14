@@ -57,3 +57,7 @@ Seuls les compteurs exposés par Codex sont affichés (coût et appels : jamais 
 Référence du protocole : https://github.com/anthropics/claude-agent-sdk-python/blob/main/src/claude_agent_sdk/_internal/query.py (transport natif, aucune dépendance ajoutée).
 
 Un essai réel supplémentaire peut utiliser une instance temporaire du service Projets, un dépôt local et une tâche jetables, sans dépôt GitHub ni déploiement externe. Supprimer ensuite état, dépôt, worktree et session Claude du test, sans toucher aux projets réels.
+
+## Catalogue natif des modèles (2026-11-14)
+Le sélecteur Cockpit lit désormais `initialize.models` du CLI réellement lancé, dans le même compte OAuth. Il utilise `resolvedModel` plutôt que de figer trois choix. Métadonnées mises en cache une heure ; lecture à l'ouverture de Projets et après expiration, sans requête modèle ni consommation de quota. Si le CLI ne répond pas, les trois choix historiques servent de secours ; le modèle déjà choisi d'un projet reste sélectionnable même absent du catalogue. Aucun défaut ou session existant n'est modifié. Les CLI CT104/CT113 ont été actualisés 2.1.295 → 2.1.325.
+Les corrections d'intégration doivent être poussées dans la branche canonique GitHub avant publication : un simple commit local détaché est remplacé lors du prochain déploiement et ne suffit pas. Le commit natif 3e49d87 perdu lors d'un déploiement de tâche a été réintégré puis publié dans la branche canonique en même temps que cette correction.

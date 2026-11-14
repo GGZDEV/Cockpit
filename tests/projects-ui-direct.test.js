@@ -96,3 +96,9 @@ test('native question and permission are actionable in the task composer; projec
   assert.match(shown(),/Limites Cockpit/);
   for(const key of ['timeoutMin','maxRuns','maxBudgetUsd','taskBudgetUsd','effort']) assert.match(shown(),new RegExp('name="'+key+'"'));
 });
+
+test('project model picker follows the native catalogue and preserves the project model',async t=>{
+ const s=await setup(t),p=await s.project('alpha',{direct:{model:'claude-opus-5-5'}});await s.engine.refreshModels();
+ const {ui,shown,click}=loadUI(s.ui);ui.html();await new Promise(r=>setImmediate(r));await new Promise(r=>setImmediate(r));
+ await click('edit-project',p.id);assert.match(shown(),/value="claude-fable-5-2"[^>]*>Fable 5.2/);assert.match(shown(),/value="claude-opus-5-5" selected/);
+});

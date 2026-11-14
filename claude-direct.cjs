@@ -122,8 +122,9 @@ const adapter = {
 };
 function createEngine({ command = process.env.COCKPIT_CLAUDE_BIN || 'claude', prefixArgs = [], ...options } = {}) {
   const harness = h.createHarness({ adapter, command, prefixArgs, ...options });
+  const catalog = require('./claude-models.cjs').createCatalog({command,prefixArgs,env:childEnv(options.baseEnv)});
   let probed; // sondé une fois par moteur : les options reconnues ne changent pas pendant que Cockpit tourne
-  return { ...harness, buildArgs, flags: () => probed ||= probeFlags(command, prefixArgs, { execPath: options.execPath, env: options.baseEnv }) };
+  return { ...harness, modelCatalog: catalog.snapshot, refreshModels: catalog.refresh, close: () => {catalog.close();harness.close();}, buildArgs, flags: () => probed ||= probeFlags(command, prefixArgs, { execPath: options.execPath, env: options.baseEnv }) };
 }
 
 module.exports = { createEngine, buildArgs, VISUAL_CHECK, createCollector, probeFlags, childEnv, DENY_BASH, OPTIONAL_FLAGS };

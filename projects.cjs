@@ -65,6 +65,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
   // Moteurs directs actifs par défaut ; COCKPIT_DIRECT=0 les coupe tous (retour à OpenClaw seul). Le même worktree sert aux deux moteurs.
   const claudeRun = claudeEngine || claude.createEngine({ enabled: directEnabled, workspacesRoot: workspaces.root });
   const engines = { claude: claudeRun, codex: codexEngine || codex.createEngine({ enabled: directEnabled && process.env.COCKPIT_CODEX_DIRECT !== '0', workspacesRoot: workspaces.root, worktreeRoot: claudeRun.worktreeRoot }) };
+  void engines.claude.refreshModels?.(); // native metadata only; no model turn
   let closing = false;
   const file = path.join(dataDir, 'projects.json');
   const files = createAttachments({ dir: path.join(dataDir, 'attachments') });
@@ -1119,7 +1120,7 @@ function createProjects({ dataDir = path.join(__dirname, 'data'), discover, fetc
     const byId = new Map(store.projects.map(p => [p.id, p]));
     // engineByTask : moteur qui traitera chaque tâche (celui de la tâche, sinon celui du projet).
     return { projects: store.projects, tasks: store.tasks, deployInfo: Object.fromEntries(store.projects.map(p => [p.id, { missing: deploy.missingText(p), active: deployActive(p) }])), engineByTask: Object.fromEntries(store.tasks.map(t => [t.id, engineOf(t, byId.get(t.projectId))])),
-      capabilities: { ...CAPABILITIES, deploy: { ...deployer.describe(), types: deploy.TYPES, publicSuffix: deploy.PUBLIC_SUFFIX() }, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled, ...(!openclawEnabled ? { openclaw: false } : {}) }, directDefaults: harness.directSettings({}) }, now: now() };
+      capabilities: { ...CAPABILITIES, deploy: { ...deployer.describe(), types: deploy.TYPES, publicSuffix: deploy.PUBLIC_SUFFIX() }, direct: directEnabled, engines: { claude: engines.claude.enabled, codex: engines.codex.enabled, ...(!openclawEnabled ? { openclaw: false } : {}) }, directDefaults: harness.directSettings({}), claudeModels: engines.claude.modelCatalog?.() || null }, now: now() };
   }
 
   // ----- Accès des agents (Claude, Codex, OpenClaw…) -------------------------------------
